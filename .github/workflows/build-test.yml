@@ -2,6 +2,7 @@ name: Build and test
 
 on:
   push:
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
@@ -15,13 +16,13 @@ jobs:
     name: Cross-build with Rtools45 toolchain
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install host tools
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zstd innoextract
 
       - name: Cache Rtools tarballs
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: toolchain/*.tar.zst
           key: rtools45-${{ env.RTOOLS_BUILD }}
@@ -32,7 +33,7 @@ jobs:
       - name: Build
         run: bash scripts/build.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: flexiblas-rwin
           path: dist/
@@ -43,9 +44,9 @@ jobs:
     needs: build
     runs-on: windows-2025
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: flexiblas-rwin
           path: dist
