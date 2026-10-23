@@ -81,12 +81,14 @@ jobs:
         shell: pwsh
         env:
           FLEXIBLAS_VERBOSE: 1
-        run: Rscript -e "sessionInfo()"
+        run: Rscript -e "sessionInfo()" 2>&1 | Tee-Object -FilePath startup.log
 
       - name: Run tests
         timeout-minutes: 10
         shell: pwsh
-        run: Rscript tests/test-flexiblas.R
+        run: |
+          Rscript tests/test-flexiblas.R 2>&1 | Tee-Object -FilePath tests.log
+          exit $LASTEXITCODE
 
       - name: R's BLAS regression tests
         timeout-minutes: 10
@@ -94,3 +96,16 @@ jobs:
         run: |
           $t = "$env:R_HOME_DIR\tests\reg-BLAS.R"
           if (Test-Path $t) { Rscript $t } else { Write-Host "reg-BLAS.R not in the binary install; skipped" }
+
+      # Job logs live in blob storage that some API clients cannot reach;
+      # annotations are served by the API itself.
+      - name: Publish logs as annotations
+        if: always()
+        shell: pwsh
+        run: |
+          foreach ($f in "startup.log", "tests.log") {
+            if (Test-Path $f) {
+              $t = (Get-Content $f -Raw) -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
+              Write-Host "::notice title=$f::$t"
+            }
+          }
