@@ -36,7 +36,6 @@ work <- function() list(
     cprod = Z %*% Z
 )
 ref <- work()
-t_ref <- system.time(A %*% A)[["elapsed"]]
 
 ob <- .C("rfb_load", name = "OPENBLAS", id = 0L)$id
 check(ob >= 0L, sprintf("load OPENBLAS backend (id %d)", ob))
@@ -50,18 +49,19 @@ for (k in names(ref)) {
     check(err < 1e-10, sprintf("%s agrees with NETLIB (rel err %.1e)", k, abs(err)))
 }
 
-.C("rfb_set_threads", n = 1L)
-t1 <- system.time(A %*% A)[["elapsed"]]
-check(threads() == 1L, "set 1 thread")
-nt <- max(2L, parallel::detectCores())
-.C("rfb_set_threads", n = nt)
-tn <- system.time(A %*% A)[["elapsed"]]
-check(threads() == nt, sprintf("set %d threads", nt))
-cat(sprintf("A %%*%% A, n = %d: NETLIB %.3fs, OpenBLAS 1 thread %.3fs, %d threads %.3fs\n",
-            n, t_ref, t1, nt, tn))
+set_threads <- function(k) invisible(.C("rfb_set_threads", n = as.integer(k)))
+B <- matrix(rnorm(2000^2), 2000)
+timing <- function() system.time(B %*% B)[["elapsed"]]
+for (k in unique(c(1L, 2L, max(2L, parallel::detectCores())))) {
+    set_threads(k)
+    got <- threads()
+    check(got == k, sprintf("set %d thread(s), FlexiBLAS reports %d", k, got))
+    cat(sprintf("  B %%*%% B, n = 2000, %d thread(s): %.3fs\n", k, timing()))
+}
 
 check(switch_to(0L) == 0L, "switch back to backend 0")
 cat("backend now:", current(), "\n")
+cat(sprintf("  B %%*%% B, n = 2000, NETLIB: %.3fs\n", timing()))
 res0 <- work()
 check(isTRUE(all.equal(res0$prod, ref$prod)), "results after switching back")
 
