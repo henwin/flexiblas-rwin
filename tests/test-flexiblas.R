@@ -50,18 +50,28 @@ for (k in names(ref)) {
 }
 
 set_threads <- function(k) invisible(.C("rfb_set_threads", n = as.integer(k)))
-B <- matrix(rnorm(2000^2), 2000)
-timing <- function() system.time(B %*% B)[["elapsed"]]
+openblas <- function()
+    .C("rfb_openblas_info", threads = 0L, parallel = 0L, config = strrep(" ", 256))
+ob_info <- openblas()
+cat(sprintf("OpenBLAS config: %s\nOpenBLAS parallel mode: %d (0 serial, 1 pthreads, 2 OpenMP)\n",
+            trimws(ob_info$config), ob_info$parallel))
+cat(sprintf("cores: %d logical, %d physical\n",
+            parallel::detectCores(), parallel::detectCores(logical = FALSE)))
+B <- matrix(rnorm(3000^2), 3000)
 for (k in unique(c(1L, 2L, max(2L, parallel::detectCores())))) {
     set_threads(k)
     got <- threads()
     check(got == k, sprintf("set %d thread(s), FlexiBLAS reports %d", k, got))
-    cat(sprintf("  B %%*%% B, n = 2000, %d thread(s): %.3fs\n", k, timing()))
+    check(openblas()$threads == k,
+          sprintf("set %d thread(s), OpenBLAS reports %d", k, openblas()$threads))
+    tm <- system.time(B %*% B)
+    cat(sprintf("  B %%*%% B, n = 3000, %d thread(s): elapsed %.3fs, user %.3fs\n",
+                k, tm[["elapsed"]], tm[["user.self"]]))
 }
 
 check(switch_to(0L) == 0L, "switch back to backend 0")
 cat("backend now:", current(), "\n")
-cat(sprintf("  B %%*%% B, n = 2000, NETLIB: %.3fs\n", timing()))
+cat(sprintf("  B %%*%% B, n = 3000, NETLIB: %.3fs\n", system.time(B %*% B)[["elapsed"]]))
 res0 <- work()
 check(isTRUE(all.equal(res0$prod, ref$prod)), "results after switching back")
 

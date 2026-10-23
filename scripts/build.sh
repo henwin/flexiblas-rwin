@@ -20,6 +20,9 @@ EXCL=libssp.a:libssp_nonshared.a:libgcc.a:libgcc_eh.a:libgfortran.a:libquadmath.
 # -- FlexiBLAS ---------------------------------------------------------------
 [ -d flexiblas ] || git clone -q --depth 1 --branch "v$FLEXIBLAS_VERSION" \
     https://github.com/mpimd-csc/flexiblas.git
+for p in "$ROOT"/patches/*.patch; do
+    git -C flexiblas apply "$p"
+done
 $TARGET-cmake -S flexiblas -B build-fb \
     -DBUILD_SHARED_LIBS=ON -DBLAS_AUTO_DETECT=OFF -DINTEGER8=OFF \
     -DTESTS=OFF -DEXAMPLES=OFF -DLTO=OFF \

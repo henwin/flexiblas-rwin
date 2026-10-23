@@ -73,8 +73,9 @@ jobs:
           $bin = "$env:R_HOME_DIR\bin\x64"
           Copy-Item "$bin\Rblas.dll" "$bin\Rblas-reference.dll"
           Copy-Item dist\*.dll $bin -Force
+          # Found as the global configuration, <dir of libflexiblas.dll>\..\..\etc
+          # (see patches/0001-windows-global-rc-path.patch).
           Copy-Item dist\flexiblasrc "$env:R_HOME_DIR\etc\flexiblasrc"
-          "FLEXIBLAS_CONFIG=$env:R_HOME_DIR\etc\flexiblasrc" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
       - name: Startup with verbose FlexiBLAS
         timeout-minutes: 5
@@ -94,8 +95,10 @@ jobs:
         timeout-minutes: 10
         shell: pwsh
         run: |
-          $t = "$env:R_HOME_DIR\tests\reg-BLAS.R"
-          if (Test-Path $t) { Rscript $t } else { Write-Host "reg-BLAS.R not in the binary install; skipped" }
+          $tag = "R-" + ($env:R_VERSION -replace '\.', '-')
+          Invoke-WebRequest "https://raw.githubusercontent.com/wch/r-source/tags/$tag/tests/reg-BLAS.R" -OutFile reg-BLAS.R
+          Rscript reg-BLAS.R 2>&1 | Tee-Object -FilePath reg-BLAS.log
+          exit $LASTEXITCODE
 
       # Job logs live in blob storage that some API clients cannot reach;
       # annotations are served by the API itself.
@@ -103,7 +106,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          foreach ($f in "startup.log", "tests.log") {
+          foreach ($f in "startup.log", "tests.log", "reg-BLAS.log") {
             if (Test-Path $f) {
               $t = (Get-Content $f -Raw) -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
               Write-Host "::notice title=$f::$t"

@@ -1,0 +1,12 @@
+diff --git a/src/paths.c b/src/paths.c
+index cdab79c4..1ee58f8f 100644
+--- a/src/paths.c
++++ b/src/paths.c
+@@ -130,6 +130,7 @@ HIDDEN void __flexiblas_get_global_rc_path(char * container, int max_buffer_size
+         strcpy(sysconfdir, folder);
+         strcat(sysconfdir, "/../etc");
+         _fullpath(sysconfdir_clean, sysconfdir, MAX_BUFFER_SIZE);
++        snprintf(container, max_buffer_size, "%s\\%s", sysconfdir_clean, suffix);
+     } else {
+         snprintf(container, max_buffer_size, "%s", suffix );
+     }
