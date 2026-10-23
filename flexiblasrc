@@ -1,0 +1,10 @@
+default = NETLIB
+verbose = 0
+
+[NETLIB]
+library = libflexiblas_netlib.dll
+comment = Reference BLAS and LAPACK built into FlexiBLAS
+
+[OPENBLAS]
+library = libopenblas.dll
+comment = OpenBLAS 0.3.31 from Rtools45, OpenMP threads

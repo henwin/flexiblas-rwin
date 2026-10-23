@@ -1,0 +1,88 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  R_VERSION: 4.6.1
+  FLEXIBLAS_VERSION: 3.5.0
+  RTOOLS_BUILD: 6768
+
+jobs:
+  build:
+    name: Cross-build with Rtools45 toolchain
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install host tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zstd innoextract
+
+      - name: Cache Rtools tarballs
+        uses: actions/cache@v4
+        with:
+          path: toolchain/*.tar.zst
+          key: rtools45-${{ env.RTOOLS_BUILD }}
+
+      - name: Set up toolchain
+        run: bash scripts/setup-toolchain.sh
+
+      - name: Build
+        run: bash scripts/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flexiblas-rwin
+          path: dist/
+          if-no-files-found: error
+
+  test:
+    name: Test in R on Windows
+    needs: build
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: flexiblas-rwin
+          path: dist
+
+      - name: Install R
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://cran.r-project.org/bin/windows/base/R-$env:R_VERSION-win.exe" -OutFile r.exe
+          Start-Process -Wait r.exe -ArgumentList "/VERYSILENT", "/DIR=C:\R", "/NORESTART"
+          "C:\R\bin\x64" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+      - name: Reference run with R's own BLAS
+        shell: pwsh
+        run: Rscript -e "sessionInfo(); A <- crossprod(matrix(rnorm(360000), 600)); print(system.time(A %*% A))"
+
+      - name: Install FlexiBLAS into R
+        shell: pwsh
+        run: |
+          $bin = "C:\R\bin\x64"
+          Copy-Item "$bin\Rblas.dll" "$bin\Rblas-reference.dll"
+          Copy-Item dist\*.dll $bin -Force
+          New-Item -ItemType Directory -Force C:\R\etc | Out-Null
+          Copy-Item dist\flexiblasrc C:\R\etc\flexiblasrc
+          "FLEXIBLAS_CONFIG=C:\R\etc\flexiblasrc" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Startup with verbose FlexiBLAS
+        shell: pwsh
+        env:
+          FLEXIBLAS_VERBOSE: 1
+        run: Rscript -e "sessionInfo()"
+
+      - name: Run tests
+        shell: pwsh
+        run: Rscript tests/test-flexiblas.R
+
+      - name: R's BLAS regression tests
+        shell: pwsh
+        run: |
+          $t = "C:\R\tests\reg-BLAS.R"
+          if (Test-Path $t) { Rscript $t } else { Write-Host "reg-BLAS.R not in the binary install; skipped" }
