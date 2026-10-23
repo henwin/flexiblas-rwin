@@ -42,6 +42,7 @@ jobs:
   test:
     name: Test in R on Windows
     needs: build
+    timeout-minutes: 30
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v7
@@ -51,39 +52,45 @@ jobs:
           name: flexiblas-rwin
           path: dist
 
-      - name: Install R
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: ${{ env.R_VERSION }}
+
+      - name: Locate R
         shell: pwsh
         run: |
-          Invoke-WebRequest "https://cran.r-project.org/bin/windows/base/R-$env:R_VERSION-win.exe" -OutFile r.exe
-          Start-Process -Wait r.exe -ArgumentList "/VERYSILENT", "/DIR=C:\R", "/NORESTART"
-          "C:\R\bin\x64" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+          $home_ = Rscript -e "cat(normalizePath(R.home()))"
+          "R_HOME_DIR=$home_" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
       - name: Reference run with R's own BLAS
+        timeout-minutes: 5
         shell: pwsh
         run: Rscript -e "sessionInfo(); A <- crossprod(matrix(rnorm(360000), 600)); print(system.time(A %*% A))"
 
       - name: Install FlexiBLAS into R
         shell: pwsh
         run: |
-          $bin = "C:\R\bin\x64"
+          $bin = "$env:R_HOME_DIR\bin\x64"
           Copy-Item "$bin\Rblas.dll" "$bin\Rblas-reference.dll"
           Copy-Item dist\*.dll $bin -Force
-          New-Item -ItemType Directory -Force C:\R\etc | Out-Null
-          Copy-Item dist\flexiblasrc C:\R\etc\flexiblasrc
-          "FLEXIBLAS_CONFIG=C:\R\etc\flexiblasrc" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          Copy-Item dist\flexiblasrc "$env:R_HOME_DIR\etc\flexiblasrc"
+          "FLEXIBLAS_CONFIG=$env:R_HOME_DIR\etc\flexiblasrc" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
       - name: Startup with verbose FlexiBLAS
+        timeout-minutes: 5
         shell: pwsh
         env:
           FLEXIBLAS_VERBOSE: 1
         run: Rscript -e "sessionInfo()"
 
       - name: Run tests
+        timeout-minutes: 10
         shell: pwsh
         run: Rscript tests/test-flexiblas.R
 
       - name: R's BLAS regression tests
+        timeout-minutes: 10
         shell: pwsh
         run: |
-          $t = "C:\R\tests\reg-BLAS.R"
+          $t = "$env:R_HOME_DIR\tests\reg-BLAS.R"
           if (Test-Path $t) { Rscript $t } else { Write-Host "reg-BLAS.R not in the binary install; skipped" }
