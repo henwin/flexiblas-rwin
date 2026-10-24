@@ -64,6 +64,6 @@ jobs:
           [ -f nan.log ] || exit 0
           split -l 25 nan.log part-
           for p in part-*; do
-            t=$(sed -e 's/%/%25/g' "$p" | tr '\n' '\001' | sed -e 's/\x01/%0A/g')
+            t=$(perl -pe 's/%/%25/g; s/\n/%0A/' "$p")
             echo "::notice title=nan-macos.log (${p#part-})::$t"
           done
