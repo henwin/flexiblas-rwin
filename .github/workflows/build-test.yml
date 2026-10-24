@@ -28,17 +28,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The MXE build (OpenBLAS and FlexiBLAS) takes about an hour; it is
-      # cached until the recipe, the patches or the build environment change.
+      # The MXE build of OpenBLAS takes about 1.5 hours; its files are cached
+      # until the recipe, the Rtools patches or the build environment change.
       - name: Cache MXE build
-        id: mxe-cache
         uses: actions/cache@v6
         with:
-          path: dist
+          path: mxe-out
           key: mxe-${{ hashFiles('docker/Dockerfile', 'patches/rtools-mxe/**', 'scripts/build-mxe.sh') }}
 
-      # The MXE cache above is saved only when its key changes, so the R
-      # installer that forwarders.sh keeps in dist/ has a cache of its own.
+      # The R installer that forwarders.sh keeps in dist/.
       - name: Cache R installer
         uses: actions/cache@v6
         with:
@@ -61,8 +59,7 @@ jobs:
       - name: Build in Docker
         run: |
           set -o pipefail
-          opt=; [ "${{ steps.mxe-cache.outputs.cache-hit }}" = true ] && opt=--forwarders-only
-          bash scripts/build-in-docker.sh $opt 2>&1 | tee docker-build.log
+          bash scripts/build-in-docker.sh 2>&1 | tee docker-build.log
 
       - name: Publish build errors
         if: failure()
@@ -117,18 +114,19 @@ jobs:
         run: Rscript tests/test-nan.R ref
 
       - name: Install FlexiBLAS into R
-        shell: pwsh
+        shell: bash
         run: |
-          $bin = "$env:R_HOME_DIR\bin\x64"
-          Copy-Item "$bin\Rblas.dll" "$bin\Rblas-reference.dll"
+          r=$(cygpath -u "$R_HOME_DIR")
+          bin=$r/bin/x64
+          cp "$bin/Rblas.dll" "$bin/Rblas-reference.dll"
           # R's own LAPACK stays available for the symbols FlexiBLAS lacks.
-          Copy-Item "$bin\Rlapack.dll" "$bin\Rlapack_ref.dll"
-          Copy-Item dist\*.dll $bin -Force
-          Copy-Item -Recurse dist\flexiblas "$bin\flexiblas" -Force
-          # FlexiBLAS looks for its configuration in ..\etc relative to the
-          # DLLs, as installed by MXE (bin\ and etc\); for R's bin\x64 that
-          # is R_HOME\bin\etc (see patches/flexiblas/0001-windows-install-layout.patch).
-          Copy-Item -Recurse dist\etc "$env:R_HOME_DIR\bin\etc" -Force
+          cp "$bin/Rlapack.dll" "$bin/Rlapack_ref.dll"
+          # The bundle has R's layout (bin/x64, etc), so it is copied over
+          # R_HOME; FlexiBLAS finds its configuration in R_HOME/etc.
+          d=$(dirname "$(find dist -type d -name forwarders | head -1)")
+          cp -r "$d"/FlexiBLAS/. "$r/"
+          cp "$d"/forwarders/*.dll "$bin/"
+          ls "$r"/etc/flexiblasrc* "$bin"/libflexiblas*.dll "$bin"/flexiblas
 
       - name: Install the flexiblas R package, patched for Windows
         timeout-minutes: 10

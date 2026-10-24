@@ -1,37 +1,33 @@
 #!/usr/bin/env bash
 # Inside the image from docker/Dockerfile, with this repository at /work:
-# apply patches/rtools-mxe/ to R's MXE tree, rebuild OpenBLAS and FlexiBLAS
-# with MXE, and copy the FlexiBLAS DLLs and configuration to dist/.
+# apply patches/rtools-mxe/ to R's MXE tree and rebuild OpenBLAS with MXE,
+# as R-core would rebuild the toolchain. The files OpenBLAS installs are
+# kept in mxe-out/openblas.tar; when that exists, they are unpacked instead.
 set -euo pipefail
 WORK=${WORK:-/work}
-TARGET=x86_64-w64-mingw32.static.posix
 cd /opt/mxe
 
 for p in "$WORK"/patches/rtools-mxe/*.patch; do
     patch -p0 -N < "$p"
 done
 
+cache=$WORK/mxe-out/openblas.tar
+if [ -f "$cache" ]; then
+    tar -xf "$cache"
+    exit 0
+fi
+
 # MXE rebuilds a package whose dependencies have no build stamp. Stamp the
 # toolchain and libraries that came from the tarballs without rebuilding
-# them (the howto's dry run), limited to what OpenBLAS and FlexiBLAS need.
-deps="cc fc pthreads dlfcn-win32"
+# them (the howto's dry run), limited to what OpenBLAS needs.
+deps="cc fc pthreads"
 for i in 1 2 3; do make -j MXE_BUILD_DRY_RUN=1 $deps > /dev/null 2>&1 || true; done
 find usr -name '*.dry-run' -delete
 
-make -j"$(nproc)" openblas flexiblas || {
-    for f in log/openblas_* log/flexiblas_*; do
-        [ -f "$f" ] && { echo "== $f"; tail -60 "$f"; }
-    done
-    exit 1
-}
-
-out=$WORK/dist
-mkdir -p "$out"
-# NETLIB and the hooks are installed next to libflexiblas.dll, the vendor
-# backends in bin/flexiblas.
-cp usr/$TARGET/bin/libflexiblas*.dll "$out/"
-cp -r usr/$TARGET/bin/flexiblas "$out/"
-mkdir -p "$out/etc"
-cp -r usr/$TARGET/etc/flexiblasrc* "$out/etc/"
-usr/bin/$TARGET-objdump -p "$out/libflexiblas.dll" | grep 'DLL Name'
-ls -la "$out"
+touch "$WORK/.mxe-start"
+make -j"$(nproc)" openblas || { tail -60 log/openblas_*; exit 1; }
+mkdir -p "$(dirname "$cache")"
+find usr -newer "$WORK/.mxe-start" \( -type f -o -type l \) -print0 |
+    tar -cf "$cache" --null -T -
+rm "$WORK/.mxe-start"
+tar -tf "$cache" | grep -v '^usr/x86_64-w64-mingw32.static.posix/include/openblas/' | head -20

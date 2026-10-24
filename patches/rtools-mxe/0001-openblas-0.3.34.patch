@@ -1,0 +1,36 @@
+Index: src/openblas-3-explicit-thread-count.patch
+===================================================================
+--- src/openblas-3-explicit-thread-count.patch	(nonexistent)
++++ src/openblas-3-explicit-thread-count.patch	(working copy)
+@@ -0,0 +1,16 @@
++diff --git a/driver/others/blas_server_omp.c b/driver/others/blas_server_omp.c
++index 7ee56b7..f43e748 100644
++--- a/driver/others/blas_server_omp.c
+++++ b/driver/others/blas_server_omp.c
++@@ -443,7 +443,10 @@ while (true) {
++     openblas_threads_callback_(1, (openblas_dojob_callback) exec_threads, num, sizeof(blas_queue_t), (void*) queue, buf_index);
++   } else {
++ 
++- if (openblas_omp_adaptive_env() != 0) {
+++ /* An explicitly set thread count can exceed omp_get_max_threads(); the
+++    team must then be sized for num, or the threaded level-3 kernels wait
+++    for partners that never start. */
+++ if (openblas_omp_adaptive_env() != 0 || blas_is_num_threads_set_explicitly) {
++  #pragma omp parallel for num_threads(num) schedule(OMP_SCHED)
++   for (i = 0; i < num; i ++) {
++ #ifndef USE_SIMPLE_THREADED_LEVEL3
+Index: src/openblas.mk
+===================================================================
+--- src/openblas.mk	(revision 6768)
++++ src/openblas.mk	(working copy)
+@@ -4,8 +4,8 @@
+ $(PKG)_WEBSITE  := https://www.openblas.net/
+ $(PKG)_DESCR    := OpenBLAS
+ $(PKG)_IGNORE   :=
+-$(PKG)_VERSION  := 0.3.31
+-$(PKG)_CHECKSUM := 6dd2a63ac9d32643b7cc636eab57bf4e57d0ed1fff926dfbc5d3d97f2d2be3a6
++$(PKG)_VERSION  := 0.3.34
++$(PKG)_CHECKSUM := cd7e129868320cc2d033afa920e31202dfe0b8066a5b66661900ccc0f197dfed
+ $(PKG)_GH_CONF  := xianyi/OpenBLAS/releases/latest,v
+ $(PKG)_DEPS     := cc fc pthreads
+ 

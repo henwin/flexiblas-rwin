@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 # Build everything in the image from docker/Dockerfile (R's MXE tree with the
 # Rtools45 toolchain), with this repository mounted at /work:
-# scripts/build-mxe.sh builds OpenBLAS and FlexiBLAS with MXE into dist/,
-# scripts/forwarders.sh adds the forwarding Rblas.dll/Rlapack.dll.
-# Pass --forwarders-only when dist/ already holds the MXE build.
+# scripts/build-mxe.sh rebuilds OpenBLAS with the Rtools patches (cached in
+# mxe-out/), scripts/build-bundle.sh builds the FlexiBLAS bundle into
+# dist/FlexiBLAS, and scripts/forwarders.sh adds the forwarding
+# Rblas.dll/Rlapack.dll in dist/forwarders.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 image=flexiblas-rwin-mxe
 docker build -t "$image" -f docker/Dockerfile .
-
-steps='bash scripts/forwarders.sh'
-[ "${1:-}" = --forwarders-only ] || steps="bash scripts/build-mxe.sh && $steps"
-docker run --rm -v "$PWD":/work -w /work "$image" bash -c "$steps"
+docker run --rm -v "$PWD":/work -w /work "$image" bash -c \
+    'bash scripts/build-mxe.sh && bash scripts/build-bundle.sh && bash scripts/forwarders.sh'

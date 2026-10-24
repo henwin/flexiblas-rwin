@@ -1,0 +1,165 @@
+#! /bin/bash
+
+# Build the FlexiBLAS bundle in an interactive Ubuntu docker container using
+# a cross-compilation toolchain.
+#
+# build_in_docker.sh [target]
+#
+# This needs files
+#
+#   gcc14_ucrt3_base_REV.tar.zst
+#   gcc14_ucrt3_cross_REV.tar.zst
+#
+# in the current directory, where REV is a revision number, e.g.  5168.
+# These files are produced by ../toolchain_libs and existing builds can
+# be downloaded from https://www.r-project.org/nosvn/winutf8/ucrt3
+# FlexiBLAS's OPENBLAS backend is linked from the toolchain's OpenBLAS.
+#
+# Target is the first (optional) argument; only x86_64 is supported so far.
+#
+# FlexiBLAS.zip and textual outputs from the build will appear in the
+# current directory.  It is meant to be published like the Tcl/Tk bundle
+# (../tcl_bundle), as FlexiBLAS-REV-THISREV.zip, where REV is the revision
+# number of the toolchain and THISREV is revision number of the script to
+# build the FlexiBLAS bundle.
+
+DOCKER=`which docker`
+if [ "X$DOCKER" == X ]; then
+  echo "Docker not on PATH."
+  exit 1
+fi
+
+RTARGET="$1"
+if [ "X$RTARGET" == X ] ; then
+  RTARGET="x86_64"
+fi
+
+if [ "X${RTARGET}" != "Xx86_64" ]; then
+   
+  echo "Unsupported target."
+  exit 1
+fi
+
+if [ ${RTARGET} == "all" ] ; then
+  RTARGETS="x86_64 aarch64"
+else
+  RTARGETS=${RTARGET}
+fi
+
+CID=buildflexiblas
+
+for TGT in ${RTARGETS} ; do
+
+  if [ $TGT == x86_64 ] ; then
+    USRDIR="/usr/lib/mxe/usr"
+    TCCFILE=`ls -1 gcc14_ucrt3_cross_[0-9]*.tar.zst | head -1`
+    MXETARGET="x86_64-w64-mingw32.static.posix"
+  else
+    USRDIR="/usr/lib/mxe/usr_aarch64"
+    TCCFILE=`ls -1 llvm19_ucrt3_cross_aarch64_[0-9]*.tar.zst | head -1`
+    MXETARGET="aarch64-w64-mingw32.static.posix"
+  fi
+
+  if [ "X$TCCFILE" == X ] || [ ! -r $TCCFILE ] ; then
+    echo "No cross-toolchain archive." >&2
+    exit 1
+  fi
+
+  TLREV=`echo $TCCFILE | sed -e 's/.*_\([0-9]\+\).tar.zst/\1/g'`
+  
+  if [ $TGT == x86_64 ] ; then
+    TCLFILE=`ls -1 gcc14_ucrt3_base_$TLREV.tar.zst | head -1`
+  else
+    TCLFILE=`ls -1 llvm19_ucrt3_base_aarch64_$TLREV.tar.zst | head -1`
+  fi
+
+  if [ ! -r $TCLFILE ] ; then
+    echo "No (matching) toolchain libraries archive." >&2
+    exit 1
+  fi
+
+  X=`docker container ls -a | sed -e 's/.* //g' | grep -v NAMES | grep '^'$CID'$'`
+  NEEDTL=yes
+
+  if [ "X$X" != X$CID ] ; then
+    echo "Creating container $CID"
+    docker create --name $CID -it ubuntu:24.04
+    docker start $CID
+    
+    cat <<EOF | docker exec --interactive $CID bash -x
+    apt-get update
+    echo "Europe/Prague" > /etc/timezone
+    env DEBIAN_FRONTEND=noninteractive apt-get install -y tzdata
+    apt-get install -y wget make findutils patch zip zstd
+    mkdir -p /usr/lib/mxe/usr
+    mkdir -p /usr/lib/mxe/usr_aarch64
+    cd /root
+EOF
+
+  else
+    echo "Reusing container $CID"
+  
+    docker stop $CID
+    rm -f .version
+    docker cp $CID:$USRDIR/$MXETARGET/.version .
+    if [ -r .version ] && [ X`cat .version` == X$TLREV ] ; then
+      echo "Reusing toolchain in $CID"
+      NEEDTL=no
+    else
+      echo "Removing old toolchain in $CID"
+      docker start $CID
+      cat <<EOF | docker exec --interactive $CID bash -x
+      rm -rf /usr/lib/mxe/usr
+      rm -rf /usr/lib/mxe/usr_aarch64      
+      mkdir -p /usr/lib/mxe/usr
+      mkdir -p /usr/lib/mxe/usr_aarch64
+EOF
+      docker stop $CID
+    fi
+    rm -f .version
+    docker start $CID
+  fi
+
+  if [ $NEEDTL == yes ] ; then
+    echo "Installing toolchain into $CID"
+  
+    docker stop $CID
+    docker cp $TCCFILE $CID:$USRDIR
+    docker cp $TCLFILE $CID:$USRDIR
+    docker start $CID
+  
+    cat <<EOF | docker exec --interactive $CID bash -x
+    cd $USRDIR
+    tar xf $TCCFILE
+    tar xf $TCLFILE
+    # needed by the MXE cmake wrapper
+    ln -st x86_64-pc-linux-gnu/bin \
+      ../../bin/${MXETARGET}-gcc \
+      ../../bin/${MXETARGET}-g++
+    rm -f $TCCFILE $TCLFILE
+EOF
+  fi
+
+  docker stop $CID
+  docker cp build_ucrt.sh $CID:/root
+  docker cp flexiblas.diff $CID:/root
+  docker start $CID
+
+  cat <<EOF | docker exec --interactive $CID bash -x
+    cd /root
+    rm -rf build FlexiBLAS FlexiBLAS.zip *.out
+    # note the escape to use PATH in the container
+    export PATH=$USRDIR/bin:\$PATH
+    bash -x ./build_ucrt.sh $TGT 2>&1 | tee build_ucrt.out
+EOF
+
+  docker stop $CID
+
+  if [ $TGT == x86_64 ] ; then
+    docker cp $CID:/root/build_ucrt.out .
+    docker cp $CID:/root/FlexiBLAS.zip .
+  else
+    docker cp $CID:/root/build_ucrt.out build_ucrt_aarch64.out
+    docker cp $CID:/root/FlexiBLAS.zip FlexiBLAS_aarch64.zip
+  fi
+done
