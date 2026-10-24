@@ -60,7 +60,10 @@ jobs:
       - name: Unpack sources
         run: |
           export TAR_OPTIONS=--force-local
-          tar -xf R.tar.gz
+          # The tarball's few symlinks cannot be created here; that is harmless
+          # for the Windows build, so report tar's complaints but go on.
+          tar -xf R.tar.gz 2> tar.err || { echo "tar exit $?"; sort -u tar.err | head -20; }
+          test -f "R-$R_VERSION/src/gnuwin32/Makefile"
           cd "R-$R_VERSION" && unzip -q ../tcltk.zip
           ls Tcl | head -3
 
@@ -98,6 +101,7 @@ jobs:
           r=R-$R_VERSION
           {
             echo "backend: ${{ inputs.backend }}"
+            [ -s tar.err ] && { echo "tar:"; sort -u tar.err | head -10; }
             grep -E 'exit status|Error|FAILED|failed' check-all.log | head -40 || true
             for f in $(find "$r/tests" "$r/src/library" -name '*.Rout.fail' 2>/dev/null); do
               echo "== $f"
