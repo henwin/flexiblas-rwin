@@ -4,14 +4,19 @@
 # rebuilt with "make PKG" (scripts/build-mxe.sh).
 FROM ubuntu:24.04
 
-# Host dependencies as in toolchain_libs/build_in_docker.sh, plus svn/zstd.
+# Host dependencies exactly as in toolchain_libs/build_in_docker.sh for
+# ubuntu:24.04, plus subversion, zstd, curl and innoextract.
 RUN apt-get update \
- && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        autoconf automake autopoint bash bison bzip2 ca-certificates flex g++ \
-        gettext git gperf intltool libltdl-dev libssl-dev libtool-bin \
+ && echo "Etc/UTC" > /etc/timezone \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y tzdata \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        autoconf automake autopoint bash bison bzip2 flex g++ g++-multilib \
+        gettext git gperf intltool libc6-dev-i386 libgdk-pixbuf2.0-dev \
+        libltdl-dev libgl-dev libpcre3-dev libssl-dev libtool-bin \
         libxml-parser-perl lzip make openssl p7zip-full patch perl python3 \
-        python3-mako python3-packaging python3-setuptools python-is-python3 \
-        ruby sed sqlite3 subversion texinfo unzip wget xz-utils zstd curl innoextract \
+        python3-mako python3-packaging python3-pkg-resources python3-setuptools \
+        python-is-python3 ruby sed sqlite3 unzip wget xz-utils \
+        texinfo subversion zstd curl innoextract \
  && rm -rf /var/lib/apt/lists/*
 
 # The MXE revision that built the Rtools45 tarballs used below.
@@ -35,4 +40,4 @@ RUN cd usr/x86_64-w64-mingw32.static.posix/bin \
         [ -e $t ] || ln -s ../../bin/x86_64-w64-mingw32.static.posix-$t $t; \
     done
 
-RUN make ccache > /dev/null
+RUN make ccache 2>&1 | tail -20
