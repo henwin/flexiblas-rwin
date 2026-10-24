@@ -1,0 +1,112 @@
+name: R from source, make check-all
+
+# Builds R from its source tarball with Rtools45, swaps in the FlexiBLAS
+# forwarders from the latest successful "Build and test" run, and runs R's
+# full test suite. Long, so it runs only on demand.
+on:
+  workflow_dispatch:
+    inputs:
+      r_version:
+        description: R version (source tarball on CRAN)
+        default: 4.6.1
+      backend:
+        description: FlexiBLAS backend for the checks
+        default: OPENBLAS-THREADS
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  check:
+    runs-on: windows-2025
+    timeout-minutes: 360
+    env:
+      R_VERSION: ${{ inputs.r_version }}
+      CHERE_INVOKING: 1
+    defaults:
+      run:
+        shell: C:\rtools45\usr\bin\bash.exe --login -eo pipefail {0}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          install-r: false
+          rtools-version: '45'
+
+      - name: Find the latest successful build
+        id: build
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $id = gh run list -R $env:GITHUB_REPOSITORY -w build-test.yml -s success -L 1 --json databaseId --jq '.[0].databaseId'
+          "run_id=$id" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: flexiblas-rwin
+          path: dist
+          run-id: ${{ steps.build.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Fetch R and Tcl/Tk sources
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://cran.r-project.org/src/base/R-4/R-$env:R_VERSION.tar.gz" -OutFile R.tar.gz
+          Invoke-WebRequest https://cran.r-project.org/bin/windows/Rtools/rtools45/files/tcltk-6768-6663.zip -OutFile tcltk.zip
+
+      - name: Unpack sources
+        run: |
+          export TAR_OPTIONS=--force-local
+          tar -xf R.tar.gz
+          cd "R-$R_VERSION" && unzip -q ../tcltk.zip
+          ls Tcl | head -3
+
+      - name: Build R
+        run: |
+          export PATH=/x86_64-w64-mingw32.static.posix/bin:$PATH
+          export TAR=/usr/bin/tar TAR_OPTIONS=--force-local
+          cd "R-$R_VERSION/src/gnuwin32"
+          make link-recommended
+          make -j4 all recommended 2>&1 | tail -40
+          ../../bin/R --version
+
+      - name: Install FlexiBLAS into the built R
+        run: |
+          r=R-$R_VERSION
+          cp "$r/bin/x64/Rblas.dll" "$r/bin/x64/Rblas-reference.dll"
+          cp "$r/bin/x64/Rlapack.dll" "$r/bin/x64/Rlapack_ref.dll"
+          cp dist/*.dll "$r/bin/x64/"
+          cp dist/flexiblasrc "$r/etc/flexiblasrc"
+          FLEXIBLAS=${{ inputs.backend }} "$r/bin/Rscript" -e 'cat(extSoftVersion()[["BLAS"]], La_library(), sep = "\n")'
+
+      - name: make check-all
+        env:
+          FLEXIBLAS: ${{ inputs.backend }}
+        run: |
+          export PATH=/x86_64-w64-mingw32.static.posix/bin:$PATH
+          export TAR=/usr/bin/tar TAR_OPTIONS=--force-local
+          cd "R-$R_VERSION/src/gnuwin32"
+          make -k check-all > ../../../check-all.log 2>&1 || echo "check-all exit status $?" >> ../../../check-all.log
+          tail -60 ../../../check-all.log
+
+      - name: Summarise failures
+        if: always()
+        run: |
+          r=R-$R_VERSION
+          {
+            echo "backend: ${{ inputs.backend }}"
+            grep -E 'exit status|Error|FAILED|failed' check-all.log | head -40 || true
+            for f in $(find "$r/tests" "$r/src/library" -name '*.Rout.fail' 2>/dev/null); do
+              echo "== $f"
+              tail -15 "$f"
+            done
+          } > summary.log
+          cat summary.log
+          split -l 30 -d summary.log part-
+          for p in part-*; do
+            t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
+            echo "::notice title=check-all (${p#part-})::$t"
+          done
