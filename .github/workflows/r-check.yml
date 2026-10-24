@@ -58,6 +58,8 @@ jobs:
 
       - name: Check out R from SVN
         run: |
+          exec > >(tee svn.log) 2>&1
+          set -x
           pacman -Sy --noconfirm --needed subversion rsync
           svn checkout -q "https://svn.r-project.org/R/${{ inputs.svn_path }}" "$R_SRC"
           svn info "$R_SRC" | grep -E '^(URL|Revision|Last Changed Date)'
@@ -98,6 +100,7 @@ jobs:
           r=$R_SRC
           {
             echo "backend: ${{ inputs.backend }}"
+            [ -f svn.log ] && { echo "svn.log:"; tail -25 svn.log; }
             [ -f build.log ] && { echo "build.log (errors and tail):"; grep -n -E 'Error|error:|\*\*\*' build.log | head -20; tail -25 build.log; }
             grep -E 'exit status|Error|FAILED|failed' check-all.log | head -40 || true
             for f in $(find "$r/tests" "$r/src/library" -name '*.Rout.fail' 2>/dev/null); do
