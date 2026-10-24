@@ -79,6 +79,11 @@ jobs:
         shell: pwsh
         run: Rscript -e "sessionInfo(); A <- crossprod(matrix(rnorm(360000), 600)); print(system.time(A %*% A))"
 
+      - name: NA/NaN/Inf propagation with R's own BLAS and LAPACK
+        timeout-minutes: 5
+        shell: pwsh
+        run: Rscript tests/test-nan.R ref
+
       - name: Install FlexiBLAS into R
         shell: pwsh
         run: |
@@ -117,6 +122,14 @@ jobs:
           OMP_ADAPTIVE: 1
         run: |
           Rscript tests/test-flexiblas.R 2>&1 | Tee-Object -FilePath tests-omp1.log
+          exit $LASTEXITCODE
+
+      - name: NA/NaN/Inf propagation through FlexiBLAS backends
+        if: always()
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          Rscript tests/test-nan.R flexiblas 2>&1 | Tee-Object -FilePath nan.log
           exit $LASTEXITCODE
 
       - name: Check that LAPACK calls reach FlexiBLAS
@@ -181,7 +194,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "reg-BLAS.log", "pkg-install.log", "pkg-tests.log", "profile-nonzero.log") {
+          foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "reg-BLAS.log", "pkg-install.log", "pkg-tests.log", "profile-nonzero.log", "nan.log") {
             if (Test-Path $f) {
               $t = (Get-Content $f -Raw) -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
               Write-Host "::notice title=$f::$t"
