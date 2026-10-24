@@ -192,6 +192,12 @@ jobs:
           $hits | ForEach-Object { $_.Line }
           if (($hits | Measure-Object).Count -lt 2) { exit 1 }
 
+      - name: Memory use
+        if: always()
+        timeout-minutes: 5
+        shell: pwsh
+        run: Rscript tests/test-memory.R 2>&1 | Tee-Object -FilePath memory.log
+
       - name: R's BLAS regression tests
         if: always()
         timeout-minutes: 10
@@ -219,7 +225,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "reg-BLAS.log", "pkg-install.log", "pkg-tests.log", "profile-nonzero.log", "nan.log") {
+          foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "reg-BLAS.log", "pkg-install.log", "pkg-tests.log", "profile-nonzero.log", "nan.log", "memory.log") {
             if (Test-Path $f) {
               # Annotations are cut at about 4 KB, so publish in parts.
               $lines = Get-Content $f
