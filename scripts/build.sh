@@ -26,15 +26,14 @@ done
 $TARGET-cmake -S flexiblas -B build-fb \
     -DBUILD_SHARED_LIBS=ON -DBLAS_AUTO_DETECT=OFF -DINTEGER8=OFF \
     -DTESTS=OFF -DEXAMPLES=OFF -DLTO=OFF \
+    -DCMAKE_INSTALL_BINDIR=bin/x64 \
     -Ddlfcn-win32_DIR="$ROOT/cmake" \
     "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,--exclude-libs,$EXCL"
 $MXE/x86_64-pc-linux-gnu/bin/cmake --build build-fb -j"$(nproc)"
 cp build-fb/bin/*.dll build-fb/bin/*.exe "$DIST/"
 
-# -- OpenBLAS backend from Rtools' static, OpenMP-threaded libopenblas.a -----
-$TARGET-gfortran -shared -o "$DIST/libopenblas.dll" \
-    -Wl,--whole-archive "$MXE/$TARGET/lib/libopenblas.a" -Wl,--no-whole-archive \
-    -fopenmp -static "-Wl,--exclude-libs,$EXCL"
+# -- OpenBLAS backends (scripts/build-openblas.sh) -----------------------------
+cp "$ROOT"/openblas-dist/libopenblas_*.dll "$DIST/"
 
 # -- Forwarding Rblas.dll ----------------------------------------------------
 # Export exactly what R's own Rblas.dll exports, each forwarded to

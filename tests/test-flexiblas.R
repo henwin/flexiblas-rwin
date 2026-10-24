@@ -37,37 +37,44 @@ work <- function() list(
 )
 ref <- work()
 
-ob <- .C("rfb_load", name = "OPENBLAS", id = 0L)$id
-check(ob >= 0L, sprintf("load OPENBLAS backend (id %d)", ob))
-check(switch_to(ob) == 0L, "switch to OPENBLAS")
-cat("backend now:", current(), "\n")
-check(grepl("OPENBLAS", current(), ignore.case = TRUE), "current backend reports OPENBLAS")
-
-res <- work()
-for (k in names(ref)) {
-    err <- max(Mod(res[[k]] - ref[[k]])) / max(Mod(ref[[k]]))
-    check(err < 1e-10, sprintf("%s agrees with NETLIB (rel err %.1e)", k, abs(err)))
-}
-
 set_threads <- function(k) invisible(.C("rfb_set_threads", n = as.integer(k)))
-openblas <- function()
-    .C("rfb_openblas_info", threads = 0L, parallel = 0L, config = strrep(" ", 256))
-ob_info <- openblas()
-cat(sprintf("OpenBLAS config: %s\nOpenBLAS parallel mode: %d (0 serial, 1 pthreads, 2 OpenMP)\n",
-            trimws(ob_info$config), ob_info$parallel))
-cat(sprintf("cores: %d logical, %d physical\n",
-            parallel::detectCores(), parallel::detectCores(logical = FALSE)))
+openblas <- function(dll)
+    .C("rfb_openblas_info", module = dll, threads = 0L, parallel = 0L,
+       config = strrep(" ", 256))
+cat(sprintf("cores: %d logical, %d physical; OMP_NUM_THREADS=%s\n",
+            parallel::detectCores(), parallel::detectCores(logical = FALSE),
+            Sys.getenv("OMP_NUM_THREADS", "(unset)")))
 B <- matrix(rnorm(3000^2), 3000)
-for (k in unique(c(1L, 2L, max(2L, parallel::detectCores())))) {
-    set_threads(k)
-    got <- threads()
-    check(got == k, sprintf("set %d thread(s), FlexiBLAS reports %d", k, got))
-    check(openblas()$threads == k,
-          sprintf("set %d thread(s), OpenBLAS reports %d", k, openblas()$threads))
-    tm <- system.time(B %*% B)
-    cat(sprintf("  B %%*%% B, n = 3000, %d thread(s): elapsed %.3fs, user %.3fs; OpenBLAS now reports %d\n",
-                k, tm[["elapsed"]], tm[["user.self"]], openblas()$threads))
+
+backends <- c("OPENBLAS-THREADS" = "libopenblas_threads.dll",
+              "OPENBLAS-OPENMP"  = "libopenblas_openmp.dll")
+for (be in names(backends)) {
+    cat("\n==", be, "==\n")
+    id <- .C("rfb_load", name = be, id = 0L)$id
+    check(id >= 0L, sprintf("load %s (id %d)", be, id))
+    check(switch_to(id) == 0L, sprintf("switch to %s", be))
+    check(identical(toupper(current()), be), sprintf("current backend reports %s", be))
+    info <- openblas(backends[[be]])
+    cat(sprintf("config: %s; parallel mode %d (0 serial, 1 threads, 2 OpenMP)\n",
+                trimws(info$config), info$parallel))
+
+    res <- work()
+    for (k in names(ref)) {
+        err <- max(Mod(res[[k]] - ref[[k]])) / max(Mod(ref[[k]]))
+        check(err < 1e-10, sprintf("%s agrees with NETLIB (rel err %.1e)", k, abs(err)))
+    }
+
+    for (k in unique(c(1L, 2L, max(2L, parallel::detectCores())))) {
+        set_threads(k)
+        check(threads() == k, sprintf("set %d thread(s): FlexiBLAS reports %d", k, threads()))
+        tm <- system.time(B %*% B)
+        after <- openblas(backends[[be]])$threads
+        check(after == k, sprintf("  OpenBLAS still uses %d after a product (reports %d)", k, after))
+        cat(sprintf("  B %%*%% B, n = 3000, %d thread(s): elapsed %.3fs, user %.3fs\n",
+                    k, tm[["elapsed"]], tm[["user.self"]]))
+    }
 }
+cat("\n")
 
 check(switch_to(0L) == 0L, "switch back to backend 0")
 cat("backend now:", current(), "\n")

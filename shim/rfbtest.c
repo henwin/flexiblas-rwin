@@ -54,9 +54,9 @@ void rfb_get_threads(int *n)
 
 /* Ask the OpenBLAS backend itself, bypassing FlexiBLAS. parallel: 0 = serial,
  * 1 = pthreads, 2 = OpenMP. */
-void rfb_openblas_info(int *threads, int *parallel, char **config)
+void rfb_openblas_info(char **module, int *threads, int *parallel, char **config)
 {
-    HMODULE h = GetModuleHandleA("libopenblas.dll");
+    HMODULE h = GetModuleHandleA(module[0]);
     *threads = -2;
     *parallel = -2;
     if (!h) return;

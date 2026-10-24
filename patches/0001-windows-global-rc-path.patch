@@ -1,11 +1,54 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 8b9af188..387ccc58 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -538,6 +538,12 @@ string(REGEX REPLACE \\\\ \\\\\\\\ WIN_CMAKE_INSTALL_FULL_BINDIR "${WIN_CMAKE_IN
+ string(REGEX REPLACE \\\\ \\\\\\\\ WIN_CMAKE_INSTALL_FULL_LIBDIR "${WIN_CMAKE_INSTALL_FULL_LIBDIR}")
+ string(REGEX REPLACE \\\\ \\\\\\\\ WIN_CMAKE_INSTALL_FULL_INCLUDEDIR "${WIN_CMAKE_INSTALL_FULL_INCLUDEDIR}")
+ string(REGEX REPLACE \\\\ \\\\\\\\ WIN_CMAKE_INSTALL_FULL_SYSCONFDIR "${WIN_CMAKE_INSTALL_FULL_SYSCONFDIR}")
++# location of the global configuration relative to the directory holding
++# the FlexiBLAS DLLs, so that an installation stays relocatable
++file(RELATIVE_PATH FLEXIBLAS_WIN_SYSCONFDIR_REL "${CMAKE_INSTALL_FULL_BINDIR}" "${CMAKE_INSTALL_FULL_SYSCONFDIR}")
++FILE(TO_NATIVE_PATH "${FLEXIBLAS_WIN_SYSCONFDIR_REL}" FLEXIBLAS_WIN_SYSCONFDIR_REL)
++string(REGEX REPLACE \\\\ \\\\\\\\ FLEXIBLAS_WIN_SYSCONFDIR_REL "${FLEXIBLAS_WIN_SYSCONFDIR_REL}")
++MESSAGE(STATUS "SYSCONFDIR relative to BINDIR: ${FLEXIBLAS_WIN_SYSCONFDIR_REL}")
+ ENDIF()
+ 
+ CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/config.h.in ${CMAKE_BINARY_DIR}/include/flexiblas_config.h)
+diff --git a/config.h.in b/config.h.in
+index bb8f9340..290c46b9 100644
+--- a/config.h.in
++++ b/config.h.in
+@@ -33,6 +33,8 @@
+ #cmakedefine FLEXIBLAS_LIBRARY_DIR "@FLEXIBLAS_LIBRARY_DIR@"
+ #cmakedefine FLEXIBLAS_LIBRARY_NAME "@FLEXIBLAS_LIBRARY_NAME@"
+ #cmakedefine CMAKE_INSTALL_FULL_SYSCONFDIR "@CMAKE_INSTALL_FULL_SYSCONFDIR@"
++#else
++#define FLEXIBLAS_WIN_SYSCONFDIR_REL "@FLEXIBLAS_WIN_SYSCONFDIR_REL@"
+ #endif
+ 
+ #cmakedefine FLEXIBLAS_FC_I8FLAG "@FLEXIBLAS_FC_I8FLAG@"
 diff --git a/src/paths.c b/src/paths.c
-index cdab79c4..1ee58f8f 100644
+index cdab79c4..ea6bb8e8 100644
 --- a/src/paths.c
 +++ b/src/paths.c
-@@ -130,6 +130,7 @@ HIDDEN void __flexiblas_get_global_rc_path(char * container, int max_buffer_size
-         strcpy(sysconfdir, folder);
-         strcat(sysconfdir, "/../etc");
-         _fullpath(sysconfdir_clean, sysconfdir, MAX_BUFFER_SIZE);
+@@ -122,14 +122,14 @@ HIDDEN void __flexiblas_get_global_rc_path(char * container, int max_buffer_size
+ #else
+     char sysconfdir[MAX_BUFFER_SIZE];
+     char sysconfdir_clean[MAX_BUFFER_SIZE];
++    /* The directory holding libflexiblas.dll. The configuration lives at the
++     * same position relative to it as SYSCONFDIR does to BINDIR at build time. */
+     char *libpath = __flexiblas_get_library_location();
+-    /* On windows, we assume that the config resides in the FlexiBLAS library directory */
+-    if (libpath != NULL)
++    if (libpath != NULL &&
++        snprintf(sysconfdir, MAX_BUFFER_SIZE, "%s\\%s", libpath, FLEXIBLAS_WIN_SYSCONFDIR_REL) < MAX_BUFFER_SIZE &&
++        _fullpath(sysconfdir_clean, sysconfdir, MAX_BUFFER_SIZE) != NULL)
+     {
+-       char *folder = dirname(libpath);
+-        strcpy(sysconfdir, folder);
+-        strcat(sysconfdir, "/../etc");
+-        _fullpath(sysconfdir_clean, sysconfdir, MAX_BUFFER_SIZE);
 +        snprintf(container, max_buffer_size, "%s\\%s", sysconfdir_clean, suffix);
      } else {
          snprintf(container, max_buffer_size, "%s", suffix );

@@ -30,6 +30,17 @@ jobs:
       - name: Set up toolchain
         run: bash scripts/setup-toolchain.sh
 
+      - name: Cache OpenBLAS backends
+        id: openblas-cache
+        uses: actions/cache@v6
+        with:
+          path: openblas-dist
+          key: openblas-${{ env.RTOOLS_BUILD }}-${{ hashFiles('scripts/build-openblas.sh') }}
+
+      - name: Build OpenBLAS backends
+        if: steps.openblas-cache.outputs.cache-hit != 'true'
+        run: bash scripts/build-openblas.sh
+
       - name: Build
         run: bash scripts/build.sh
 
@@ -85,13 +96,24 @@ jobs:
         run: Rscript -e "sessionInfo()" 2>&1 | Tee-Object -FilePath startup.log
 
       - name: Run tests
-        timeout-minutes: 10
+        timeout-minutes: 15
         shell: pwsh
         run: |
           Rscript tests/test-flexiblas.R 2>&1 | Tee-Object -FilePath tests.log
           exit $LASTEXITCODE
 
+      - name: Run tests with OMP_NUM_THREADS=1
+        if: always()
+        timeout-minutes: 15
+        shell: pwsh
+        env:
+          OMP_NUM_THREADS: 1
+        run: |
+          Rscript tests/test-flexiblas.R 2>&1 | Tee-Object -FilePath tests-omp1.log
+          exit $LASTEXITCODE
+
       - name: R's BLAS regression tests
+        if: always()
         timeout-minutes: 10
         shell: pwsh
         run: |
@@ -106,7 +128,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          foreach ($f in "startup.log", "tests.log", "reg-BLAS.log") {
+          foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "reg-BLAS.log") {
             if (Test-Path $f) {
               $t = (Get-Content $f -Raw) -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
               Write-Host "::notice title=$f::$t"

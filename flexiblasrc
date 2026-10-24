@@ -5,6 +5,10 @@ verbose = 0
 library = libflexiblas_netlib.dll
 comment = Reference BLAS and LAPACK built into FlexiBLAS
 
-[OPENBLAS]
-library = libopenblas.dll
-comment = OpenBLAS 0.3.31 from Rtools45, OpenMP threads
+[OPENBLAS-THREADS]
+library = libopenblas_threads.dll
+comment = OpenBLAS with Windows threads
+
+[OPENBLAS-OPENMP]
+library = libopenblas_openmp.dll
+comment = OpenBLAS with OpenMP (statically linked libgomp)
