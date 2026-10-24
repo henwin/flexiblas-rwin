@@ -104,10 +104,14 @@ jobs:
 
       - name: Run tests with OMP_NUM_THREADS=1
         if: always()
-        timeout-minutes: 15
+        timeout-minutes: 8
         shell: pwsh
         env:
           OMP_NUM_THREADS: 1
+          # Without it, OpenBLAS 0.3.34 (OpenMP) runs a region sized by
+          # OMP_NUM_THREADS even after an explicit, larger thread count, and
+          # the threaded level-3 kernels deadlock waiting for partners.
+          OMP_ADAPTIVE: 1
         run: |
           Rscript tests/test-flexiblas.R 2>&1 | Tee-Object -FilePath tests-omp1.log
           exit $LASTEXITCODE
