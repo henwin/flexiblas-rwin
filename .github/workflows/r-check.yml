@@ -12,7 +12,7 @@ on:
         default: tags/R-4-6-1
       backend:
         description: FlexiBLAS backend for the checks
-        default: OPENBLAS-THREADS
+        default: OPENBLAS
 
 permissions:
   actions: read
@@ -95,7 +95,8 @@ jobs:
           cp "$r/bin/x64/Rblas.dll" "$r/bin/x64/Rblas-reference.dll"
           cp "$r/bin/x64/Rlapack.dll" "$r/bin/x64/Rlapack_ref.dll"
           cp dist/*.dll "$r/bin/x64/"
-          cp dist/flexiblasrc "$r/etc/flexiblasrc"
+          cp -r dist/flexiblas "$r/bin/x64/"
+          cp -r dist/etc "$r/bin/etc"
           FLEXIBLAS=${{ inputs.backend }} "$r/bin/Rscript" -e 'cat(extSoftVersion()[["BLAS"]], La_library(), sep = "\n")'
 
       - name: make check-all

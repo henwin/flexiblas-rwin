@@ -1,0 +1,16 @@
+diff --git a/driver/others/blas_server_omp.c b/driver/others/blas_server_omp.c
+index 7ee56b7..f43e748 100644
+--- a/driver/others/blas_server_omp.c
++++ b/driver/others/blas_server_omp.c
+@@ -443,7 +443,10 @@ while (true) {
+     openblas_threads_callback_(1, (openblas_dojob_callback) exec_threads, num, sizeof(blas_queue_t), (void*) queue, buf_index);
+   } else {
+ 
+- if (openblas_omp_adaptive_env() != 0) {
++ /* An explicitly set thread count can exceed omp_get_max_threads(); the
++    team must then be sized for num, or the threaded level-3 kernels wait
++    for partners that never start. */
++ if (openblas_omp_adaptive_env() != 0 || blas_is_num_threads_set_explicitly) {
+  #pragma omp parallel for num_threads(num) schedule(OMP_SCHED)
+   for (i = 0; i < num; i ++) {
+ #ifndef USE_SIMPLE_THREADED_LEVEL3

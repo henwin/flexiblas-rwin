@@ -1,5 +1,5 @@
 ## The same checks as test-flexiblas.R, but through the flexiblas R package
-## instead of the test shim, for the OPENBLAS-THREADS backend.
+## instead of the test shim, for the OPENBLAS backend.
 library(flexiblas)
 
 failures <- character()
@@ -17,9 +17,9 @@ cat("OMP_NUM_THREADS:", Sys.getenv("OMP_NUM_THREADS", "(unset)"), "\n")
 B <- matrix(rnorm(3000^2), 3000)
 ref <- B %*% B
 
-id <- flexiblas_load_backend("OPENBLAS-THREADS")
+id <- flexiblas_load_backend("OPENBLAS")
 flexiblas_switch(id)
-check(flexiblas_current_backend() == "OPENBLAS-THREADS", "switch to OPENBLAS-THREADS")
+check(flexiblas_current_backend() == "OPENBLAS", "switch to OPENBLAS")
 check(isTRUE(all.equal(B %*% B, ref)), "product agrees with NETLIB")
 
 for (k in c(1L, 2L)) {

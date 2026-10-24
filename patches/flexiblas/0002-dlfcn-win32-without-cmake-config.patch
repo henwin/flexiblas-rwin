@@ -1,0 +1,28 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 8b9af188..9d0dbc68 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -366,10 +366,19 @@ IF (WIN32)
+         MESSAGE(STATUS "Using MingW Compiler")
+     ENDIF()
+ 
+-    find_package(dlfcn-win32 REQUIRED)
+-    INCLUDE_DIRECTORIES(${dlfcn-win32_INCLUDEDIR})
+-    SET(DL_LIB dlfcn-win32::dl)
+-    SET(LIBS ${LIBS} dlfcn-win32::dl)
++    find_package(dlfcn-win32 QUIET)
++    IF (dlfcn-win32_FOUND)
++        INCLUDE_DIRECTORIES(${dlfcn-win32_INCLUDEDIR})
++        SET(DL_LIB dlfcn-win32::dl)
++    ELSE()
++        # dlfcn-win32 built with its own configure script (as in MXE and
++        # MSYS2) installs no CMake package; find the library directly.
++        FIND_PATH(DLFCN_INCLUDE_DIR dlfcn.h REQUIRED)
++        FIND_LIBRARY(DLFCN_LIBRARY NAMES dl REQUIRED)
++        INCLUDE_DIRECTORIES(${DLFCN_INCLUDE_DIR})
++        SET(DL_LIB ${DLFCN_LIBRARY} psapi)
++    ENDIF()
++    SET(LIBS ${LIBS} ${DL_LIB})
+ ELSE()
+     # CHECK_INCLUDE_FILES (stdatomic.h HAVE_STDATOMIC_H)
+     CHECK_INCLUDE_FILES (dlfcn.h	 HAVE_DLFCN_H)

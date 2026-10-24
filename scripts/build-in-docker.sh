@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
-# Build everything in the container defined by docker/Dockerfile, with this
-# repository mounted at /work. Results: openblas-dist/ and dist/.
-# OpenBLAS (about two hours on four cores) is built only when
-# openblas-dist/ is missing or --openblas is given.
+# Build everything in the image from docker/Dockerfile (R's MXE tree with the
+# Rtools45 toolchain), with this repository mounted at /work:
+# scripts/build-mxe.sh builds OpenBLAS and FlexiBLAS with MXE into dist/,
+# scripts/forwarders.sh adds the forwarding Rblas.dll/Rlapack.dll and the
+# test shim. Pass --forwarders-only when dist/ already holds the MXE build.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-image=flexiblas-rwin-build
+image=flexiblas-rwin-mxe
 docker build -t "$image" -f docker/Dockerfile .
 
-steps='bash scripts/build.sh'
-if [ "${1:-}" = --openblas ] || ! ls openblas-dist/libopenblas_*.dll >/dev/null 2>&1; then
-    steps="bash scripts/build-openblas.sh && $steps"
-fi
-docker run --rm -v "$PWD":/work -w /work "$image" bash -c "$steps"
+steps='bash scripts/forwarders.sh'
+[ "${1:-}" = --forwarders-only ] || steps="bash scripts/build-mxe.sh && $steps"
+docker run --rm -v "$PWD":/work "$image" bash -c "$steps"

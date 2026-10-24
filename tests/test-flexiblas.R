@@ -47,8 +47,7 @@ cat(sprintf("cores: %d logical, %d physical; OMP_NUM_THREADS=%s\n",
 B <- matrix(rnorm(3000^2), 3000)
 S <- crossprod(B) + diag(3000)
 
-backends <- c("OPENBLAS-THREADS" = "libopenblas_threads.dll",
-              "OPENBLAS-OPENMP"  = "libopenblas_openmp.dll")
+backends <- c("OPENBLAS" = "libflexiblas_openblas.dll")
 for (be in names(backends)) {
     cat("\n==", be, "==\n")
     id <- .C("rfb_load", name = be, id = 0L)$id

@@ -18,25 +18,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Same container as for a local build (docker/Dockerfile).
-      - name: Cache OpenBLAS backends
-        id: openblas-cache
+      # The MXE build (OpenBLAS and FlexiBLAS) takes about an hour; it is
+      # cached until the recipe, the patches or the build environment change.
+      - name: Cache MXE build
+        id: mxe-cache
         uses: actions/cache@v6
         with:
-          path: openblas-dist
-          key: openblas-${{ env.RTOOLS_BUILD }}-${{ hashFiles('scripts/build-openblas.sh') }}
+          path: dist
+          key: mxe-${{ hashFiles('docker/Dockerfile', 'patches/rtools-mxe/**', 'scripts/build-mxe.sh') }}
 
       - name: Build in Docker
         run: |
           set -o pipefail
-          bash scripts/build-in-docker.sh 2>&1 | tee docker-build.log
-
-      - name: Publish build errors
-        if: failure()
-        run: |
-          { grep -n -E 'error|Error|ERROR|No such|not found|failed' docker-build.log | tail -20; tail -25 docker-build.log; } > tail.log
-          t=$(sed -e 's/%/%25/g' tail.log | sed -e ':a;N;$!ba;s/\n/%0A/g')
-          echo "::error title=docker-build.log::$t"
+          opt=; [ "${{ steps.mxe-cache.outputs.cache-hit }}" = true ] && opt=--forwarders-only
+          bash scripts/build-in-docker.sh $opt 2>&1 | tee docker-build.log
 
       - uses: actions/upload-artifact@v7
         with:
@@ -86,9 +81,11 @@ jobs:
           # R's own LAPACK stays available for the symbols FlexiBLAS lacks.
           Copy-Item "$bin\Rlapack.dll" "$bin\Rlapack_ref.dll"
           Copy-Item dist\*.dll $bin -Force
-          # Found as the global configuration, <dir of libflexiblas.dll>\..\..\etc
-          # (see patches/flexiblas/0001-windows-global-rc-path.patch).
-          Copy-Item dist\flexiblasrc "$env:R_HOME_DIR\etc\flexiblasrc"
+          Copy-Item -Recurse dist\flexiblas "$bin\flexiblas" -Force
+          # FlexiBLAS looks for its configuration in ..\etc relative to the
+          # DLLs, as installed by MXE (bin\ and etc\); for R's bin\x64 that
+          # is R_HOME\bin\etc (see patches/flexiblas/0001-windows-install-layout.patch).
+          Copy-Item -Recurse dist\etc "$env:R_HOME_DIR\bin\etc" -Force
 
       - name: Startup with verbose FlexiBLAS
         timeout-minutes: 5
@@ -109,11 +106,9 @@ jobs:
         timeout-minutes: 8
         shell: pwsh
         env:
+          # Checks patches/openblas/0001-explicit-thread-count.patch: without
+          # it, an explicit count above OMP_NUM_THREADS deadlocks.
           OMP_NUM_THREADS: 1
-          # Without it, OpenBLAS 0.3.34 (OpenMP) runs a region sized by
-          # OMP_NUM_THREADS even after an explicit, larger thread count, and
-          # the threaded level-3 kernels deadlock waiting for partners.
-          OMP_ADAPTIVE: 1
         run: |
           Rscript tests/test-flexiblas.R 2>&1 | Tee-Object -FilePath tests-omp1.log
           exit $LASTEXITCODE
@@ -172,7 +167,7 @@ jobs:
         run: |
           $out = & {
             # The package's own tests expect a threaded default backend.
-            $env:FLEXIBLAS = "OPENBLAS-THREADS"
+            $env:FLEXIBLAS = "OPENBLAS"
             Rscript -e "tinytest::test_package('flexiblas')"
             Remove-Item Env:FLEXIBLAS
             Rscript tests/test-package.R

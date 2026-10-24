@@ -77,7 +77,7 @@ if (identical(mode, "ref")) {
 shim <- file.path(R.home("bin"), "rfbtest.dll")
 if (file.exists(shim)) {
     dyn.load(shim)
-    backends <- c("NETLIB", "OPENBLAS-THREADS", "OPENBLAS-OPENMP")
+    backends <- c("NETLIB", "OPENBLAS")
     use <- function(be) {
         id <- .C("rfb_load", name = be, id = 0L)$id
         stopifnot(id >= 0L, .C("rfb_switch", id = id, ret = 0L)$ret == 0L)
