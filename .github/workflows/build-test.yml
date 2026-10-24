@@ -196,8 +196,17 @@ jobs:
         run: |
           foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "reg-BLAS.log", "pkg-install.log", "pkg-tests.log", "profile-nonzero.log", "nan.log") {
             if (Test-Path $f) {
-              $t = (Get-Content $f -Raw) -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
-              Write-Host "::notice title=$f::$t"
+              # Annotations are cut at about 4 KB, so publish in parts.
+              $lines = Get-Content $f
+              $part = 1; $buf = @()
+              foreach ($l in $lines + "<<end>>") {
+                if ($l -eq "<<end>>" -or (($buf -join "`n").Length + $l.Length) -gt 3500) {
+                  $t = ($buf -join "`n") -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
+                  Write-Host "::notice title=$f ($part)::$t"
+                  $part++; $buf = @()
+                }
+                if ($l -ne "<<end>>") { $buf += $l }
+              }
             }
           }
 
@@ -222,6 +231,9 @@ jobs:
         if: always()
         run: |
           [ -f nan-linux.log ] || exit 0
-          t=$(sed -e 's/%/%25/g' nan-linux.log | sed -e ':a;N;$!ba;s/\n/%0A/g')
-          echo "::notice title=nan-linux.log::$t"
+          split -l 25 -d nan-linux.log part-
+          for p in part-*; do
+            t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
+            echo "::notice title=nan-linux.log (${p#part-})::$t"
+          done
 
