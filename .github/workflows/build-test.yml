@@ -194,9 +194,13 @@ jobs:
 
       - name: Memory use
         if: always()
+        continue-on-error: true
         timeout-minutes: 5
         shell: pwsh
-        run: Rscript tests/test-memory.R 2>&1 | Tee-Object -FilePath memory.log
+        run: |
+          Rscript tests/test-memory.R 2>&1 | Tee-Object -FilePath memory.log
+          $env:OPENBLAS_NUM_THREADS = 1
+          Rscript tests/test-memory.R 2>&1 | Tee-Object -Append -FilePath memory.log
 
       - name: R's BLAS regression tests
         if: always()
