@@ -21,8 +21,9 @@ exports() {
         grep -v '^Name$' | sort
 }
 
-curl -sSfLO "https://cran.r-project.org/bin/windows/base/R-$R_VERSION-win.exe"
-innoextract -q -d rwin -I app/bin/x64 "R-$R_VERSION-win.exe"
+exe=$DIST/R-$R_VERSION-win.exe
+[ -f "$exe" ] || curl -sSfL -o "$exe" "https://cran.r-project.org/bin/windows/base/R-$R_VERSION-win.exe"
+innoextract -q -d rwin -I app/bin/x64 "$exe"
 exports "$DIST/libflexiblas.dll" > flexiblas.exports
 echo 'void forwarder(void) {}' > fwd.c
 for lib in Rblas Rlapack; do
