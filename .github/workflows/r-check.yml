@@ -68,8 +68,9 @@ jobs:
           export PATH=/x86_64-w64-mingw32.static.posix/bin:$PATH
           export TAR=/usr/bin/tar TAR_OPTIONS=--force-local
           cd "$R_SRC/src/gnuwin32"
-          make rsync-recommended
-          make -j4 all recommended 2>&1 | tail -40
+          make rsync-recommended > ../../../build.log 2>&1
+          make -j4 all recommended >> ../../../build.log 2>&1 \
+              || { tail -60 ../../../build.log; exit 1; }
           ../../bin/R --version
 
       - name: Install FlexiBLAS into the built R
@@ -97,6 +98,7 @@ jobs:
           r=$R_SRC
           {
             echo "backend: ${{ inputs.backend }}"
+            [ -f build.log ] && { echo "build.log (errors and tail):"; grep -n -E 'Error|error:|\*\*\*' build.log | head -20; tail -25 build.log; }
             grep -E 'exit status|Error|FAILED|failed' check-all.log | head -40 || true
             for f in $(find "$r/tests" "$r/src/library" -name '*.Rout.fail' 2>/dev/null); do
               echo "== $f"
