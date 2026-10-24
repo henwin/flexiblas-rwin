@@ -59,8 +59,14 @@ jobs:
       # As in R-core's howto: a full update first. MSYS2 does not support
       # partial updates; installing subversion alone pulled in a build
       # against a newer SQLite than the one installed.
-      - name: Update MSYS2 in Rtools
-        run: pacman -Syuu --noconfirm 2>&1 | tail -5
+      # The first pass may update the MSYS2 runtime itself and stop, asking
+      # for a new shell; the second pass, in a new shell, does the rest.
+      - name: Update MSYS2 in Rtools (core)
+        continue-on-error: true
+        run: pacman -Syuu --noconfirm > pacman.log 2>&1
+
+      - name: Update MSYS2 in Rtools (rest)
+        run: pacman -Syuu --noconfirm >> pacman.log 2>&1
 
       - name: Check out R from SVN
         run: |
@@ -106,6 +112,7 @@ jobs:
           r=$R_SRC
           {
             echo "backend: ${{ inputs.backend }}"
+            [ -f pacman.log ] && { echo "pacman.log:"; grep -i -E 'error|warning|conflict|restart|close' pacman.log | head -15; tail -8 pacman.log; }
             [ -f svn.log ] && { echo "svn.log:"; tail -25 svn.log; }
             [ -f build.log ] && { echo "build.log (errors and tail):"; grep -n -E 'Error|error:|\*\*\*' build.log | head -20; tail -25 build.log; }
             grep -E 'exit status|Error|FAILED|failed' check-all.log | head -40 || true
