@@ -52,12 +52,12 @@ jobs:
           run-id: ${{ steps.build.outputs.run_id }}
           github-token: ${{ github.token }}
 
-      # Ghostscript as in R-core's setup.ps1 (used by compactPDF and bitmap
+      # Ghostscript installed as in R-core's setup.ps1, but 10.08.0 instead of its 10.00.0 (used by compactPDF and bitmap
       # devices); setup.ps1 leaves PATH alone, the howto adds gs\bin.
       - name: Install Ghostscript
         shell: pwsh
         run: |
-          Invoke-WebRequest https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs1000/gs1000w64.exe -OutFile gsw64.exe
+          Invoke-WebRequest https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10080/gs10080w64.exe -OutFile gsw64.exe
           Start-Process -Wait -NoNewWindow -FilePath .\gsw64.exe -ArgumentList "/S /D=C:\Program Files\gs\gs"
           "C:\Program Files\gs\gs\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
 
