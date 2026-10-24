@@ -129,7 +129,7 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: |
-          Rscript tests/test-nan.R flexiblas 2>&1 | Tee-Object -FilePath nan.log
+          Rscript tests/test-nan.R cmp 2>&1 | Tee-Object -FilePath nan.log
           exit $LASTEXITCODE
 
       - name: Check that LAPACK calls reach FlexiBLAS
@@ -200,3 +200,28 @@ jobs:
               Write-Host "::notice title=$f::$t"
             }
           }
+
+  linux:
+    name: NA/NaN/Inf propagation on Linux (Fedora, R linked to FlexiBLAS)
+    runs-on: ubuntu-24.04
+    container: fedora:latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install R with FlexiBLAS and its backends
+        run: |
+          dnf install -y -q R-core R-flexiblas flexiblas-netlib \
+              flexiblas-openblas-serial flexiblas-openblas-openmp flexiblas-openblas-threads
+          flexiblas list
+
+      - name: Compare backends
+        run: Rscript tests/test-nan.R cmp 2>&1 | tee nan-linux.log
+
+      - name: Publish log as annotation
+        if: always()
+        run: |
+          [ -f nan-linux.log ] || exit 0
+          t=$(sed -e 's/%/%25/g' nan-linux.log | sed -e ':a;N;$!ba;s/\n/%0A/g')
+          echo "::notice title=nan-linux.log::$t"
+
