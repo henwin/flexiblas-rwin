@@ -1,0 +1,21 @@
+diff --git a/DESCRIPTION b/DESCRIPTION
+index c9de841..38f19cb 100644
+--- a/DESCRIPTION
++++ b/DESCRIPTION
+@@ -13,7 +13,6 @@ Description: Provides functions to switch the 'BLAS'/'LAPACK' optimized backend
+     <https://www.mpi-magdeburg.mpg.de/projects/flexiblas>.
+ License: LGPL (>= 3)
+ Encoding: UTF-8
+-OS_type: unix
+ URL: https://github.com/Enchufa2/r-flexiblas
+ BugReports: https://github.com/Enchufa2/r-flexiblas/issues
+ Suggests: tinytest
+diff --git a/src/Makevars.win b/src/Makevars.win
+new file mode 100644
+index 0000000..44466df
+--- /dev/null
++++ b/src/Makevars.win
+@@ -0,0 +1,3 @@
++# The FlexiBLAS API is resolved at run time in the libflexiblas.dll that R
++# has loaded through its Rblas.dll; dlfcn-win32 (in Rtools) provides dlsym.
++PKG_LIBS = -ldl -lpsapi

@@ -66,6 +66,7 @@ jobs:
       - uses: r-lib/actions/setup-r@v2
         with:
           r-version: ${{ env.R_VERSION }}
+          rtools-version: '45'
 
       - name: Locate R
         shell: pwsh
@@ -126,13 +127,38 @@ jobs:
           Rscript reg-BLAS.R 2>&1 | Tee-Object -FilePath reg-BLAS.log
           exit $LASTEXITCODE
 
+      - name: Install the flexiblas R package, patched for Windows
+        if: always()
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          git clone -q --depth 1 https://github.com/Enchufa2/r-flexiblas.git
+          git -C r-flexiblas apply ../patches/r-flexiblas-windows.patch
+          Rscript -e "install.packages('tinytest', repos = 'https://cloud.r-project.org')"
+          R CMD INSTALL r-flexiblas 2>&1 | Tee-Object -FilePath pkg-install.log
+          exit $LASTEXITCODE
+
+      - name: Test the flexiblas R package
+        if: always()
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $out = & {
+            Rscript -e "tinytest::test_package('flexiblas')"
+            Rscript tests/test-package.R
+            $env:OMP_NUM_THREADS = 1
+            Rscript tests/test-package.R
+          } 2>&1
+          $out | Tee-Object -FilePath pkg-tests.log
+          if (Select-String -Path pkg-tests.log -Pattern 'FAILED|Error|fails' -Quiet) { exit 1 }
+
       # Job logs live in blob storage that some API clients cannot reach;
       # annotations are served by the API itself.
       - name: Publish logs as annotations
         if: always()
         shell: pwsh
         run: |
-          foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "reg-BLAS.log") {
+          foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "reg-BLAS.log", "pkg-install.log", "pkg-tests.log") {
             if (Test-Path $f) {
               $t = (Get-Content $f -Raw) -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
               Write-Host "::notice title=$f::$t"
