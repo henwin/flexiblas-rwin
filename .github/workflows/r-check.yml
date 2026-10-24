@@ -1,14 +1,15 @@
 name: R from source, make check-all
 
-# Builds R from its source tarball with Rtools45, swaps in the FlexiBLAS
+# Builds R from SVN with Rtools45, following R-core's "Building R and
+# packages on Windows" howto, swaps in the FlexiBLAS
 # forwarders from the latest successful "Build and test" run, and runs R's
 # full test suite. Long, so it runs only on demand.
 on:
   workflow_dispatch:
     inputs:
-      r_version:
-        description: R version (source tarball on CRAN)
-        default: 4.6.1
+      svn_path:
+        description: Path under https://svn.r-project.org/R/ (tags/R-4-6-1, branches/R-4-6-branch, trunk)
+        default: tags/R-4-6-1
       backend:
         description: FlexiBLAS backend for the checks
         default: OPENBLAS-THREADS
@@ -22,7 +23,7 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 360
     env:
-      R_VERSION: ${{ inputs.r_version }}
+      R_SRC: R-src
       CHERE_INVOKING: 1
     defaults:
       run:
@@ -51,34 +52,29 @@ jobs:
           run-id: ${{ steps.build.outputs.run_id }}
           github-token: ${{ github.token }}
 
-      - name: Fetch R and Tcl/Tk sources
+      - name: Fetch the Tcl/Tk bundle
         shell: pwsh
-        run: |
-          Invoke-WebRequest "https://cran.r-project.org/src/base/R-4/R-$env:R_VERSION.tar.gz" -OutFile R.tar.gz
-          Invoke-WebRequest https://cran.r-project.org/bin/windows/Rtools/rtools45/files/tcltk-6768-6663.zip -OutFile tcltk.zip
+        run: Invoke-WebRequest https://cran.r-project.org/bin/windows/Rtools/rtools45/files/tcltk-6768-6663.zip -OutFile tcltk.zip
 
-      - name: Unpack sources
+      - name: Check out R from SVN
         run: |
-          export TAR_OPTIONS=--force-local
-          # The tarball's few symlinks cannot be created here; that is harmless
-          # for the Windows build, so report tar's complaints but go on.
-          tar -xf R.tar.gz 2> tar.err || { echo "tar exit $?"; sort -u tar.err | head -20; }
-          test -f "R-$R_VERSION/src/gnuwin32/Makefile"
-          cd "R-$R_VERSION" && unzip -q ../tcltk.zip
-          ls Tcl | head -3
+          pacman -Sy --noconfirm --needed subversion rsync
+          svn checkout -q "https://svn.r-project.org/R/${{ inputs.svn_path }}" "$R_SRC"
+          svn info "$R_SRC" | grep -E '^(URL|Revision|Last Changed Date)'
+          cd "$R_SRC" && unzip -q ../tcltk.zip
 
       - name: Build R
         run: |
           export PATH=/x86_64-w64-mingw32.static.posix/bin:$PATH
           export TAR=/usr/bin/tar TAR_OPTIONS=--force-local
-          cd "R-$R_VERSION/src/gnuwin32"
-          make link-recommended
+          cd "$R_SRC/src/gnuwin32"
+          make rsync-recommended
           make -j4 all recommended 2>&1 | tail -40
           ../../bin/R --version
 
       - name: Install FlexiBLAS into the built R
         run: |
-          r=R-$R_VERSION
+          r=$R_SRC
           cp "$r/bin/x64/Rblas.dll" "$r/bin/x64/Rblas-reference.dll"
           cp "$r/bin/x64/Rlapack.dll" "$r/bin/x64/Rlapack_ref.dll"
           cp dist/*.dll "$r/bin/x64/"
@@ -91,17 +87,16 @@ jobs:
         run: |
           export PATH=/x86_64-w64-mingw32.static.posix/bin:$PATH
           export TAR=/usr/bin/tar TAR_OPTIONS=--force-local
-          cd "R-$R_VERSION/src/gnuwin32"
+          cd "$R_SRC/src/gnuwin32"
           make -k check-all > ../../../check-all.log 2>&1 || echo "check-all exit status $?" >> ../../../check-all.log
           tail -60 ../../../check-all.log
 
       - name: Summarise failures
         if: always()
         run: |
-          r=R-$R_VERSION
+          r=$R_SRC
           {
             echo "backend: ${{ inputs.backend }}"
-            [ -s tar.err ] && { echo "tar:"; sort -u tar.err | head -10; }
             grep -E 'exit status|Error|FAILED|failed' check-all.log | head -40 || true
             for f in $(find "$r/tests" "$r/src/library" -name '*.Rout.fail' 2>/dev/null); do
               echo "== $f"
