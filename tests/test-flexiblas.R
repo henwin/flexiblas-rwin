@@ -65,8 +65,8 @@ for (k in unique(c(1L, 2L, max(2L, parallel::detectCores())))) {
     check(openblas()$threads == k,
           sprintf("set %d thread(s), OpenBLAS reports %d", k, openblas()$threads))
     tm <- system.time(B %*% B)
-    cat(sprintf("  B %%*%% B, n = 3000, %d thread(s): elapsed %.3fs, user %.3fs\n",
-                k, tm[["elapsed"]], tm[["user.self"]]))
+    cat(sprintf("  B %%*%% B, n = 3000, %d thread(s): elapsed %.3fs, user %.3fs; OpenBLAS now reports %d\n",
+                k, tm[["elapsed"]], tm[["user.self"]], openblas()$threads))
 }
 
 check(switch_to(0L) == 0L, "switch back to backend 0")
