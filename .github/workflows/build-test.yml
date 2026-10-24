@@ -18,18 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install host tools
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq zstd innoextract
-
-      - name: Cache Rtools tarballs
-        uses: actions/cache@v6
-        with:
-          path: toolchain/*.tar.zst
-          key: rtools45-${{ env.RTOOLS_BUILD }}
-
-      - name: Set up toolchain
-        run: bash scripts/setup-toolchain.sh
-
+      # Same container as for a local build (docker/Dockerfile).
       - name: Cache OpenBLAS backends
         id: openblas-cache
         uses: actions/cache@v6
@@ -37,12 +26,8 @@ jobs:
           path: openblas-dist
           key: openblas-${{ env.RTOOLS_BUILD }}-${{ hashFiles('scripts/build-openblas.sh') }}
 
-      - name: Build OpenBLAS backends
-        if: steps.openblas-cache.outputs.cache-hit != 'true'
-        run: bash scripts/build-openblas.sh
-
-      - name: Build
-        run: bash scripts/build.sh
+      - name: Build in Docker
+        run: bash scripts/build-in-docker.sh
 
       - uses: actions/upload-artifact@v7
         with:

@@ -36,6 +36,7 @@ for c in gcc g++ gfortran; do
     chmod +x "cross/x86_64-pc-linux-gnu/bin/$TARGET-$c"
 done
 
-sudo mkdir -p /usr/lib/mxe
-sudo ln -sfn "$TOP/cross" /usr/lib/mxe/usr
+SUDO=; [ "$(id -u)" = 0 ] || SUDO=sudo
+$SUDO mkdir -p /usr/lib/mxe
+$SUDO ln -sfn "$TOP/cross" /usr/lib/mxe/usr
 /usr/lib/mxe/usr/bin/$TARGET-gcc --version | head -1
