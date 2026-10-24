@@ -27,7 +27,16 @@ jobs:
           key: openblas-${{ env.RTOOLS_BUILD }}-${{ hashFiles('scripts/build-openblas.sh') }}
 
       - name: Build in Docker
-        run: bash scripts/build-in-docker.sh
+        run: |
+          set -o pipefail
+          bash scripts/build-in-docker.sh 2>&1 | tee docker-build.log
+
+      - name: Publish build errors
+        if: failure()
+        run: |
+          { grep -n -E 'error|Error|ERROR|No such|not found|failed' docker-build.log | tail -20; tail -25 docker-build.log; } > tail.log
+          t=$(sed -e 's/%/%25/g' tail.log | sed -e ':a;N;$!ba;s/\n/%0A/g')
+          echo "::error title=docker-build.log::$t"
 
       - uses: actions/upload-artifact@v7
         with:
