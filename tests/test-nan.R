@@ -73,16 +73,8 @@ if (identical(mode, "ref")) {
     quit(status = 0)
 }
 
-## Backend switching: the test shim on Windows, the flexiblas package elsewhere.
-shim <- file.path(R.home("bin"), "rfbtest.dll")
-if (file.exists(shim)) {
-    dyn.load(shim)
-    backends <- c("NETLIB", "OPENBLAS")
-    use <- function(be) {
-        id <- .C("rfb_load", name = be, id = 0L)$id
-        stopifnot(id >= 0L, .C("rfb_switch", id = id, ret = 0L)$ret == 0L)
-    }
-} else if (requireNamespace("flexiblas", quietly = TRUE) && flexiblas::flexiblas_avail()) {
+## Backend switching through the flexiblas package, where R's BLAS is FlexiBLAS.
+if (requireNamespace("flexiblas", quietly = TRUE) && flexiblas::flexiblas_avail()) {
     backends <- setdiff(flexiblas::flexiblas_list(), "__FALLBACK__")
     use <- function(be) flexiblas::flexiblas_switch(flexiblas::flexiblas_load_backend(be))
 } else {

@@ -2,8 +2,8 @@
 # Build everything in the image from docker/Dockerfile (R's MXE tree with the
 # Rtools45 toolchain), with this repository mounted at /work:
 # scripts/build-mxe.sh builds OpenBLAS and FlexiBLAS with MXE into dist/,
-# scripts/forwarders.sh adds the forwarding Rblas.dll/Rlapack.dll and the
-# test shim. Pass --forwarders-only when dist/ already holds the MXE build.
+# scripts/forwarders.sh adds the forwarding Rblas.dll/Rlapack.dll.
+# Pass --forwarders-only when dist/ already holds the MXE build.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

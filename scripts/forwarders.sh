@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Generate the forwarding Rblas.dll and Rlapack.dll and the test shim in
-# dist/, next to the FlexiBLAS DLLs that scripts/build-mxe.sh put there.
+# Generate the forwarding Rblas.dll and Rlapack.dll in dist/,
+# next to the FlexiBLAS DLLs that scripts/build-mxe.sh put there.
 #
 # The forwarders export exactly what R's own DLLs export, forwarded to
 # libflexiblas.dll, so that R.dll and every module reach one FlexiBLAS
@@ -42,6 +42,4 @@ for lib in Rblas Rlapack; do
     $TARGET-gcc -shared -nostdlib -Wl,-e,0 -o "$DIST/$lib.dll" fwd.c "$lib.def"
 done
 
-# Test shim: calls the FlexiBLAS API in the loaded libflexiblas.dll.
-$TARGET-gcc -shared -O2 -o "$DIST/rfbtest.dll" "$WORK/shim/rfbtest.c"
 ls -la "$DIST"

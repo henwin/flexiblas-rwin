@@ -1,9 +1,8 @@
-## Runs in an R whose Rblas.dll forwards to libflexiblas.dll.
-## Checks that R's BLAS goes through FlexiBLAS, that results agree across
-## backends, and that backend and thread count can be changed at runtime.
-
-bin <- file.path(R.home("bin"))
-dyn.load(file.path(bin, "rfbtest.dll"))
+## Runs in an R whose Rblas.dll forwards to libflexiblas.dll, with the
+## flexiblas package installed. Checks that R's BLAS goes through FlexiBLAS,
+## that results agree across backends, and that backend and thread count can
+## be changed at runtime.
+library(flexiblas)
 
 check <- function(ok, what) {
     cat(sprintf("%-55s %s\n", what, if (ok) "ok" else "FAILED"))
@@ -11,15 +10,10 @@ check <- function(ok, what) {
 }
 failures <- character()
 
-current <- function()
-    trimws(.C("rfb_current", name = strrep(" ", 128))$name)
-threads <- function()
-    .C("rfb_get_threads", n = 0L)$n
-switch_to <- function(id)
-    .C("rfb_switch", id = as.integer(id), ret = 0L)$ret
-
-check(.C("rfb_loaded", ok = 0L)$ok == 1L, "libflexiblas.dll is loaded in the R process")
-cat("initial backend:", current(), "\n")
+check(isTRUE(flexiblas_avail()), "R's BLAS is FlexiBLAS")
+cat("FlexiBLAS", format(flexiblas_version()), "\n")
+cat("configured backends:", paste(flexiblas_list(), collapse = ", "), "\n")
+cat("initial backend:", flexiblas_current_backend(), "\n")
 
 ## Workload touching BLAS level 3, LAPACK via Rlapack.dll and complex BLAS.
 set.seed(1)
@@ -37,26 +31,20 @@ work <- function() list(
 )
 ref <- work()
 
-set_threads <- function(k) invisible(.C("rfb_set_threads", n = as.integer(k)))
-openblas <- function(dll)
-    .C("rfb_openblas_info", module = dll, threads = 0L, parallel = 0L,
-       config = strrep(" ", 256))
 cat(sprintf("cores: %d logical, %d physical; OMP_NUM_THREADS=%s\n",
             parallel::detectCores(), parallel::detectCores(logical = FALSE),
             Sys.getenv("OMP_NUM_THREADS", "(unset)")))
 B <- matrix(rnorm(3000^2), 3000)
 S <- crossprod(B) + diag(3000)
+timing <- function(what, expr, label)
+    cat(sprintf("  %-8s n = 3000, %s: elapsed %.3fs\n", what, label,
+                system.time(expr)[["elapsed"]]))
 
-backends <- c("OPENBLAS" = "libflexiblas_openblas.dll")
-for (be in names(backends)) {
+for (be in "OPENBLAS") {
     cat("\n==", be, "==\n")
-    id <- .C("rfb_load", name = be, id = 0L)$id
-    check(id >= 0L, sprintf("load %s (id %d)", be, id))
-    check(switch_to(id) == 0L, sprintf("switch to %s", be))
-    check(identical(toupper(current()), be), sprintf("current backend reports %s", be))
-    info <- openblas(backends[[be]])
-    cat(sprintf("config: %s; parallel mode %d (0 serial, 1 threads, 2 OpenMP)\n",
-                trimws(info$config), info$parallel))
+    id <- flexiblas_load_backend(be)
+    flexiblas_switch(id)
+    check(flexiblas_current_backend() == be, sprintf("switch to %s", be))
 
     res <- work()
     for (k in names(ref)) {
@@ -64,27 +52,23 @@ for (be in names(backends)) {
         check(err < 1e-10, sprintf("%s agrees with NETLIB (rel err %.1e)", k, abs(err)))
     }
 
+    ## flexiblas_get_num_threads() asks the backend, so a count reset inside
+    ## OpenBLAS during a product shows up here.
     for (k in unique(c(1L, 2L, max(2L, parallel::detectCores())))) {
-        set_threads(k)
-        check(threads() == k, sprintf("set %d thread(s): FlexiBLAS reports %d", k, threads()))
-        tm <- system.time(B %*% B)
-        after <- openblas(backends[[be]])$threads
-        check(after == k, sprintf("  OpenBLAS still uses %d after a product (reports %d)", k, after))
-        cat(sprintf("  B %%*%% B, n = 3000, %d thread(s): elapsed %.3fs, user %.3fs\n",
-                    k, tm[["elapsed"]], tm[["user.self"]]))
-        tc <- system.time(chol(S))
-        cat(sprintf("  chol(S),  n = 3000, %d thread(s): elapsed %.3fs, user %.3fs\n",
-                    k, tc[["elapsed"]], tc[["user.self"]]))
+        flexiblas_set_num_threads(k)
+        timing("B %*% B", B %*% B, sprintf("%d thread(s)", k))
+        timing("chol(S)", chol(S), sprintf("%d thread(s)", k))
+        check(flexiblas_get_num_threads() == k,
+              sprintf("  %d thread(s) after the products (reports %d)", k,
+                      flexiblas_get_num_threads()))
     }
 }
-cat("\n")
 
-check(switch_to(0L) == 0L, "switch back to backend 0")
-cat("backend now:", current(), "\n")
-cat(sprintf("  B %%*%% B, n = 3000, NETLIB: %.3fs\n", system.time(B %*% B)[["elapsed"]]))
-cat(sprintf("  chol(S),  n = 3000, NETLIB: %.3fs\n", system.time(chol(S))[["elapsed"]]))
-res0 <- work()
-check(isTRUE(all.equal(res0$prod, ref$prod)), "results after switching back")
+cat("\n")
+flexiblas_switch(flexiblas_load_backend("NETLIB"))
+check(flexiblas_current_backend() == "NETLIB", "switch back to NETLIB")
+timing("B %*% B", B %*% B, "NETLIB")
+check(isTRUE(all.equal(work()$prod, ref$prod)), "results after switching back")
 
 cat("\n")
 if (length(failures)) {

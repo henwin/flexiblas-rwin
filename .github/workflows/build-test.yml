@@ -107,6 +107,18 @@ jobs:
           # is R_HOME\bin\etc (see patches/flexiblas/0001-windows-install-layout.patch).
           Copy-Item -Recurse dist\etc "$env:R_HOME_DIR\bin\etc" -Force
 
+      - name: Install the flexiblas R package, patched for Windows
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          exec > >(tee pkg-install.log) 2>&1
+          set -x
+          git -c core.autocrlf=false clone -q --depth 1 https://github.com/Enchufa2/r-flexiblas.git
+          git -C r-flexiblas apply -v ../patches/r-flexiblas/0001-windows.patch
+          Rscript -e "install.packages('tinytest', repos = 'https://cloud.r-project.org')"
+          R CMD INSTALL --install-tests r-flexiblas
+          Rscript -e "stopifnot(requireNamespace('flexiblas'))"
+
       - name: Startup with verbose FlexiBLAS
         timeout-minutes: 5
         shell: pwsh
@@ -167,34 +179,15 @@ jobs:
           Rscript reg-BLAS.R 2>&1 | Tee-Object -FilePath reg-BLAS.log
           exit $LASTEXITCODE
 
-      - name: Install the flexiblas R package, patched for Windows
-        if: always()
-        timeout-minutes: 10
-        shell: bash
-        run: |
-          exec > >(tee pkg-install.log) 2>&1
-          set -x
-          git -c core.autocrlf=false clone -q --depth 1 https://github.com/Enchufa2/r-flexiblas.git
-          git -C r-flexiblas apply -v ../patches/r-flexiblas/0001-windows.patch
-          Rscript -e "install.packages('tinytest', repos = 'https://cloud.r-project.org')"
-          R CMD INSTALL --install-tests r-flexiblas
-          Rscript -e "stopifnot(requireNamespace('flexiblas'))"
-
-      - name: Test the flexiblas R package
+      - name: The flexiblas package's own tests
         if: always()
         timeout-minutes: 10
         shell: pwsh
+        env:
+          # They expect a threaded default backend.
+          FLEXIBLAS: OPENBLAS
         run: |
-          $out = & {
-            # The package's own tests expect a threaded default backend.
-            $env:FLEXIBLAS = "OPENBLAS"
-            Rscript -e "tinytest::test_package('flexiblas')"
-            Remove-Item Env:FLEXIBLAS
-            Rscript tests/test-package.R
-            $env:OMP_NUM_THREADS = 1
-            Rscript tests/test-package.R
-          } 2>&1
-          $out | Tee-Object -FilePath pkg-tests.log
+          Rscript -e "tinytest::test_package('flexiblas')" 2>&1 | Tee-Object -FilePath pkg-tests.log
           if (Select-String -Path pkg-tests.log -Pattern 'FAILED|Error|fails' -Quiet) { exit 1 }
 
       # Job logs live in blob storage that some API clients cannot reach;

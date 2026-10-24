@@ -8,4 +8,4 @@ The patches are kept by destination. `patches/rtools-mxe/` is the change to Rtoo
 
 The forwarding `Rblas.dll` and `Rlapack.dll` export exactly the symbols of R's own DLLs, forwarded to `libflexiblas.dll`; the four LAPACK symbols FlexiBLAS lacks go to R's original LAPACK, kept as `Rlapack_ref.dll`. All BLAS and LAPACK calls in R therefore go through one FlexiBLAS instance.
 
-The workflow builds on `ubuntu-24.04`, then installs R from CRAN on `windows-2025` and runs the tests in `tests/`, using a small shim (`shim/rfbtest.c`) that calls the FlexiBLAS API in the loaded `libflexiblas.dll`, and the patched R package.
+The workflow builds on `ubuntu-24.04`, then installs R from CRAN on `windows-2025`, installs the patched flexiblas package and runs the tests in `tests/` through it.
