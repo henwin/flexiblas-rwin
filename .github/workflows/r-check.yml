@@ -92,8 +92,6 @@ jobs:
           exec > >(tee svn.log) 2>&1
           set -x
           pacman -S --noconfirm --needed unzip diffutils make winpty rsync texinfo tar texinfo-tex zip subversion bison moreutils xz patch
-          # Does R's SVN also answer on svn:// (svnserve, port 3690)?
-          timeout 30 svn info svn://svn.r-project.org/R/trunk 2>&1 | head -3 || echo "svn:// not reachable"
           svn checkout -q "https://svn.r-project.org/R/${{ inputs.svn_path }}" "$R_SRC"
           svn info "$R_SRC" | grep -E '^(URL|Revision|Last Changed Date)'
           cd "$R_SRC" && unzip -q ../tcltk.zip
