@@ -82,10 +82,14 @@ if (file.exists(shim)) {
         id <- .C("rfb_load", name = be, id = 0L)$id
         stopifnot(id >= 0L, .C("rfb_switch", id = id, ret = 0L)$ret == 0L)
     }
+} else if (requireNamespace("flexiblas", quietly = TRUE) && flexiblas::flexiblas_avail()) {
+    backends <- setdiff(flexiblas::flexiblas_list(), "__FALLBACK__")
+    use <- function(be) flexiblas::flexiblas_switch(flexiblas::flexiblas_load_backend(be))
 } else {
-    library(flexiblas)
-    backends <- setdiff(flexiblas_list(), "__FALLBACK__")
-    use <- function(be) flexiblas_switch(flexiblas_load_backend(be))
+    ## No FlexiBLAS: compare whatever BLAS R uses now, e.g. after swapping
+    ## libRblas on macOS, with the saved reference.
+    backends <- "current BLAS"
+    use <- function(be) invisible()
 }
 cat(R.version.string, "on", R.version$platform, "\n")
 cat("CPU:", Sys.info()[["machine"]], "\n\n")

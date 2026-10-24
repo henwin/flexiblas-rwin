@@ -1,0 +1,69 @@
+name: NA/NaN/Inf on Linux and macOS
+
+# Cross-checks that the Windows results are not platform-specific. Runs only
+# when the test changes, or by hand, to keep development runs short.
+on:
+  push:
+    branches: [master]
+    paths: [tests/test-nan.R, .github/workflows/platforms.yml]
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: Fedora, R linked to FlexiBLAS
+    runs-on: ubuntu-24.04
+    container: fedora:latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install R with FlexiBLAS and its backends
+        run: |
+          dnf install -y -q R-core R-flexiblas flexiblas-netlib \
+              flexiblas-openblas-serial flexiblas-openblas-openmp flexiblas-openblas-threads
+          flexiblas list
+
+      - name: Compare backends
+        run: Rscript tests/test-nan.R cmp 2>&1 | tee nan.log
+
+      - name: Publish log as annotations
+        if: always()
+        run: |
+          [ -f nan.log ] || exit 0
+          split -l 25 -d nan.log part-
+          for p in part-*; do
+            t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
+            echo "::notice title=nan-linux.log (${p#part-})::$t"
+          done
+
+  macos:
+    name: macOS arm64, R's BLAS against Accelerate
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+
+      - name: Reference with R's own BLAS
+        run: Rscript tests/test-nan.R ref
+
+      - name: Switch libRblas to Accelerate (vecLib) and compare
+        run: |
+          lib=$(Rscript -e 'cat(R.home("lib"))')
+          ls -l "$lib"/libRblas*
+          ln -sf libRblas.vecLib.dylib "$lib/libRblas.dylib"
+          Rscript -e 'sessionInfo()' | grep -i -A2 blas
+          Rscript tests/test-nan.R cmp 2>&1 | tee nan.log
+
+      - name: Publish log as annotations
+        if: always()
+        run: |
+          [ -f nan.log ] || exit 0
+          split -l 25 nan.log part-
+          for p in part-*; do
+            t=$(sed -e 's/%/%25/g' "$p" | tr '\n' '\001' | sed -e 's/\x01/%0A/g')
+            echo "::notice title=nan-macos.log (${p#part-})::$t"
+          done
