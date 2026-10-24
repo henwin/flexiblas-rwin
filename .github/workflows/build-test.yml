@@ -130,17 +130,14 @@ jobs:
       - name: Install the flexiblas R package, patched for Windows
         if: always()
         timeout-minutes: 10
-        shell: pwsh
+        shell: bash
         run: |
-          $out = & {
-            # LF line endings on both sides, so that the patch applies.
-            git -c core.autocrlf=false clone -q --depth 1 https://github.com/Enchufa2/r-flexiblas.git
-            git -C r-flexiblas apply -v ../patches/r-flexiblas/0001-windows.patch
-            if ($LASTEXITCODE) { "git apply failed: $LASTEXITCODE" }
-            Rscript -e "install.packages('tinytest', repos = 'https://cloud.r-project.org')"
-            R CMD INSTALL --install-tests r-flexiblas
-          } 2>&1
-          $out | Tee-Object -FilePath pkg-install.log
+          exec > >(tee pkg-install.log) 2>&1
+          set -x
+          git -c core.autocrlf=false clone -q --depth 1 https://github.com/Enchufa2/r-flexiblas.git
+          git -C r-flexiblas apply -v ../patches/r-flexiblas/0001-windows.patch
+          Rscript -e "install.packages('tinytest', repos = 'https://cloud.r-project.org')"
+          R CMD INSTALL --install-tests r-flexiblas
           Rscript -e "stopifnot(requireNamespace('flexiblas'))"
 
       - name: Test the flexiblas R package
