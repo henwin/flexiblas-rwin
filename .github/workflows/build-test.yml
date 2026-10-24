@@ -119,6 +119,22 @@ jobs:
           Rscript tests/test-flexiblas.R 2>&1 | Tee-Object -FilePath tests-omp1.log
           exit $LASTEXITCODE
 
+      - name: Check that LAPACK calls reach FlexiBLAS
+        if: always()
+        timeout-minutes: 5
+        shell: pwsh
+        env:
+          FLEXIBLAS_HOOK: PROFILE
+          FLEXIBLAS_PROFILE_FILE: ${{ github.workspace }}\profile.txt
+        run: |
+          Rscript tests/test-profile.R
+          if (-not (Test-Path profile.txt)) { Write-Host "no profile written"; exit 1 }
+          Get-Content profile.txt | Where-Object { $_ -notmatch '\s0\s+0(\.0+)?(e[+-]?0+)?\s*$' } |
+            Set-Content profile-nonzero.log
+          $hits = Select-String -Path profile.txt -Pattern '^\s*(dpotrf|dgesv)\s+[1-9]'
+          $hits | ForEach-Object { $_.Line }
+          if (($hits | Measure-Object).Count -lt 2) { exit 1 }
+
       - name: R's BLAS regression tests
         if: always()
         timeout-minutes: 10
@@ -165,7 +181,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "reg-BLAS.log", "pkg-install.log", "pkg-tests.log") {
+          foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "reg-BLAS.log", "pkg-install.log", "pkg-tests.log", "profile-nonzero.log") {
             if (Test-Path $f) {
               $t = (Get-Content $f -Raw) -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
               Write-Host "::notice title=$f::$t"
