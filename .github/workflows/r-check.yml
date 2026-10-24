@@ -55,17 +55,23 @@ jobs:
       # Ghostscript (used by compactPDF and bitmap devices) installed as in
       # R-core's setup.ps1, but 10.08.0 instead of its 10.00.0; setup.ps1
       # leaves PATH alone, the howto adds gs\bin.
+      # Start-Process -Wait also waits for every process the installer
+      # leaves behind, and hung here; WaitForExit waits for the installer only.
       - name: Install Ghostscript
+        timeout-minutes: 10
         shell: pwsh
         run: |
           Invoke-WebRequest https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10080/gs10080w64.exe -OutFile gsw64.exe
-          Start-Process -Wait -NoNewWindow -FilePath .\gsw64.exe -ArgumentList "/S /D=C:\Program Files\gs\gs"
+          $p = Start-Process -PassThru -NoNewWindow -FilePath .\gsw64.exe -ArgumentList "/S /D=C:\Program Files\gs\gs"
+          $p.WaitForExit()
+          Get-ChildItem "C:\Program Files\gs\gs\bin"
           "C:\Program Files\gs\gs\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
 
       # MiKTeX (with inconsolata and tabu) and qpdf as in R-core's
       # winutf8/ucrt3/r/setup.ps1, so that manuals, vignettes and the Rd2pdf
       # and Sweave tests can run.
       - name: Install MiKTeX and qpdf
+        timeout-minutes: 20
         shell: pwsh
         run: |
           Invoke-WebRequest https://miktex.org/download/ctan/systems/win32/miktex/setup/windows-x64/basic-miktex-24.1-x64.exe -OutFile basic-miktex.exe
