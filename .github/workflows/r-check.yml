@@ -56,11 +56,17 @@ jobs:
         shell: pwsh
         run: Invoke-WebRequest https://cran.r-project.org/bin/windows/Rtools/rtools45/files/tcltk-6768-6663.zip -OutFile tcltk.zip
 
+      # As in R-core's howto: a full update first. MSYS2 does not support
+      # partial updates; installing subversion alone pulled in a build
+      # against a newer SQLite than the one installed.
+      - name: Update MSYS2 in Rtools
+        run: pacman -Syuu --noconfirm 2>&1 | tail -5
+
       - name: Check out R from SVN
         run: |
           exec > >(tee svn.log) 2>&1
           set -x
-          pacman -Sy --noconfirm --needed subversion rsync
+          pacman -S --noconfirm --needed subversion rsync
           svn checkout -q "https://svn.r-project.org/R/${{ inputs.svn_path }}" "$R_SRC"
           svn info "$R_SRC" | grep -E '^(URL|Revision|Last Changed Date)'
           cd "$R_SRC" && unzip -q ../tcltk.zip
