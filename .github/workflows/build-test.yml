@@ -84,6 +84,8 @@ jobs:
         run: |
           $bin = "$env:R_HOME_DIR\bin\x64"
           Copy-Item "$bin\Rblas.dll" "$bin\Rblas-reference.dll"
+          # R's own LAPACK stays available for the symbols FlexiBLAS lacks.
+          Copy-Item "$bin\Rlapack.dll" "$bin\Rlapack_ref.dll"
           Copy-Item dist\*.dll $bin -Force
           # Found as the global configuration, <dir of libflexiblas.dll>\..\..\etc
           # (see patches/flexiblas/0001-windows-global-rc-path.patch).

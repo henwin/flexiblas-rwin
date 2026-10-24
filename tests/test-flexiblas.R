@@ -45,6 +45,7 @@ cat(sprintf("cores: %d logical, %d physical; OMP_NUM_THREADS=%s\n",
             parallel::detectCores(), parallel::detectCores(logical = FALSE),
             Sys.getenv("OMP_NUM_THREADS", "(unset)")))
 B <- matrix(rnorm(3000^2), 3000)
+S <- crossprod(B) + diag(3000)
 
 backends <- c("OPENBLAS-THREADS" = "libopenblas_threads.dll",
               "OPENBLAS-OPENMP"  = "libopenblas_openmp.dll")
@@ -72,6 +73,9 @@ for (be in names(backends)) {
         check(after == k, sprintf("  OpenBLAS still uses %d after a product (reports %d)", k, after))
         cat(sprintf("  B %%*%% B, n = 3000, %d thread(s): elapsed %.3fs, user %.3fs\n",
                     k, tm[["elapsed"]], tm[["user.self"]]))
+        tc <- system.time(chol(S))
+        cat(sprintf("  chol(S),  n = 3000, %d thread(s): elapsed %.3fs, user %.3fs\n",
+                    k, tc[["elapsed"]], tc[["user.self"]]))
     }
 }
 cat("\n")
@@ -79,6 +83,7 @@ cat("\n")
 check(switch_to(0L) == 0L, "switch back to backend 0")
 cat("backend now:", current(), "\n")
 cat(sprintf("  B %%*%% B, n = 3000, NETLIB: %.3fs\n", system.time(B %*% B)[["elapsed"]]))
+cat(sprintf("  chol(S),  n = 3000, NETLIB: %.3fs\n", system.time(chol(S))[["elapsed"]]))
 res0 <- work()
 check(isTRUE(all.equal(res0$prod, ref$prod)), "results after switching back")
 

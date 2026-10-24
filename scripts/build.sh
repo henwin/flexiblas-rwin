@@ -35,9 +35,11 @@ cp build-fb/bin/*.dll build-fb/bin/*.exe "$DIST/"
 # -- OpenBLAS backends (scripts/build-openblas.sh) -----------------------------
 cp "$ROOT"/openblas-dist/libopenblas_*.dll "$DIST/"
 
-# -- Forwarding Rblas.dll ----------------------------------------------------
-# Export exactly what R's own Rblas.dll exports, each forwarded to
-# libflexiblas.dll, so that R.dll and Rlapack.dll reach one FlexiBLAS instance.
+# -- Forwarding Rblas.dll and Rlapack.dll -------------------------------------
+# Export exactly what R's own DLLs export, forwarded to libflexiblas.dll, so
+# that R.dll and every module reach one FlexiBLAS instance. The few Rlapack
+# symbols FlexiBLAS lacks are forwarded to R's original Rlapack.dll, which
+# the installation keeps as Rlapack_ref.dll.
 exports() {
     $TARGET-objdump -p "$1" |
         awk '/\[Ordinal\/Name Pointer\] Table/{f=1;next} f&&NF==0{exit} f{print $NF}' |
@@ -46,20 +48,24 @@ exports() {
 [ -f "R-$R_VERSION-win.exe" ] || curl -sSfLO \
     "https://cran.r-project.org/bin/windows/base/R-$R_VERSION-win.exe"
 innoextract -q -d rwin -I app/bin/x64 "R-$R_VERSION-win.exe"
-exports rwin/app/bin/x64/Rblas.dll > rblas.exports
 exports "$DIST/libflexiblas.dll" > flexiblas.exports
-missing=$(comm -23 rblas.exports flexiblas.exports)
-if [ -n "$missing" ]; then
-    echo "libflexiblas.dll lacks Rblas exports: $missing" >&2
-    exit 1
-fi
-{
-    echo "LIBRARY Rblas.dll"
-    echo "EXPORTS"
-    sed 's/.*/& = libflexiblas.&/' rblas.exports
-} > Rblas.def
-echo 'void rblas_forwarder(void) {}' > fwd.c
-$TARGET-gcc -shared -nostdlib -Wl,-e,0 -o "$DIST/Rblas.dll" fwd.c Rblas.def
+echo 'void forwarder(void) {}' > fwd.c
+for lib in Rblas Rlapack; do
+    exports "rwin/app/bin/x64/$lib.dll" > "$lib.exports"
+    missing=$(comm -23 "$lib.exports" flexiblas.exports)
+    if [ "$lib" = Rblas ] && [ -n "$missing" ]; then
+        echo "libflexiblas.dll lacks Rblas exports: $missing" >&2
+        exit 1
+    fi
+    [ -z "$missing" ] || echo "$lib: forwarded to Rlapack_ref.dll:" $missing
+    {
+        echo "LIBRARY $lib.dll"
+        echo "EXPORTS"
+        comm -12 "$lib.exports" flexiblas.exports | sed 's/.*/& = libflexiblas.&/'
+        comm -23 "$lib.exports" flexiblas.exports | sed 's/.*/& = Rlapack_ref.&/'
+    } > "$lib.def"
+    $TARGET-gcc -shared -nostdlib -Wl,-e,0 -o "$DIST/$lib.dll" fwd.c "$lib.def"
+done
 
 # -- Test shim: calls the FlexiBLAS API in the loaded libflexiblas.dll ---------
 $TARGET-gcc -shared -O2 -o "$DIST/rfbtest.dll" "$ROOT/shim/rfbtest.c"
