@@ -12,4 +12,4 @@ docker build -t "$image" -f docker/Dockerfile .
 
 steps='bash scripts/forwarders.sh'
 [ "${1:-}" = --forwarders-only ] || steps="bash scripts/build-mxe.sh && $steps"
-docker run --rm -v "$PWD":/work "$image" bash -c "$steps"
+docker run --rm -v "$PWD":/work -w /work "$image" bash -c "$steps"
