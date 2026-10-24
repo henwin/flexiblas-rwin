@@ -1,0 +1,13 @@
+Index: setup.ps1
+===================================================================
+--- setup.ps1	(revision 6984)
++++ setup.ps1	(working copy)
+@@ -98,7 +98,7 @@
+ 
+ if (-not(Test-Path("C:\Program Files\gs\gs\bin"))) {
+   cd temp
+-  $url = "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs1000/gs1000w64.exe"
++  $url = "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10080/gs10080w64.exe"
+   $inst =  "..\installers\" + ($url -replace(".*/", ""))
+   
+   if (Test-Path("$inst")) {
