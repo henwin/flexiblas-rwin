@@ -52,6 +52,25 @@ jobs:
           run-id: ${{ steps.build.outputs.run_id }}
           github-token: ${{ github.token }}
 
+      # MiKTeX (with inconsolata and tabu) and qpdf as in R-core's
+      # winutf8/ucrt3/r/setup.ps1, so that manuals, vignettes and the Rd2pdf
+      # and Sweave tests can run.
+      - name: Install MiKTeX and qpdf
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://miktex.org/download/ctan/systems/win32/miktex/setup/windows-x64/basic-miktex-24.1-x64.exe -OutFile basic-miktex.exe
+          Start-Process -Wait -NoNewWindow -FilePath .\basic-miktex.exe -ArgumentList "--unattended --private --user-config=`"$env:APPDATA\MiKTeX`" --user-data=`"$env:LOCALAPPDATA\MiKTeX`" --user-install=`"$env:LOCALAPPDATA\Programs\MiKTeX`""
+          $mt = "$env:LOCALAPPDATA\Programs\MiKTeX\miktex\bin\x64"
+          & "$mt\initexmf.exe" --enable-installer
+          & "$mt\initexmf.exe" --set-config-value=[MPM]AutoInstall=t
+          & "$mt\mpm.exe" --update-db
+          & "$mt\mpm.exe" --install=inconsolata
+          & "$mt\mpm.exe" --install=tabu
+          $mt | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+          Invoke-WebRequest https://github.com/qpdf/qpdf/releases/download/v11.9.1/qpdf-11.9.1-msvc64.zip -OutFile qpdf.zip
+          Expand-Archive qpdf.zip -DestinationPath qpdf
+          (Get-ChildItem qpdf -Directory | Select-Object -First 1).FullName + "\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
       - name: Fetch the Tcl/Tk bundle
         shell: pwsh
         run: Invoke-WebRequest https://cran.r-project.org/bin/windows/Rtools/rtools45/files/tcltk-6768-6663.zip -OutFile tcltk.zip
@@ -72,7 +91,9 @@ jobs:
         run: |
           exec > >(tee svn.log) 2>&1
           set -x
-          pacman -S --noconfirm --needed subversion rsync
+          pacman -S --noconfirm --needed unzip diffutils make winpty rsync texinfo tar texinfo-tex zip subversion bison moreutils xz patch
+          # Does R's SVN also answer on svn:// (svnserve, port 3690)?
+          timeout 30 svn info svn://svn.r-project.org/R/trunk 2>&1 | head -3 || echo "svn:// not reachable"
           svn checkout -q "https://svn.r-project.org/R/${{ inputs.svn_path }}" "$R_SRC"
           svn info "$R_SRC" | grep -E '^(URL|Revision|Last Changed Date)'
           cd "$R_SRC" && unzip -q ../tcltk.zip
@@ -85,7 +106,7 @@ jobs:
           make rsync-recommended > ../../../build.log 2>&1
           # "all" and "recommended" in one parallel make race: recommended
           # needs MkRules, which "all" creates.
-          { make -j4 all && make -j4 recommended; } >> ../../../build.log 2>&1 \
+          { make -j4 all && make -j4 recommended && make cairodevices; } >> ../../../build.log 2>&1 \
               || { tail -60 ../../../build.log; exit 1; }
           ../../bin/R --version
 
