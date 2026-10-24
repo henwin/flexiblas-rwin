@@ -3,7 +3,17 @@ name: Build and test
 on:
   push:
     branches: [master]
+    paths-ignore:
+      - '**.md'
+      - .gitattributes
+      - .github/workflows/platforms.yml
+      - .github/workflows/r-check.yml
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - .gitattributes
+      - .github/workflows/platforms.yml
+      - .github/workflows/r-check.yml
   workflow_dispatch:
 
 env:
