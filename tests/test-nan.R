@@ -92,7 +92,8 @@ if (file.exists(shim)) {
     use <- function(be) invisible()
 }
 cat(R.version.string, "on", R.version$platform, "\n")
-cat("CPU:", Sys.info()[["machine"]], "\n\n")
+cat("CPU:", Sys.info()[["machine"]], "\n")
+cat("BLAS:", extSoftVersion()[["BLAS"]], "\nLAPACK:", La_library(), "\n\n")
 
 res <- list()
 for (be in backends) { use(be); res[[be]] <- run() }
