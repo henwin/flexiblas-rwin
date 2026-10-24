@@ -86,7 +86,7 @@ jobs:
           Copy-Item "$bin\Rblas.dll" "$bin\Rblas-reference.dll"
           Copy-Item dist\*.dll $bin -Force
           # Found as the global configuration, <dir of libflexiblas.dll>\..\..\etc
-          # (see patches/0001-windows-global-rc-path.patch).
+          # (see patches/flexiblas/0001-windows-global-rc-path.patch).
           Copy-Item dist\flexiblasrc "$env:R_HOME_DIR\etc\flexiblasrc"
 
       - name: Startup with verbose FlexiBLAS
