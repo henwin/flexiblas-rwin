@@ -14,7 +14,7 @@ Index: src/flexiblas-1-windows-install-layout.patch
 ===================================================================
 --- src/flexiblas-1-windows-install-layout.patch	(nonexistent)
 +++ src/flexiblas-1-windows-install-layout.patch	(working copy)
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,79 @@
 +diff --git a/CMakeLists.txt b/CMakeLists.txt
 +index 8b9af188..387ccc58 100644
 +--- a/CMakeLists.txt
@@ -70,6 +70,30 @@ Index: src/flexiblas-1-windows-install-layout.patch
 +     } else {
 +         snprintf(container, max_buffer_size, "%s", suffix );
 +     }
++@@ -161,7 +161,22 @@ HIDDEN void __flexiblas_init_default_paths(void) {
++         free(libpath);
++     }
++ #else
++-    searchpath = libpath;
+++    /* On Windows the NETLIB backend and the hooks are installed next to
+++     * libflexiblas.dll, but the vendor backends in its FLEXIBLAS_LIBRARY_DIR
+++     * subdirectory (src/CMakeLists.txt), so search both. */
+++    if (libpath != NULL)
+++    {
+++        searchpath = malloc(2 * strlen(libpath) + strlen(FLEXIBLAS_LIBRARY_DIR) + 3);
+++        if (searchpath != NULL)
+++        {
+++            strcpy(searchpath, libpath);
+++            strcat(searchpath, "\\");
+++            strcat(searchpath, FLEXIBLAS_LIBRARY_DIR);
+++            strcat(searchpath, ";");
+++            strcat(searchpath, libpath);
+++        }
+++        free(libpath);
+++    }
++ #endif
++     char *path;
++     char *r = NULL;
 Index: src/flexiblas-2-dlfcn-win32-without-cmake-config.patch
 ===================================================================
 --- src/flexiblas-2-dlfcn-win32-without-cmake-config.patch	(nonexistent)
@@ -142,7 +166,7 @@ Index: src/flexiblas.mk
 +$(PKG)_DESCR    := FlexiBLAS - BLAS and LAPACK wrapper with run-time exchangeable backends
 +$(PKG)_IGNORE   :=
 +$(PKG)_VERSION  := 3.5.0
-+$(PKG)_CHECKSUM := 0000000000000000000000000000000000000000000000000000000000000000
++$(PKG)_CHECKSUM := 175bd4ad7b44348c5dc0531c7a0169ad451cbc9a3d018dd17f01d4a0d0244680
 +$(PKG)_GH_CONF  := mpimd-csc/flexiblas/tags,v
 +$(PKG)_DEPS     := cc fc dlfcn-win32 openblas
 +

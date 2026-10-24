@@ -53,3 +53,27 @@ index cdab79c4..14df9f41 100644
      } else {
          snprintf(container, max_buffer_size, "%s", suffix );
      }
+@@ -161,7 +161,22 @@ HIDDEN void __flexiblas_init_default_paths(void) {
+         free(libpath);
+     }
+ #else
+-    searchpath = libpath;
++    /* On Windows the NETLIB backend and the hooks are installed next to
++     * libflexiblas.dll, but the vendor backends in its FLEXIBLAS_LIBRARY_DIR
++     * subdirectory (src/CMakeLists.txt), so search both. */
++    if (libpath != NULL)
++    {
++        searchpath = malloc(2 * strlen(libpath) + strlen(FLEXIBLAS_LIBRARY_DIR) + 3);
++        if (searchpath != NULL)
++        {
++            strcpy(searchpath, libpath);
++            strcat(searchpath, "\\");
++            strcat(searchpath, FLEXIBLAS_LIBRARY_DIR);
++            strcat(searchpath, ";");
++            strcat(searchpath, libpath);
++        }
++        free(libpath);
++    }
+ #endif
+     char *path;
+     char *r = NULL;
