@@ -1,0 +1,21 @@
+--- src/openblas.mk
++++ src/openblas.mk
+@@ -13,6 +13,9 @@
+ # it bundles into -lopenblas so won't conflict with those libs
+ # headers do conflict so install to separate directory
+ 
++# NUM_THREADS is the most threads OpenBLAS will use at run time; fix it rather
++# than take the build machine's processor count (64 as in MSYS2)
++
+ $(PKG)_MAKE_OPTS = \
+         PREFIX='$(PREFIX)/$(TARGET)' \
+         OPENBLAS_INCLUDE_DIR='$(PREFIX)/$(TARGET)/include/openblas' \
+@@ -25,7 +28,7 @@
+         BUILD_RELAPACK=1 \
+         USE_THREAD=1 \
+         USE_OPENMP=1 \
+-        NUM_THREADS=$(call LIST_NMAX, 2 $(NPROCS)) \
++        NUM_THREADS=64 \
+         TARGET=$(if $(findstring aarch64,$(TARGET)),CORTEXA53,CORE2) \
+         DYNAMIC_ARCH=$(if $(findstring aarch64,$(TARGET)),0,1) \
+         ARCH=$(strip \
