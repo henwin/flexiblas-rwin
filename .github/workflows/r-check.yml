@@ -83,7 +83,9 @@ jobs:
           export TAR=/usr/bin/tar TAR_OPTIONS=--force-local
           cd "$R_SRC/src/gnuwin32"
           make rsync-recommended > ../../../build.log 2>&1
-          make -j4 all recommended >> ../../../build.log 2>&1 \
+          # "all" and "recommended" in one parallel make race: recommended
+          # needs MkRules, which "all" creates.
+          { make -j4 all && make -j4 recommended; } >> ../../../build.log 2>&1 \
               || { tail -60 ../../../build.log; exit 1; }
           ../../bin/R --version
 
