@@ -52,8 +52,9 @@ jobs:
           run-id: ${{ steps.build.outputs.run_id }}
           github-token: ${{ github.token }}
 
-      # Ghostscript installed as in R-core's setup.ps1, but 10.08.0 instead of its 10.00.0 (used by compactPDF and bitmap
-      # devices); setup.ps1 leaves PATH alone, the howto adds gs\bin.
+      # Ghostscript (used by compactPDF and bitmap devices) installed as in
+      # R-core's setup.ps1, but 10.08.0 instead of its 10.00.0; setup.ps1
+      # leaves PATH alone, the howto adds gs\bin.
       - name: Install Ghostscript
         shell: pwsh
         run: |
