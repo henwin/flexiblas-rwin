@@ -36,8 +36,9 @@ make -j"$(nproc)" openblas flexiblas || {
 
 out=$WORK/dist
 mkdir -p "$out"
+# FlexiBLAS installs its backends next to libflexiblas.dll on Windows.
 cp usr/$TARGET/bin/libflexiblas*.dll "$out/"
-cp -r usr/$TARGET/bin/flexiblas "$out/"
-cp -r usr/$TARGET/etc "$out/"
+mkdir -p "$out/etc"
+cp -r usr/$TARGET/etc/flexiblasrc* "$out/etc/"
 usr/bin/$TARGET-objdump -p "$out/libflexiblas.dll" | grep 'DLL Name'
 ls -la "$out"

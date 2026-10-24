@@ -14,7 +14,7 @@ Index: src/flexiblas-1-windows-install-layout.patch
 ===================================================================
 --- src/flexiblas-1-windows-install-layout.patch	(nonexistent)
 +++ src/flexiblas-1-windows-install-layout.patch	(working copy)
-@@ -0,0 +1,80 @@
+@@ -0,0 +1,55 @@
 +diff --git a/CMakeLists.txt b/CMakeLists.txt
 +index 8b9af188..387ccc58 100644
 +--- a/CMakeLists.txt
@@ -70,31 +70,6 @@ Index: src/flexiblas-1-windows-install-layout.patch
 +     } else {
 +         snprintf(container, max_buffer_size, "%s", suffix );
 +     }
-+@@ -161,7 +161,23 @@ HIDDEN void __flexiblas_init_default_paths(void) {
-+         free(libpath);
-+     }
-+ #else
-+-    searchpath = libpath;
-++    /* On Windows the backends are installed in the FLEXIBLAS_LIBRARY_DIR
-++     * subdirectory of the directory holding libflexiblas.dll, like on Linux;
-++     * also search the directory itself, for installations that put all DLLs
-++     * together. */
-++    if (libpath != NULL)
-++    {
-++        searchpath = malloc(2 * strlen(libpath) + strlen(FLEXIBLAS_LIBRARY_DIR) + 3);
-++        if (searchpath != NULL)
-++        {
-++            strcpy(searchpath, libpath);
-++            strcat(searchpath, "\\");
-++            strcat(searchpath, FLEXIBLAS_LIBRARY_DIR);
-++            strcat(searchpath, ";");
-++            strcat(searchpath, libpath);
-++        }
-++        free(libpath);
-++    }
-+ #endif
-+     char *path;
-+     char *r = NULL;
 Index: src/flexiblas-2-dlfcn-win32-without-cmake-config.patch
 ===================================================================
 --- src/flexiblas-2-dlfcn-win32-without-cmake-config.patch	(nonexistent)
@@ -159,7 +134,7 @@ Index: src/flexiblas.mk
 ===================================================================
 --- src/flexiblas.mk	(nonexistent)
 +++ src/flexiblas.mk	(working copy)
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,48 @@
 +# This file is part of MXE. See LICENSE.md for licensing information.
 +
 +PKG             := flexiblas
@@ -201,11 +176,12 @@ Index: src/flexiblas.mk
 +    $(MAKE) -C '$(BUILD_DIR)' -j '$(JOBS)'
 +    $(MAKE) -C '$(BUILD_DIR)' -j 1 install
 +
-+    # link a test program against FlexiBLAS's import library
++    # link a test program against FlexiBLAS's import library, which on
++    # Windows FlexiBLAS installs next to the DLLs in bin
 +    '$(TARGET)-gcc' \
 +        -W -Wall -Werror \
 +        '$(TEST_FILE)' -o '$(PREFIX)/$(TARGET)/bin/test-$(PKG).exe' \
-+        -L'$(PREFIX)/$(TARGET)/lib' -lflexiblas
++        -L'$(PREFIX)/$(TARGET)/bin' -lflexiblas
 +endef
 Index: src/openblas-3-explicit-thread-count.patch
 ===================================================================

@@ -53,28 +53,3 @@ index cdab79c4..14df9f41 100644
      } else {
          snprintf(container, max_buffer_size, "%s", suffix );
      }
-@@ -161,7 +161,23 @@ HIDDEN void __flexiblas_init_default_paths(void) {
-         free(libpath);
-     }
- #else
--    searchpath = libpath;
-+    /* On Windows the backends are installed in the FLEXIBLAS_LIBRARY_DIR
-+     * subdirectory of the directory holding libflexiblas.dll, like on Linux;
-+     * also search the directory itself, for installations that put all DLLs
-+     * together. */
-+    if (libpath != NULL)
-+    {
-+        searchpath = malloc(2 * strlen(libpath) + strlen(FLEXIBLAS_LIBRARY_DIR) + 3);
-+        if (searchpath != NULL)
-+        {
-+            strcpy(searchpath, libpath);
-+            strcat(searchpath, "\\");
-+            strcat(searchpath, FLEXIBLAS_LIBRARY_DIR);
-+            strcat(searchpath, ";");
-+            strcat(searchpath, libpath);
-+        }
-+        free(libpath);
-+    }
- #endif
-     char *path;
-     char *r = NULL;

@@ -64,6 +64,10 @@ jobs:
           opt=; [ "${{ steps.mxe-cache.outputs.cache-hit }}" = true ] && opt=--forwarders-only
           bash scripts/build-in-docker.sh $opt 2>&1 | tee docker-build.log
 
+      - name: Publish the FlexiBLAS checksum
+        if: always()
+        run: grep '_CHECKSUM' docker-build.log | sed 's/^/::notice title=checksum::/' || true
+
       - name: Publish build errors
         if: failure()
         run: |
@@ -124,7 +128,6 @@ jobs:
           # R's own LAPACK stays available for the symbols FlexiBLAS lacks.
           Copy-Item "$bin\Rlapack.dll" "$bin\Rlapack_ref.dll"
           Copy-Item dist\*.dll $bin -Force
-          Copy-Item -Recurse dist\flexiblas "$bin\flexiblas" -Force
           # FlexiBLAS looks for its configuration in ..\etc relative to the
           # DLLs, as installed by MXE (bin\ and etc\); for R's bin\x64 that
           # is R_HOME\bin\etc (see patches/flexiblas/0001-windows-install-layout.patch).
