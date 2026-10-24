@@ -133,6 +133,11 @@ jobs:
           FLEXIBLAS: ${{ inputs.backend }}
         run: |
           export PATH=/x86_64-w64-mingw32.static.posix/bin:$PATH
+          # The MSYS2 login shell does not inherit the Windows PATH, so the
+          # tools installed above are added here, as the howto does.
+          qpdf=$(ls -d "$(cygpath -u "$GITHUB_WORKSPACE")"/qpdf/*/bin | head -1)
+          export PATH="$PATH:$(cygpath -u "$LOCALAPPDATA")/Programs/MiKTeX/miktex/bin/x64:$qpdf:/c/Program Files/gs/gs/bin"
+          pdflatex --version | head -1; qpdf --version | head -1; gswin64c --version
           export TAR=/usr/bin/tar TAR_OPTIONS=--force-local
           cd "$R_SRC/src/gnuwin32"
           make -k check-all > ../../../check-all.log 2>&1 || echo "check-all exit status $?" >> ../../../check-all.log
