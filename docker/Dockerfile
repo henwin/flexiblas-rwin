@@ -40,4 +40,4 @@ RUN cd usr/x86_64-w64-mingw32.static.posix/bin \
         [ -e $t ] || ln -s ../../bin/x86_64-w64-mingw32.static.posix-$t $t; \
     done
 
-RUN make ccache 2>&1 | tail -20
+RUN bash -o pipefail -c 'make ccache 2>&1 | tail -20'
