@@ -5,7 +5,7 @@ name: NA/NaN/Inf on Linux and macOS
 on:
   push:
     branches: [master]
-    paths: [tests/test-nan.R, .github/workflows/platforms.yml]
+    paths: [tests/test-nan.R, tests/test-memory.R, .github/workflows/platforms.yml]
   workflow_dispatch:
 
 jobs:
@@ -19,21 +19,32 @@ jobs:
 
       - name: Install R with FlexiBLAS and its backends
         run: |
-          dnf install -y -q R-core R-flexiblas flexiblas-netlib \
+          dnf install -y -q R-core R-flexiblas flexiblas-netlib binutils \
               flexiblas-openblas-serial flexiblas-openblas-openmp flexiblas-openblas-threads
           flexiblas list
+          # OpenBLAS's build configuration, including MAX_THREADS (NUM_THREADS)
+          for f in /usr/lib64/libopenblas*.so.0; do echo "$f: $(strings "$f" | grep -m1 'MAX_THREADS')"; done
 
       - name: Compare backends
         run: Rscript tests/test-nan.R cmp 2>&1 | tee nan.log
 
+      - name: Memory use
+        run: |
+          for b in OPENBLAS-OPENMP OPENBLAS-THREADS; do
+            Rscript tests/test-memory.R $b
+            OPENBLAS_NUM_THREADS=1 Rscript tests/test-memory.R $b
+          done 2>&1 | tee memory.log
+
       - name: Publish log as annotations
         if: always()
         run: |
-          [ -f nan.log ] || exit 0
-          split -l 25 -d nan.log part-
-          for p in part-*; do
-            t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
-            echo "::notice title=nan-linux.log (${p#part-})::$t"
+          for f in nan.log memory.log; do
+            [ -f $f ] || continue
+            split -l 25 -d $f part-$f-
+            for p in part-$f-*; do
+              t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
+              echo "::notice title=$f-linux (${p#part-$f-})::$t"
+            done
           done
 
   macos:
