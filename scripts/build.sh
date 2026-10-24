@@ -42,7 +42,7 @@ cp "$ROOT"/openblas-dist/libopenblas_*.dll "$DIST/"
 # the installation keeps as Rlapack_ref.dll.
 exports() {
     $TARGET-objdump -p "$1" |
-        awk '/\[Ordinal\/Name Pointer\] Table/{f=1;next} f&&NF==0{exit} f{print $NF}' |
+        awk '/\[Ordinal\/Name Pointer\] Table/{f=1;next} f&&NF==0{f=0} f{print $NF}' |
         grep -v '^Name$' | sort
 }
 [ -f "R-$R_VERSION-win.exe" ] || curl -sSfLO \

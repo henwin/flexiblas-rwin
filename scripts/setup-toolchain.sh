@@ -39,4 +39,4 @@ done
 SUDO=; [ "$(id -u)" = 0 ] || SUDO=sudo
 $SUDO mkdir -p /usr/lib/mxe
 $SUDO ln -sfn "$TOP/cross" /usr/lib/mxe/usr
-/usr/lib/mxe/usr/bin/$TARGET-gcc --version | head -1
+/usr/lib/mxe/usr/bin/$TARGET-gcc --version | sed -n 1p
