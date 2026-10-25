@@ -74,6 +74,14 @@ jobs:
           # Windows does not take a program over several lines
           "$rhome/bin/Rscript" tests/test-flags.R table flags.log > timings.txt 2>&1
           cat timings.txt
+          # every build must have been compared, and the builds with R's flags
+          # must reproduce CRAN's results; differences under other flags are
+          # the results
+          n=$(grep -c -E ': [0-9]+ of [0-9]+ results differ' flags.log || true)
+          [ "$n" -eq 11 ] || { echo "::error::$n of 11 builds compared"; exit 1; }
+          if grep -E "^(BLAS R's flags|LAPACK R's flags|CRAN again)" flags.log | grep -v ': 0 of '; then
+            echo "::error::a build with R's flags does not reproduce CRAN's results"; exit 1
+          fi
 
       - name: Publish as annotations
         if: always()

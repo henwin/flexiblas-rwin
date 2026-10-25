@@ -6,7 +6,7 @@
 #   bash tests/blas-bitwise.sh BLAS_SRC [RHOME]
 # BLAS_SRC holds blas.f, blas2.f90, cmplxblas.f, cmplxblas2.f90 and
 # Rblas.def; Rtools' gcc and gfortran must be on PATH.
-set -uo pipefail
+set -euo pipefail
 src=$1
 rhome=${2:-}
 here=$(cd "$(dirname "$0")" && pwd)
@@ -30,14 +30,21 @@ for s in "${SETS[@]}"; do
   done
   gfortran -shared -s -o "blas-$name.dll" obj-$name/*.o blas-xerbla.o "$src/Rblas.def"
 done
+# The build with R's flags must reproduce R's Rblas.dll, or the comparisons
+# below say nothing; differences under other flags are the results, so only
+# errors (exit status 2 and above) fail those.
 status=0
 if [ -n "$rhome" ]; then
   echo "== blas-R.dll against $rhome/bin/x64/Rblas.dll"
-  ./blas-bitwise.exe "$(cygpath -w "$rhome/bin/x64/Rblas.dll")" blas-R.dll | tail -1
+  rc=0; ./blas-bitwise.exe "$(cygpath -w "$rhome/bin/x64/Rblas.dll")" blas-R.dll > cmp-cran.txt || rc=$?
+  tail -1 cmp-cran.txt
+  [ $rc -eq 0 ] || { echo "the build with R's flags is not R's Rblas.dll (exit status $rc)"; status=1; }
 fi
 for s in "${SETS[@]:1}"; do
   name=${s%%|*}
   echo "== $name: ${s#*|}"
-  ./blas-bitwise.exe blas-R.dll "blas-$name.dll" > "cmp-$name.txt"
-  grep -v ' 0 differ$' "cmp-$name.txt"
+  rc=0; ./blas-bitwise.exe blas-R.dll "blas-$name.dll" > "cmp-$name.txt" || rc=$?
+  grep -v ' 0 differ$' "cmp-$name.txt" || true
+  [ $rc -le 1 ] || { echo "error (exit status $rc)"; status=1; }
 done
+exit $status

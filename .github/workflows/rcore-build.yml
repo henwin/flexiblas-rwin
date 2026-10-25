@@ -50,15 +50,27 @@ jobs:
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-      - name: Find the latest successful build
+      # The bundle from the latest successful build-test.yml run on master,
+      # which must include the last change to the bundle's sources.
+      - name: Find the bundle
         id: build
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $id = gh run list -R $env:GITHUB_REPOSITORY -w build-test.yml -s success -L 1 --json databaseId --jq '.[0].databaseId'
+          $run = gh run list -R $env:GITHUB_REPOSITORY -w build-test.yml -b master -s success -L 1 --json databaseId,headSha | ConvertFrom-Json
+          $id = $run[0].databaseId; $sha = $run[0].headSha
+          $last = git log -1 --format=%H -- docker scripts/build-mxe.sh scripts/build-bundle.sh scripts/build-in-docker.sh patches/rtools-mxe patches/openblas patches/flexiblas patches/r-dev-web/flexiblas_bundle
+          git merge-base --is-ancestor $last $sha
+          if ($LASTEXITCODE -ne 0) {
+            Write-Output "::error title=Bundle::run $id (commit $sha) predates $last, the last change to the bundle's sources"
+            exit 1
+          }
           "run_id=$id" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          "bundle: build-test.yml run $id, commit $sha" | Tee-Object -FilePath C:\bundle.txt
 
       - uses: actions/download-artifact@v8
         with:
@@ -145,8 +157,19 @@ jobs:
         working-directory: C:\rbuild
         run: |
           ./build.sh ${{ inputs.check && '--check' || '' }} ${{ inputs.r == 'patched' && '--patched' || '' }} > build.log 2>&1
+          status=$?
           tail -30 build.log
           ls -la build
+          # build.sh goes on after errors and pipes make through tee, so its
+          # products decide: the installer, and checks without make errors
+          ls build/R-*-win.exe > /dev/null 2>&1 || { echo "::error::no installer"; status=1; }
+          if [ "${{ inputs.check }}" = true ]; then
+            for f in build/checkdevel.out build/checkall.out; do
+              if [ ! -f "$f" ]; then echo "::error::$f missing"; status=1
+              elif grep -n 'make.*\*\*\*' "$f"; then echo "::error::make errors in $f"; status=1; fi
+            done
+          fi
+          exit $status
 
       # The installer, installed silently into a fresh directory: FlexiBLAS's
       # DLLs, backends and configuration must come with it.
@@ -180,6 +203,8 @@ jobs:
           b=/c/rbuild
           {
             echo "R-${{ inputs.r }}, backend: ${{ inputs.backend }}"
+            cat /c/bundle.txt 2>/dev/null
+            [ -f $b/build/svn_revision ] && echo "R revision $(cat $b/build/svn_revision), toolchain $TOOLCHAIN, Tcl/Tk $TCLTK"
             if [ -f $b/setup.log ]; then
               echo "setup.log (Inno Setup, errors):"
               grep -v 'DEBUG:' $b/setup.log | sed -e 's/\x1b\[[0-9;]*m//g' | grep -v '^\s*$' | grep -i -E -A3 'inno|error|exception|denied' | head -40

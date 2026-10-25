@@ -5,12 +5,14 @@
    Arguments cover the sizes 0 to 33 (64 for level 1), unit, stride 2 and
    negative increments, every TRANS, UPLO, SIDE and DIAG, and alpha and beta
    in {0, 1, other}, which BLAS treat as special cases. Data are uniform on
-   (-1, 1) and the same for both DLLs. */
+   (-1, 1), with NA, NaN and Inf in every fourth case, and the same for both
+   DLLs. Exit status 1 when routines differ, 2 on errors. */
 #include <windows.h>
 #include <complex.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 typedef double complex dcx;
 #define NBUF 4096
@@ -33,11 +35,28 @@ static double unif(void)                       /* xorshift64*, on (-1, 1) */
     rs ^= rs >> 12; rs ^= rs << 25; rs ^= rs >> 27;
     return ((rs * 2685821657736338717ULL) >> 11) * 0x1.0p-52 - 1.0;
 }
+/* Every fourth case also has R's NA (a NaN with payload 1954), NaN, Inf and
+   -Inf in about one entry in 50, since which NaN survives an operation, NA
+   or a plain NaN, may depend on the code the compiler generates. */
+static double special(void)
+{
+    static const unsigned long long na = 0x7FF00000000007A2ULL;
+    double v; int k = (int) ((unif() + 1) * 2);
+    if (k == 0) memcpy(&v, &na, sizeof v);
+    else v = k == 1 ? NAN : k == 2 ? INFINITY : -INFINITY;
+    return v;
+}
 static void fill(unsigned long long seed)
 {
     rs = seed * 0x9E3779B97F4A7C15ULL + 1;
     for (int i = 0; i < NBUF; i++) { X[i] = unif(); Y[i] = unif(); A[i] = unif(); B[i] = unif(); C[i] = unif(); }
     for (int i = 0; i < 8; i++) P[i] = unif();
+    if (seed % 4 == 0) {
+        double *v[] = {X, Y, A, B, C};
+        for (int j = 0; j < 5; j++)
+            for (int i = 0; i < NBUF; i++)
+                if (unif() > 0.96) v[j][i] = special();
+    }
 }
 
 /* the argument values a case is built from */
