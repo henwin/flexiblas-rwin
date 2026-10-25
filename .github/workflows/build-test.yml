@@ -12,6 +12,7 @@ on:
       - tests/compare-optflags.R
       - patches/r/**
       - .github/workflows/rcore-build.yml
+      - .github/workflows/inno-download.yml
       - patches/r-dev-web/0001-setup-ghostscript-10.08.0.patch
       - patches/r-dev-web/0002-build-flexiblas-bundle.patch
   pull_request:
@@ -24,6 +25,7 @@ on:
       - tests/compare-optflags.R
       - patches/r/**
       - .github/workflows/rcore-build.yml
+      - .github/workflows/inno-download.yml
       - patches/r-dev-web/0001-setup-ghostscript-10.08.0.patch
       - patches/r-dev-web/0002-build-flexiblas-bundle.patch
   workflow_dispatch:

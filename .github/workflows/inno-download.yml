@@ -1,0 +1,44 @@
+name: Inno Setup download
+
+# What setup.ps1's Inno Setup URL returns on a GitHub runner, against
+# other ways to get the same installer.
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Probe the URLs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $urls = @(
+            "https://jrsoftware.org/download.php/is.exe?site=2",
+            "https://jrsoftware.org/download.php/is.exe?site=1",
+            "https://jrsoftware.org/download.php/is.exe",
+            "https://files.jrsoftware.org/is/6/innosetup-6.4.1.exe",
+            "https://github.com/jrsoftware/issrc/releases/download/is-6_4_1/innosetup-6.4.1.exe"
+          )
+          $i = 0
+          foreach ($u in $urls) {
+            $i++
+            $out = "probe$i.bin"
+            $msg = "$u`n"
+            try {
+              $r = Invoke-WebRequest -Uri $u -OutFile $out -UseBasicParsing -PassThru -MaximumRedirection 10
+              $len = (Get-Item $out).Length
+              $msg += "status $($r.StatusCode), $len bytes, content-type $($r.Headers['Content-Type'])`n"
+              $msg += "final URL: $($r.BaseResponse.RequestMessage.RequestUri)`n"
+              $bytes = [System.IO.File]::ReadAllBytes($out)
+              $msg += "starts with: $([System.Text.Encoding]::ASCII.GetString($bytes, 0, [Math]::Min(2, $bytes.Length)))`n"
+              if ($len -lt 20000) {
+                $msg += ([System.Text.Encoding]::UTF8.GetString($bytes) -replace '\s+', ' ').Substring(0, [Math]::Min(1500, $len))
+              }
+            } catch {
+              $msg += "failed: $($_.Exception.Message)"
+            }
+            $t = $msg -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
+            Write-Output "::notice title=probe $i::$t"
+          }
