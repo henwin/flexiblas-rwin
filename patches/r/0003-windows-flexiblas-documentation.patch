@@ -1,0 +1,61 @@
+Index: src/gnuwin32/COPYRIGHTS.win
+===================================================================
+--- src/gnuwin32/COPYRIGHTS.win	(revision 90763)
++++ src/gnuwin32/COPYRIGHTS.win	(working copy)
+@@ -56,6 +56,22 @@
+     California, Sun Microsystems, Inc., and other parties. [...]
+ 
+ 
++R_HOME/bin/x64/libflexiblas*.dll and R_HOME/bin/x64/flexiblas/*
++(when built with USE_FLEXIBLAS = YES):
++
++Compiled from FlexiBLAS (https://www.mpi-magdeburg.mpg.de/projects/flexiblas)
++
++    Copyright (C) 2013-2025 Martin Koehler
++    Distributed under the GNU Lesser General Public License, version 3
++    or later (see R_HOME/share/licenses/LGPL-3).
++
++Its OpenBLAS backend includes OpenBLAS (http://www.openmathlib.org/OpenBLAS/)
++
++    Copyright (c) 2011-2014, The OpenBLAS Project
++    Distributed under the 3-clause BSD licence
++    (see R_HOME/share/licenses/BSD_3_clause).
++
++
+ src/extra/trio/* (except compat.c)
+ 
+ From trio-1.13 (http://daniel.haxx.se/projects/trio/)
+Index: doc/manual/R-admin.texi
+===================================================================
+--- doc/manual/R-admin.texi	(revision 90763)
++++ doc/manual/R-admin.texi	(working copy)
+@@ -3845,6 +3845,12 @@
+ builds of @I{OpenBLAS} and @I{BLIS}, and perhaps others@footnote{for
+ example, Intel @I{MKL} not packaged by Fedora.}.  This can be controlled
+ from a running @R{} session by package @CRANpkg{flexiblas}.
++On Windows, setting @code{USE_FLEXIBLAS = YES} in
++@file{src/gnuwin32/MkRules.local}, with the @I{FlexiBLAS} bundle unpacked
++as @file{@var{R_HOME}/FlexiBLAS}, makes @file{Rblas.dll} and
++@file{Rlapack.dll} forward to @I{FlexiBLAS}; its configuration is in
++@file{@var{R_HOME}/etc/flexiblasrc}, and the environment variable
++@env{FLEXIBLAS} selects the backend.
+ 
+ BLAS implementations which use parallel computations can be
+ non-deterministic: this is known for ATLAS.
+Index: doc/manual/rw-FAQ.texi
+===================================================================
+--- doc/manual/rw-FAQ.texi	(revision 90763)
++++ doc/manual/rw-FAQ.texi	(working copy)
+@@ -1759,6 +1759,12 @@
+ to your system using the R sources.  Unfortunately the process has been
+ less successful when tried for the common current CPUs.
+ 
++R built with @I{FlexiBLAS} (@code{USE_FLEXIBLAS = YES}, see
++@ref{, , , R-admin, R Installation and Administration}) can switch the
++BLAS and LAPACK at run time instead: set the environment variable
++@env{FLEXIBLAS}, for example to @code{OPENBLAS}, before starting R, or
++change the default in @file{R_HOME\etc\flexiblasrc}.
++
+ With a native build of R on ARM, exclude @file{\x64} from the above.
+ 
+ @c Versions of Dr Kazushige Goto's BLAS (see
