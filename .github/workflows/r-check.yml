@@ -87,14 +87,24 @@ jobs:
           Expand-Archive qpdf.zip -DestinationPath qpdf
           (Get-ChildItem qpdf -Directory | Select-Object -First 1).FullName + "\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
 
-      # Inno Setup as in R-core's setup.ps1, for the installer.
+      # Inno Setup as in R-core's setup.ps1, for the installer, unless the
+      # runner image already has it in MkRules.rules's default location.
       - name: Install Inno Setup
         timeout-minutes: 10
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe?site=2" -OutFile innosetup.exe -UseBasicParsing
-          Start-Process -Wait -NoNewWindow -FilePath .\innosetup.exe -ArgumentList "/VERYSILENT /ALLUSERS /NOICONS /DIR=`"C:\Program Files (x86)\InnoSetup`""
-          Get-ChildItem "C:\Program Files (x86)\InnoSetup\iscc.exe"
+          $dir = "C:\Program Files (x86)\Inno Setup 6"
+          if (-not (Test-Path "$dir\ISCC.exe")) {
+            $dir = "C:\Program Files (x86)\InnoSetup"
+            Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe?site=2" -OutFile innosetup.exe -UseBasicParsing
+            Start-Process -Wait -NoNewWindow -FilePath .\innosetup.exe -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /ALLUSERS /NOICONS /DIR=`"$dir`""
+          }
+          if (-not (Test-Path "$dir\ISCC.exe")) {
+            $found = (Get-ChildItem "C:\Program Files (x86)", "C:\Program Files" -Directory | Select-Object -ExpandProperty Name) -join ", "
+            Write-Output "::error title=Inno Setup::ISCC.exe not in $dir; installer $((Get-Item innosetup.exe -ErrorAction SilentlyContinue).Length) bytes; program folders: $found"
+            exit 1
+          }
+          "INNO_DIR=$($dir -replace '\\','/')" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
       # The MSYS2 login shell does not inherit the Windows PATH, so the tools
       # installed above go on PATH in tools.sh, which the build and check
@@ -140,7 +150,7 @@ jobs:
           . ../tools.sh
           # ISDIR and QPDF as in R-core's build.sh
           cat > src/gnuwin32/MkRules.local <<EOF
-          ISDIR = C:/Program Files (x86)/InnoSetup
+          ISDIR = ${INNO_DIR}
           QPDF = ${QPDF%/}
           USE_FLEXIBLAS = YES
           EOF
