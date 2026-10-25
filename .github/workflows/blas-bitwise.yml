@@ -24,10 +24,17 @@ jobs:
           r-version: devel
           rtools-version: '45'
 
+      # The MSYS2 login shell below does not inherit the Windows PATH
+      - name: Locate R
+        shell: pwsh
+        run: |
+          $h = Rscript -e "cat(normalizePath(R.home()))"
+          "R_HOME_DIR=$h" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
       - name: Build and compare
         run: |
           export PATH=/x86_64-w64-mingw32.static.posix/bin:$PATH
-          rhome=$(cygpath -u "$(Rscript -e 'cat(R.home())')")
+          rhome=$(cygpath -u "$R_HOME_DIR")
           mkdir -p src work
           for f in blas.f blas2.f90 cmplxblas.f cmplxblas2.f90 Rblas.def; do
             curl -sSf -o "src/$f" "https://svn.r-project.org/R/trunk/src/extra/blas/$f"
