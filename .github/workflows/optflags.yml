@@ -82,7 +82,7 @@ jobs:
           done
 
   base:
-    if: inputs.what == 'BLAS -O3'
+    if: inputs.what == 'BLAS -O3' && inputs.packages == ''
     runs-on: windows-2025
     timeout-minutes: 300
     steps:

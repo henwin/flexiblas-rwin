@@ -102,43 +102,49 @@ if (mode == "compare") {
     run <- args[2:4]
     norm <- function(f) {
         if (!file.exists(f)) return(NULL)
-        l <- readLines(f, warn = FALSE)
+        l <- readLines(f, warn = FALSE, encoding = "bytes")
         h <- grep("user +system +elapsed", l)
         if (length(h)) l <- l[-c(h, h + 1L)]
-        l <- gsub('0x[0-9a-fA-F]+|<[0-9A-F]{8,16}>|"[0-9a-f]{16}"', "ADDR", l)
-        gsub("C:/R-o3", "C:/R", l, fixed = TRUE)          # the copy with the -O3 BLAS
+        ## byte-wise: outputs need not be valid in the session's encoding
+        l <- gsub('0x[0-9a-fA-F]+|<[0-9A-F]{8,16}>|"[0-9a-f]{16}"', "ADDR", l, useBytes = TRUE)
+        l <- gsub("C:/R-o3", "C:/R", l, fixed = TRUE, useBytes = TRUE)   # the copy with the -O3 BLAS
+        ## widths of columns follow their widest entry, a path or a timing
+        gsub(" +", " ", trimws(l, "right"), useBytes = TRUE)
+    }
+    ## c(noisy, flagged) for one output file
+    one <- function(g, f) {
+        dir <- function(r) file.path(work, paste0("out-", r), g)
+        a <- norm(file.path(dir(run[1]), f)); a2 <- norm(file.path(dir(run[2]), f)); b <- norm(file.path(dir(run[3]), f))
+        if (is.null(a) || is.null(a2) || is.null(b)) {
+            cat(sprintf("  %s: missing in %s\n", f, paste(run[c(is.null(a), is.null(a2), is.null(b))], collapse = ", ")))
+            return(c(0L, 1L))
+        }
+        noisy <- as.integer(!identical(a, a2))
+        if (length(a) != length(a2)) return(c(noisy, 0L))
+        if (length(b) != length(a)) {
+            cat(sprintf("  %s: %d lines in %s, %d in %s\n", f, length(a), run[1], length(b), run[3]))
+            return(c(noisy, 1L))
+        }
+        d <- which(a == a2 & a != b)
+        if (length(d)) {
+            cat(sprintf("  %s: %d stable lines differ\n", f, length(d)))
+            for (k in head(d, 3))
+                cat(sprintf("    %s: %s\n    %s: %s\n", run[1], substr(a[k], 1, 100), run[3], substr(b[k], 1, 100)))
+        }
+        c(noisy, as.integer(length(d) > 0))
     }
     groups <- list.dirs(file.path(work, paste0("out-", run[1])), full.names = FALSE, recursive = FALSE)
     nflag <- 0L
     for (g in groups) {
-        dir <- function(r) file.path(work, paste0("out-", r), g)
-        files <- sort(unique(unlist(lapply(run, function(r) list.files(dir(r), "\\.Rout$", recursive = TRUE)))))
-        noisy <- 0L; flagged <- 0L
-        for (f in files) {
-            a <- norm(file.path(dir(run[1]), f)); a2 <- norm(file.path(dir(run[2]), f)); b <- norm(file.path(dir(run[3]), f))
-            if (is.null(a) || is.null(a2) || is.null(b)) {
-                flagged <- flagged + 1L
-                cat(sprintf("  %s: missing in %s\n", f, paste(run[c(is.null(a), is.null(a2), is.null(b))], collapse = ", ")))
-                next
-            }
-            if (!identical(a, a2)) noisy <- noisy + 1L
-            if (length(a) != length(a2)) next
-            if (length(b) != length(a)) {
-                flagged <- flagged + 1L
-                cat(sprintf("  %s: %d lines in %s, %d in %s\n", f, length(a), run[1], length(b), run[3]))
-                next
-            }
-            d <- which(a == a2 & a != b)
-            if (length(d)) {
-                flagged <- flagged + 1L
-                cat(sprintf("  %s: %d stable lines differ\n", f, length(d)))
-                for (k in head(d, 3))
-                    cat(sprintf("    %s: %s\n    %s: %s\n", run[1], substr(a[k], 1, 100), run[3], substr(b[k], 1, 100)))
-            }
-        }
-        nflag <- nflag + flagged
+        files <- sort(unique(unlist(lapply(run, function(r)
+            list.files(file.path(work, paste0("out-", r), g), "\\.Rout$", recursive = TRUE)))))
+        n <- c(0L, 0L)
+        for (f in files)
+            n <- n + tryCatch(one(g, f), error = function(e) {
+                cat(sprintf("  %s: not compared: %s\n", f, conditionMessage(e))); c(0L, 1L) })
+        nflag <- nflag + n[2]
         cat(sprintf("== %-12s %3d output files, %3d vary between %s and %s, %3d differ in %s\n",
-                    g, length(files), noisy, run[1], run[2], flagged, run[3]))
+                    g, length(files), n[1], run[1], run[2], n[2], run[3]))
     }
     cat(sprintf("== %d output files differ in %s\n", nflag, run[3]))
 }
