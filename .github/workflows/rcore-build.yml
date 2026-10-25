@@ -65,16 +65,14 @@ jobs:
         shell: pwsh
         run: Rename-Item C:\msys64 C:\msys64-runner
 
-      # setup.ps1 downloads Inno Setup from jrsoftware.org/download.php,
-      # which here returns a 10 kB page instead of the installer. Its own
-      # fallback is a copy in C:\installers under the name it expects, here
-      # from jrsoftware's GitHub releases.
-      - name: Put Inno Setup 6.4.1 in C:\installers
-        shell: pwsh
+      # jrsoftware.org/download.php, setup.ps1's source for Inno Setup, now
+      # redirects to the downloads page, and the installers are on GitHub;
+      # patches/r-dev-web/0003 takes the same 6.4.1 from there.
+      - name: Patch setup.ps1 for the Inno Setup download
+        shell: bash
         run: |
-          New-Item -ItemType Directory -Force C:\installers | Out-Null
-          Invoke-WebRequest https://github.com/jrsoftware/issrc/releases/download/is-6_4_1/innosetup-6.4.1.exe -OutFile C:\installers\innosetup-6.4.1.exe -UseBasicParsing
-          Get-Item C:\installers\innosetup-6.4.1.exe | Select-Object Name, Length
+          cd /c/rbuild
+          patch -p0 < "$GITHUB_WORKSPACE/patches/r-dev-web/0003-setup-inno-setup-from-github.patch"
 
       # In a process of its own, as when run by hand: the step's shell sets
       # $ErrorActionPreference to Stop, which turns errors setup.ps1 lives

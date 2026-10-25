@@ -12,9 +12,9 @@ on:
       - tests/compare-optflags.R
       - patches/r/**
       - .github/workflows/rcore-build.yml
-      - .github/workflows/inno-download.yml
       - patches/r-dev-web/0001-setup-ghostscript-10.08.0.patch
       - patches/r-dev-web/0002-build-flexiblas-bundle.patch
+      - patches/r-dev-web/0003-setup-inno-setup-from-github.patch
   pull_request:
     paths-ignore:
       - '**.md'
@@ -25,9 +25,9 @@ on:
       - tests/compare-optflags.R
       - patches/r/**
       - .github/workflows/rcore-build.yml
-      - .github/workflows/inno-download.yml
       - patches/r-dev-web/0001-setup-ghostscript-10.08.0.patch
       - patches/r-dev-web/0002-build-flexiblas-bundle.patch
+      - patches/r-dev-web/0003-setup-inno-setup-from-github.patch
   workflow_dispatch:
     inputs:
       flexiblas_own_flags:

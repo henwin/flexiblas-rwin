@@ -1,0 +1,17 @@
+Index: setup.ps1
+===================================================================
+--- setup.ps1	(revision 6985)
++++ setup.ps1	(working copy)
+@@ -18,10 +18,10 @@
+ 
+ # Install Inno Setup
+ 
+-# https://jrsoftware.org/download.php/is.exe?site=2
++# https://github.com/jrsoftware/issrc/releases/download/is-6_4_1/innosetup-6.4.1.exe
+ if (-not(Test-Path("C:\Program Files (x86)\InnoSetup"))) {
+   cd temp
+-  $url = "https://jrsoftware.org/download.php/is.exe?site=2"
++  $url = "https://github.com/jrsoftware/issrc/releases/download/is-6_4_1/innosetup-6.4.1.exe"
+   $inst = "..\installers\innosetup-6.4.1.exe"
+   
+   if (Test-Path("$inst")) {
