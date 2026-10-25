@@ -1,0 +1,90 @@
+name: BLAS and LAPACK flags, results and timings
+
+# Builds Rblas.dll and Rlapack.dll from R-devel's sources with R's flags,
+# with the other optimisation level and with -march=native
+# (tests/flags-build.sh), swaps them into CRAN's R-devel one at a time, and
+# compares R's BLAS and LAPACK results bit for bit with those of CRAN's own
+# DLLs and their timings (tests/test-flags.R).
+on:
+  workflow_dispatch:
+
+jobs:
+  compare:
+    runs-on: windows-2025
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: C:\rtools45\usr\bin\bash.exe --login -o pipefail {0}
+    env:
+      CHERE_INVOKING: 1
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: devel
+          rtools-version: '45'
+
+      # The MSYS2 login shell below does not inherit the Windows PATH
+      - name: Locate R
+        shell: pwsh
+        run: |
+          $h = Rscript -e "cat(normalizePath(R.home()))"
+          "R_HOME_DIR=$h" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          (Get-CimInstance Win32_Processor).Name
+
+      - name: Build the DLLs
+        run: |
+          export PATH=/x86_64-w64-mingw32.static.posix/bin:$PATH
+          rhome=$(cygpath -u "$R_HOME_DIR")
+          mkdir -p src work
+          for f in blas.f blas2.f90 cmplxblas.f cmplxblas2.f90 Rblas.def; do
+            curl -sSf -o "src/$f" "https://svn.r-project.org/R/trunk/src/extra/blas/$f"
+          done
+          for f in dlamch.f dlapack.f cmplx.f la_constants.f90 la_xisnan.f90 dlartg.f90 dlassq.f90 zlartg.f90 zlassq.f90; do
+            curl -sSf -o "src/$f" "https://svn.r-project.org/R/trunk/src/modules/lapack/$f"
+          done
+          gfortran -Q --help=target -march=native | grep -E '^\s+-march=' | head -1
+          cd work && bash ../tests/flags-build.sh ../src "$rhome"
+
+      - name: Compare results and timings
+        run: |
+          rhome=$(cygpath -u "$R_HOME_DIR")
+          bin=$rhome/bin/x64
+          cp "$bin/Rblas.dll" work/Rblas-cran.dll; cp "$bin/Rlapack.dll" work/Rlapack-cran.dll
+          run() {  # label, Rblas.dll, Rlapack.dll
+            cp "$2" "$bin/Rblas.dll"; cp "$3" "$bin/Rlapack.dll"
+            "$rhome/bin/Rscript" tests/test-flags.R cmp "$1" 2>&1 | tee -a flags.log
+          }
+          "$rhome/bin/Rscript" tests/test-flags.R ref "CRAN" 2>&1 | tee flags.log
+          w=work
+          run "BLAS R's flags (-O2)" $w/blas-R/Rblas.dll $w/Rlapack-cran.dll
+          run "BLAS -O3"             $w/blas-O3/Rblas.dll $w/Rlapack-cran.dll
+          run "BLAS native -O2"      $w/blas-native-O2/Rblas.dll $w/Rlapack-cran.dll
+          run "BLAS native -O3"      $w/blas-native-O3/Rblas.dll $w/Rlapack-cran.dll
+          run "LAPACK R's flags (-O3)" $w/Rblas-cran.dll $w/lapack-R/Rlapack.dll
+          run "LAPACK -O2"           $w/Rblas-cran.dll $w/lapack-O2/Rlapack.dll
+          run "LAPACK native -O2"    $w/Rblas-cran.dll $w/lapack-native-O2/Rlapack.dll
+          run "LAPACK native -O3"    $w/Rblas-cran.dll $w/lapack-native-O3/Rlapack.dll
+          run "both native -O2"      $w/blas-native-O2/Rblas.dll $w/lapack-native-O2/Rlapack.dll
+          run "both native -O3"      $w/blas-native-O3/Rblas.dll $w/lapack-native-O3/Rlapack.dll
+          run "CRAN again"           $w/Rblas-cran.dll $w/Rlapack-cran.dll
+          cp $w/Rblas-cran.dll "$bin/Rblas.dll"; cp $w/Rlapack-cran.dll "$bin/Rlapack.dll"
+          # timings as a table, seconds, operations by build
+          "$rhome/bin/Rscript" -e '
+            l <- grep("|", readLines("flags.log"), fixed = TRUE, value = TRUE)
+            d <- do.call(rbind, strsplit(l, "|", fixed = TRUE))
+            t <- tapply(as.numeric(d[, 3]), list(factor(d[, 2], unique(d[, 2])), factor(d[, 1], unique(d[, 1]))), identity)
+            options(width = 250); print(t)' > timings.txt
+          cat timings.txt
+
+      - name: Publish as annotations
+        if: always()
+        shell: bash
+        run: |
+          { grep -v '|' flags.log; echo; cat timings.txt; } > summary.log 2>/dev/null || true
+          split -l 30 -d summary.log part-
+          for p in part-*; do
+            t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
+            echo "::notice title=flags (${p#part-})::$t"
+          done

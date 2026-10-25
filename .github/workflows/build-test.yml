@@ -16,6 +16,7 @@ on:
       - patches/r-dev-web/0004-build-patched-branch-name.patch
       - scripts/compare-codegen.sh
       - .github/workflows/blas-bitwise.yml
+      - .github/workflows/flags-timing.yml
   pull_request:
     paths-ignore:
       - '**.md'
@@ -30,6 +31,7 @@ on:
       - patches/r-dev-web/0004-build-patched-branch-name.patch
       - scripts/compare-codegen.sh
       - .github/workflows/blas-bitwise.yml
+      - .github/workflows/flags-timing.yml
   workflow_dispatch:
 
 env:
