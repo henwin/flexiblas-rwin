@@ -15,6 +15,7 @@ on:
       - patches/r-dev-web/0003-setup-inno-setup-from-github.patch
       - patches/r-dev-web/0004-build-patched-branch-name.patch
       - scripts/compare-codegen.sh
+      - .github/workflows/blas-bitwise.yml
   pull_request:
     paths-ignore:
       - '**.md'
@@ -28,6 +29,7 @@ on:
       - patches/r-dev-web/0003-setup-inno-setup-from-github.patch
       - patches/r-dev-web/0004-build-patched-branch-name.patch
       - scripts/compare-codegen.sh
+      - .github/workflows/blas-bitwise.yml
   workflow_dispatch:
 
 env:
