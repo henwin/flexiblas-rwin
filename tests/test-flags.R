@@ -10,8 +10,10 @@ if (mode == "table") {
     l <- grep("|", readLines(args[2]), fixed = TRUE, value = TRUE)
     d <- read.table(text = l, sep = "|", col.names = c("build", "op", "s"), quote = "")
     d$build <- factor(d$build, unique(d$build)); d$op <- factor(d$op, unique(d$op))
-    options(width = 250)
+    ## builds as columns 1, 2, ..., named below the table, to stay narrow
+    b <- levels(d$build); levels(d$build) <- seq_along(b)
     print(xtabs(s ~ op + build, d))
+    cat(sprintf("%2d %s\n", seq_along(b), b), sep = "")
     quit(save = "no")
 }
 label <- if (length(args) > 1) args[2] else mode
