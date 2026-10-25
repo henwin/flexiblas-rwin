@@ -225,9 +225,10 @@ jobs:
           $id = gh run list -R $env:GITHUB_REPOSITORY -w rcore-build.yml -s success -L 1 --json databaseId --jq '.[0].databaseId'
           "run_id=$id" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
 
+      # R-devel-installer is the artifact's name in runs before R-patched
       - uses: actions/download-artifact@v8
         with:
-          name: R-installer
+          pattern: R-*installer
           path: inst
           run-id: ${{ steps.prev.outputs.run_id || github.run_id }}
           github-token: ${{ github.token }}

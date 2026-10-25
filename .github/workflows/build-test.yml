@@ -14,6 +14,7 @@ on:
       - patches/r-dev-web/0002-build-flexiblas-bundle.patch
       - patches/r-dev-web/0003-setup-inno-setup-from-github.patch
       - patches/r-dev-web/0004-build-patched-branch-name.patch
+      - scripts/compare-codegen.sh
   pull_request:
     paths-ignore:
       - '**.md'
@@ -26,6 +27,7 @@ on:
       - patches/r-dev-web/0002-build-flexiblas-bundle.patch
       - patches/r-dev-web/0003-setup-inno-setup-from-github.patch
       - patches/r-dev-web/0004-build-patched-branch-name.patch
+      - scripts/compare-codegen.sh
   workflow_dispatch:
 
 env:
