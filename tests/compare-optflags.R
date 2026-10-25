@@ -26,7 +26,7 @@ for (opt in names(mk)) {
     for (i in seq_len(nrow(src))) {
         log <- file.path(work, sprintf("install-%s-%s.log", src[i, 1], opt))
         system2(file.path(R.home("bin"), "R"),
-                c("CMD", "INSTALL", "--preclean", paste0("--library=", shQuote(lib)), shQuote(src[i, 2])),
+                c("CMD", "INSTALL", "--preclean", "--install-tests", paste0("--library=", shQuote(lib)), shQuote(src[i, 2])),
                 stdout = log, stderr = log)
         cc <- grep("^(gcc|gfortran|g\\+\\+) .* -c ", readLines(log), value = TRUE)
         cat(sprintf("%-12s %s: %d compiles, flags %s\n", src[i, 1], opt, length(cc),
