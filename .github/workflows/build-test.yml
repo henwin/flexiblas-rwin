@@ -8,12 +8,16 @@ on:
       - .gitattributes
       - .github/workflows/platforms.yml
       - .github/workflows/r-check.yml
+      - .github/workflows/optflags.yml
+      - tests/compare-optflags.R
   pull_request:
     paths-ignore:
       - '**.md'
       - .gitattributes
       - .github/workflows/platforms.yml
       - .github/workflows/r-check.yml
+      - .github/workflows/optflags.yml
+      - tests/compare-optflags.R
   workflow_dispatch:
     inputs:
       flexiblas_own_flags:

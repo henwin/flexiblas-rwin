@@ -1,0 +1,39 @@
+name: Packages built with -O2 and -O3
+
+# Builds CRAN packages from source with R's package flags (-O2) and with
+# -O3, and compares the outputs of their examples and tests (see
+# tests/compare-optflags.R). Plain R from CRAN, without FlexiBLAS.
+on:
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: CRAN packages, separated by spaces
+        default: mvtnorm
+
+jobs:
+  compare:
+    runs-on: windows-2025
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 4.6.1
+          rtools-version: '45'
+
+      - name: Build with -O2 and -O3 and compare
+        shell: bash
+        run: Rscript tests/compare-optflags.R ${{ inputs.packages }} 2>&1 | tee optflags.log
+
+      - name: Publish the comparison as annotations
+        if: always()
+        shell: bash
+        run: |
+          [ -f optflags.log ] || exit 0
+          grep -v -E '^(trying URL|Content type|downloaded|=+$|package .* successfully)' optflags.log | tail -120 > summary.log
+          split -l 30 -d summary.log part-
+          for p in part-*; do
+            t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
+            echo "::notice title=optflags (${p#part-})::$t"
+          done
