@@ -70,36 +70,41 @@ for (opt in c(names(mk), "O2b")) for (p in pkgs) {
     .libPaths(old)
 }
 
-## Compare the outputs, ignoring lines with timings.
-compare <- function(x, y) {
-ndiff <- 0L
+## Compare the outputs. Lines that differ between the two runs of the -O2
+## build (addresses, dates, timings, packages' own random numbers) say
+## nothing about the flags; only lines that agree between O2 and O2b and
+## differ in O3 do. Addresses are blanked before comparing.
+norm <- function(f) {
+    if (!file.exists(f)) return(NULL)
+    l <- readLines(f, warn = FALSE)
+    h <- grep("user +system +elapsed", l)
+    if (length(h)) l <- l[-c(h, h + 1L)]
+    gsub('0x[0-9a-fA-F]+|<[0-9A-F]{8,16}>|"[0-9a-f]{16}"', "ADDR", l)
+}
+nflag <- 0L
 for (p in pkgs) {
-    a <- file.path(work, paste0("out-", x), p); b <- file.path(work, paste0("out-", y), p)
-    files <- sort(union(list.files(a, "\\.Rout$", recursive = TRUE),
-                        list.files(b, "\\.Rout$", recursive = TRUE)))
-    cat(sprintf("\n== %s, %s against %s: %d output files\n", p, y, x, length(files)))
+    dir <- function(x) file.path(work, paste0("out-", x), p)
+    files <- sort(unique(unlist(lapply(c("O2", "O2b", "O3"), function(x)
+        list.files(dir(x), "\\.Rout$", recursive = TRUE)))))
+    noisy <- 0L; flagged <- character()
     for (f in files) {
-        la <- if (file.exists(file.path(a, f))) readLines(file.path(a, f)) else "(missing)"
-        lb <- if (file.exists(file.path(b, f))) readLines(file.path(b, f)) else "(missing)"
-        ## drop timings: system.time()'s header and the line of values under it
-        keep <- function(l) {
-            h <- grep("user +system +elapsed", l)
-            if (length(h)) l <- l[-c(h, h + 1L)]
-            l[!grepl("Time|elapsed|seconds", l)]
+        a <- norm(file.path(dir("O2"), f)); b <- norm(file.path(dir("O2b"), f)); c <- norm(file.path(dir("O3"), f))
+        if (is.null(a) || is.null(b) || is.null(c)) { flagged <- c(flagged, f); cat(sprintf("  %s: missing in a build\n", f)); next }
+        if (length(a) != length(b)) { noisy <- noisy + 1L; next }
+        if (!identical(a, b)) noisy <- noisy + 1L
+        if (length(c) != length(a)) {
+            flagged <- c(flagged, f)
+            cat(sprintf("  %s: %d lines with -O2, %d with -O3\n", f, length(a), length(c)))
+            next
         }
-        la <- keep(la); lb <- keep(lb)
-        if (identical(la, lb)) {
-            cat(sprintf("%-40s identical\n", f))
-        } else {
-            ndiff <- ndiff + 1L
-            n <- max(length(la), length(lb))
-            d <- which(rep_len(la, n) != rep_len(lb, n))
-            cat(sprintf("%-40s %d lines differ\n", f, length(d)))
-            for (k in head(d, 6)) cat(sprintf("  %s: %s\n  %s: %s\n", x, la[k], y, lb[k]))
+        d <- which(a == b & a != c)
+        if (length(d)) {
+            flagged <- c(flagged, f)
+            cat(sprintf("  %s: %d stable lines differ with -O3\n", f, length(d)))
+            for (k in head(d, 3)) cat(sprintf("    O2: %s\n    O3: %s\n", substr(a[k], 1, 100), substr(c[k], 1, 100)))
         }
     }
+    nflag <- nflag + length(flagged)
+    cat(sprintf("== %-12s %3d output files, %3d vary between runs, %3d differ with -O3\n", p, length(files), noisy, length(flagged)))
 }
-cat("\n", ndiff, "output files differ between", x, "and", y, "\n")
-}
-compare("O2", "O2b")
-compare("O2", "O3")
+cat(sprintf("== %d output files differ with -O3\n", nflag))
