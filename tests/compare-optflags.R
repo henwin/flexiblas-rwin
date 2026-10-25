@@ -15,7 +15,9 @@ src <- download.packages(pkgs, destdir = work, repos = repos, type = "source", q
 
 eopts <- "-mfpmath=sse -msse2 -mstackrealign"
 mk <- c(O2 = "", O3 = file.path(work, "Makevars-O3"))
+## every compiler R's Makeconf sets flags for, C++ standards included
 writeLines(c(sprintf("CFLAGS = -O3 -Wall -std=gnu2x %s", eopts),
+             sprintf("%s = -O3 -Wall %s", c("CXXFLAGS", paste0("CXX", c(11, 14, 17, 20, 23, 26), "FLAGS")), eopts),
              sprintf("FFLAGS = -O3 %s", eopts),
              sprintf("FCFLAGS = -O3 %s", eopts)), mk[["O3"]])
 
