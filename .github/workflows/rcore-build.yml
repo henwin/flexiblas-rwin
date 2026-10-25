@@ -65,12 +65,17 @@ jobs:
         shell: pwsh
         run: Rename-Item C:\msys64 C:\msys64-runner
 
+      # In a process of its own, as when run by hand: the step's shell sets
+      # $ErrorActionPreference to Stop, which turns errors setup.ps1 lives
+      # with into fatal ones.
       - name: Run setup.ps1
         timeout-minutes: 60
         shell: pwsh
         run: |
-          & C:\rbuild\setup.ps1 *>&1 | Out-File -FilePath C:\rbuild\setup.log
+          pwsh -NoProfile -ExecutionPolicy Bypass -File C:\rbuild\setup.ps1 *> C:\rbuild\setup.log
+          "setup.ps1 exit status $LASTEXITCODE" | Tee-Object -Append C:\rbuild\setup.log
           Get-Content C:\rbuild\setup.log -Tail 20
+          if (-not (Test-Path C:\msys64\usr\bin\bash.exe)) { exit 1 }
 
       - uses: actions/cache@v4
         with:
@@ -148,7 +153,7 @@ jobs:
           b=/c/rbuild
           {
             echo "backend: ${{ inputs.backend }}"
-            [ -f $b/setup.log ] && { echo "setup.log (tail):"; tail -15 $b/setup.log; }
+            [ -f $b/setup.log ] && { echo "setup.log (errors and tail):"; grep -n -i -E 'error|exception|not recognized|denied' $b/setup.log | head -15; tail -15 $b/setup.log; }
             [ -f $b/build.log ] && { echo "build.log (errors and tail):"; grep -n -E 'Error|error:|\*\*\*|not available' $b/build.log | head -20; tail -15 $b/build.log; }
             [ -f $b/install.log ] && { echo "install.log:"; cat $b/install.log; }
             for f in checkdevel.out checkall.out; do
