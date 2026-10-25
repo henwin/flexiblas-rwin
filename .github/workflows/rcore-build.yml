@@ -1,0 +1,167 @@
+name: R-core's setup.ps1 and build.sh
+
+# Builds R-devel and its installer with R-core's own scripts from R-dev-web
+# (WindowsBuilds/winutf8/ucrt3/r): setup.ps1 installs Inno Setup, MiKTeX,
+# qpdf, Ghostscript and MSYS2, and build.sh --check unpacks the toolchain
+# tarball and the Tcl/Tk bundle, checks out R, applies the r_*.diff
+# patches, runs make distribution and then make check-devel and check-all.
+# Added here: the FlexiBLAS bundle from the latest successful "Build and
+# test" run, patches/r as further r_*.diff, and
+# patches/r-dev-web/0002 to build.sh, which uses the bundle when present.
+# Long, so it runs only on demand.
+on:
+  workflow_dispatch:
+    inputs:
+      backend:
+        description: FlexiBLAS backend for the build and checks
+        default: OPENBLAS
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  RDEVWEB: https://svn.r-project.org/R-dev-web/trunk/WindowsBuilds/winutf8/ucrt3/r
+  # CRAN's toolchain tarball and Tcl/Tk bundle for Rtools45, under the
+  # names build.sh looks for
+  TOOLCHAIN: rtools45-toolchain-libs-full-6768.tar.zst
+  TCLTK: tcltk-6768-6663.zip
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Find the latest successful build
+        id: build
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $id = gh run list -R $env:GITHUB_REPOSITORY -w build-test.yml -s success -L 1 --json databaseId --jq '.[0].databaseId'
+          "run_id=$id" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: flexiblas-rwin
+          path: dist
+          run-id: ${{ steps.build.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Fetch R-core's scripts and patches
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory C:\rbuild | Out-Null
+          foreach ($f in "setup.ps1", "build.sh", "r_001_ucrt3_package_patches_and_repo.diff", "r_002_rtools45.diff") {
+            Invoke-WebRequest "$env:RDEVWEB/$f" -OutFile "C:\rbuild\$f" -UseBasicParsing
+          }
+          Get-ChildItem C:\rbuild
+
+      # setup.ps1 installs MSYS2 and the packages build.sh needs only when
+      # C:\msys64 does not exist, and the runner image has its own there.
+      - name: Move the runner's MSYS2 aside
+        shell: pwsh
+        run: Rename-Item C:\msys64 C:\msys64-runner
+
+      - name: Run setup.ps1
+        timeout-minutes: 60
+        shell: pwsh
+        run: |
+          & C:\rbuild\setup.ps1 *>&1 | Out-File -FilePath C:\rbuild\setup.log
+          Get-Content C:\rbuild\setup.log -Tail 20
+
+      - uses: actions/cache@v4
+        with:
+          path: cache
+          key: ${{ env.TOOLCHAIN }}-${{ env.TCLTK }}
+
+      - name: Toolchain tarball and Tcl/Tk bundle
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force cache | Out-Null
+          foreach ($f in $env:TOOLCHAIN, $env:TCLTK) {
+            if (-not (Test-Path "cache\$f")) {
+              Invoke-WebRequest "https://cran.r-project.org/bin/windows/Rtools/rtools45/files/$f" -OutFile "cache\$f" -UseBasicParsing
+            }
+          }
+          Copy-Item "cache\$env:TOOLCHAIN" C:\rbuild\gcc14_ucrt3_full_6768.tar.zst
+          Copy-Item "cache\$env:TCLTK" C:\rbuild\Tcl-6768-6663.zip
+
+      - name: Add the FlexiBLAS bundle and the patches
+        shell: C:\msys64\usr\bin\bash.exe --login -eo pipefail {0}
+        env:
+          CHERE_INVOKING: 1
+        run: |
+          w=$(cygpath -u "$GITHUB_WORKSPACE")
+          cp "$(find "$w/dist" -name FlexiBLAS.zip | head -1)" /c/rbuild/FlexiBLAS.zip
+          i=100
+          for p in "$w"/patches/r/*.patch; do
+            i=$((i + 1))
+            cp "$p" "/c/rbuild/r_${i}_$(basename "$p" .patch).diff"
+          done
+          cd /c/rbuild
+          patch -p0 < "$w/patches/r-dev-web/0002-build-flexiblas-bundle.patch"
+          ls -la
+
+      - name: Run build.sh --check
+        shell: C:\msys64\usr\bin\bash.exe --login {0}
+        env:
+          CHERE_INVOKING: 1
+          FLEXIBLAS: ${{ inputs.backend }}
+        working-directory: C:\rbuild
+        run: |
+          ./build.sh --check > build.log 2>&1
+          tail -30 build.log
+          ls -la build
+
+      # The installer, installed silently into a fresh directory: FlexiBLAS's
+      # DLLs, backends and configuration must come with it.
+      - name: Install R from the installer
+        timeout-minutes: 15
+        shell: C:\msys64\usr\bin\bash.exe --login -eo pipefail {0}
+        env:
+          CHERE_INVOKING: 1
+        run: |
+          exec > >(tee /c/rbuild/install.log) 2>&1
+          /c/rbuild/build/R-devel-win.exe //VERYSILENT //SUPPRESSMSGBOXES //NORESTART //CURRENTUSER //DIR='C:\R-inst'
+          ls /c/R-inst/bin/x64/flexiblas /c/R-inst/etc
+          for b in NETLIB OPENBLAS; do
+            FLEXIBLAS=$b /c/R-inst/bin/Rscript -e 'cat(extSoftVersion()[["BLAS"]], La_library(), sep = "\n")'
+          done
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: R-devel-installer
+          path: |
+            C:/rbuild/build/R-devel-win.exe
+            C:/rbuild/build/*.out
+            C:/rbuild/*.log
+          if-no-files-found: ignore
+
+      - name: Summarise
+        if: always()
+        shell: bash
+        run: |
+          b=/c/rbuild
+          {
+            echo "backend: ${{ inputs.backend }}"
+            [ -f $b/setup.log ] && { echo "setup.log (tail):"; tail -15 $b/setup.log; }
+            [ -f $b/build.log ] && { echo "build.log (errors and tail):"; grep -n -E 'Error|error:|\*\*\*|not available' $b/build.log | head -20; tail -15 $b/build.log; }
+            [ -f $b/install.log ] && { echo "install.log:"; cat $b/install.log; }
+            for f in checkdevel.out checkall.out; do
+              [ -f $b/build/$f ] && { echo "$f (tail):"; tail -8 $b/build/$f; }
+            done
+            for f in $(find $b/trunk/tests $b/trunk/src/library -name '*.Rout.fail' 2>/dev/null); do
+              echo "== $f"
+              tail -15 "$f"
+            done
+          } > summary.log
+          cat summary.log
+          split -l 30 -d summary.log part-
+          for p in part-*; do
+            t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
+            echo "::notice title=build.sh (${p#part-})::$t"
+          done

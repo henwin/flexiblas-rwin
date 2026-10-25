@@ -1,0 +1,35 @@
+Index: build.sh
+===================================================================
+--- build.sh	(revision 6985)
++++ build.sh	(working copy)
+@@ -7,6 +7,8 @@
+ #   for target x86_64:   
+ #     gcc14_ucrt3_full*tar.zst (single file, see ../toolchain_libs)
+ #     Tcl*.zip (single file, name not including aarch64, see ../tcl_bundle)
++#     FlexiBLAS*.zip (optional, single file, see ../flexiblas_bundle);
++#       when present, R is built with USE_FLEXIBLAS = YES
+ #
+ #   for target aarch64:
+ #     llvm19_ucrt3_full_aarch64*tar.zst
+@@ -260,6 +262,10 @@
+ svn diff > ../build/ucrt3.diff
+ svn info --show-item revision > ../build/svn_revision
+ unzip ../$TCLFILE
++FBFILE=`ls -1 ../FlexiBLAS*zip 2>/dev/null | grep -v aarch64 | head -1`
++if [ "X$FBFILE" != X ] ; then
++  unzip $FBFILE
++fi
+ 
+ # Not needed as we use Schannel - https://curl.se/docs/sslcerts.html
+ cd etc
+@@ -280,6 +286,10 @@
+ ISDIR = ${MISDIR}
+ EOF
+ 
++if [ -d ../../FlexiBLAS ] ; then
++  echo "USE_FLEXIBLAS = YES" >> MkRules.local
++fi
++
+ if [ "X${QPDFDIR}" != X ] ; then
+   export R_QPDF="${QPDFDIR}/bin/qpdf"
+   cat <<EOF >> MkRules.local

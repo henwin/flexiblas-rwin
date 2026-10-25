@@ -11,6 +11,9 @@ on:
       - .github/workflows/optflags.yml
       - tests/compare-optflags.R
       - patches/r/**
+      - .github/workflows/rcore-build.yml
+      - patches/r-dev-web/0001-setup-ghostscript-10.08.0.patch
+      - patches/r-dev-web/0002-build-flexiblas-bundle.patch
   pull_request:
     paths-ignore:
       - '**.md'
@@ -20,6 +23,9 @@ on:
       - .github/workflows/optflags.yml
       - tests/compare-optflags.R
       - patches/r/**
+      - .github/workflows/rcore-build.yml
+      - patches/r-dev-web/0001-setup-ghostscript-10.08.0.patch
+      - patches/r-dev-web/0002-build-flexiblas-bundle.patch
   workflow_dispatch:
     inputs:
       flexiblas_own_flags:
