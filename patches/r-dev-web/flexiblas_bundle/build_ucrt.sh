@@ -64,14 +64,21 @@ patch -p1 < $BHOME/flexiblas.diff
 # src/modules/lapack/Makefile.win): Rblas.dll with FFLAGS='-O2 $(EOPTS)',
 # Rlapack.dll with '-O3 $(EOPTS)' and dlamch.f also with -ffloat-store.
 # FlexiBLAS's reference BLAS (the NETLIB backend) and LAPACK (the fallback)
-# are targets in subdirectories, and LAPACK's own CMake sets -O2, so the
-# optimisation level is appended to them in deferred calls.
+# are targets in subdirectories, and LAPACK's own CMake sets -O2, so R's
+# optimisation level is appended to them in deferred calls.  FlexiBLAS also
+# adds -ffloat-store to its BLAS and stack protection everywhere; they do not
+# change results but made its BLAS two to four times slower than R's, so they
+# are switched off again.  -frecursive stays: it keeps local arrays off
+# static storage, which LAPACK needs to be called from several threads.
 EOPTS="-mfpmath=sse -msse2 -mstackrealign"
 cat > $BHOME/build/rflags.cmake <<'EOF'
-cmake_language(DEFER CALL set_property TARGET flexiblas_netlib_objs APPEND PROPERTY
-  COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-O2>")
-cmake_language(DEFER CALL set_property TARGET flexiblas_fallback_lapack_objs APPEND PROPERTY
-  COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-O3>")
+cmake_language(DEFER CALL set_property TARGET flexiblas_netlib_objs APPEND PROPERTY COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-O2>")
+cmake_language(DEFER CALL set_property TARGET flexiblas_netlib_objs APPEND PROPERTY COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-fno-float-store>")
+cmake_language(DEFER CALL set_property TARGET flexiblas_netlib_objs APPEND PROPERTY COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-fno-stack-protector>")
+cmake_language(DEFER CALL set_property TARGET flexiblas_netlib_objs APPEND PROPERTY COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-fno-stack-clash-protection>")
+cmake_language(DEFER CALL set_property TARGET flexiblas_fallback_lapack_objs APPEND PROPERTY COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-O3>")
+cmake_language(DEFER CALL set_property TARGET flexiblas_fallback_lapack_objs APPEND PROPERTY COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-fno-stack-protector>")
+cmake_language(DEFER CALL set_property TARGET flexiblas_fallback_lapack_objs APPEND PROPERTY COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-fno-stack-clash-protection>")
 cmake_language(DEFER CALL set_property SOURCE ${CMAKE_SOURCE_DIR}/contributed/lapack-3.12.1/INSTALL/dlamch.f
   DIRECTORY ${CMAKE_SOURCE_DIR}/contributed/lapack-3.12.1/SRC APPEND PROPERTY COMPILE_OPTIONS -ffloat-store)
 EOF
