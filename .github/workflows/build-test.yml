@@ -118,7 +118,7 @@ jobs:
         run: |
           r=$(cygpath -u "$R_HOME_DIR")
           bin=$r/bin/x64
-          cp "$bin/Rblas.dll" "$bin/Rblas-reference.dll"
+          cp "$bin/Rblas.dll" "$bin/Rblas_ref.dll"
           # R's own LAPACK stays available for the symbols FlexiBLAS lacks.
           cp "$bin/Rlapack.dll" "$bin/Rlapack_ref.dll"
           # The bundle has R's layout (bin/x64, etc), so it is copied over
@@ -126,6 +126,8 @@ jobs:
           d=$(dirname "$(find dist -type d -name forwarders | head -1)")
           cp -r "$d"/FlexiBLAS/. "$r/"
           cp "$d"/forwarders/*.dll "$bin/"
+          # Backend "R": R's own BLAS and LAPACK (scripts/forwarders.sh).
+          cp "$d"/forwarders/R.conf "$r/etc/flexiblasrc.d/"
           ls "$r"/etc/flexiblasrc* "$bin"/libflexiblas*.dll "$bin"/flexiblas
 
       - name: Install the flexiblas R package, patched for Windows
@@ -190,6 +192,25 @@ jobs:
           $hits | ForEach-Object { $_.Line }
           if (($hits | Measure-Object).Count -lt 2) { exit 1 }
 
+      - name: Backend selection by environment and user configuration
+        if: always()
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          exec > >(tee backends.log) 2>&1
+          cur() { Rscript -e 'cat(flexiblas::flexiblas_current_backend())'; }
+          fail=0
+          check() { printf '%-45s %s\n' "$1" "$2"; [ "$2" = "$3" ] || { echo "  expected $3"; fail=1; }; }
+          check "default" "$(cur)" NETLIB
+          check "FLEXIBLAS=OPENBLAS" "$(FLEXIBLAS=OPENBLAS cur)" OPENBLAS
+          check "FLEXIBLAS=R" "$(FLEXIBLAS=R cur)" R
+          u="$(cygpath -u "$APPDATA")/flexiblasrc"
+          printf 'default = R\n' > "$u"
+          check "user config %APPDATA%\\flexiblasrc: default = R" "$(cur)" R
+          check "  overridden by FLEXIBLAS=OPENBLAS" "$(FLEXIBLAS=OPENBLAS cur)" OPENBLAS
+          rm "$u"
+          exit $fail
+
       - name: Memory use
         if: always()
         continue-on-error: true
@@ -198,6 +219,9 @@ jobs:
         run: |
           Rscript tests/test-memory.R 2>&1 | Tee-Object -FilePath memory.log
           $env:OPENBLAS_NUM_THREADS = 1
+          Rscript tests/test-memory.R 2>&1 | Tee-Object -Append -FilePath memory.log
+          Remove-Item Env:OPENBLAS_NUM_THREADS
+          $env:OMP_NUM_THREADS = 1
           Rscript tests/test-memory.R 2>&1 | Tee-Object -Append -FilePath memory.log
 
       - name: R's BLAS regression tests
@@ -227,7 +251,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "reg-BLAS.log", "pkg-install.log", "pkg-tests.log", "profile-nonzero.log", "nan.log", "memory.log") {
+          foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "reg-BLAS.log", "pkg-install.log", "pkg-tests.log", "profile-nonzero.log", "nan.log", "memory.log", "backends.log") {
             if (Test-Path $f) {
               # Annotations are cut at about 4 KB, so publish in parts.
               $lines = Get-Content $f

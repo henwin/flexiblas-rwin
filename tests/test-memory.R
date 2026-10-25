@@ -26,6 +26,7 @@ mem <- if (.Platform$OS.type == "windows") function(what) {
 }
 
 cat("backend:", backend, "; OPENBLAS_NUM_THREADS:", Sys.getenv("OPENBLAS_NUM_THREADS", "(unset)"),
+    "; OMP_NUM_THREADS:", Sys.getenv("OMP_NUM_THREADS", "(unset)"),
     "; cores:", parallel::detectCores(), "\n")
 mem("startup")
 flexiblas::flexiblas_switch(flexiblas::flexiblas_load_backend(backend))

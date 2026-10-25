@@ -44,4 +44,18 @@ for lib in Rblas Rlapack; do
     $TARGET-gcc -shared -nostdlib -Wl,-e,0 -o "$DIST/forwarders/$lib.dll" fwd.c "$lib.def"
 done
 
+# A FlexiBLAS backend "R" made of R's own BLAS and LAPACK: a DLL that
+# forwards the BLAS exports to R's original Rblas.dll and the LAPACK exports
+# to its original Rlapack.dll, kept as Rblas_ref.dll and
+# Rlapack_ref.dll. R's LAPACK calls BLAS through Rblas.dll, that is through
+# FlexiBLAS and so through this backend.
+{
+    echo "LIBRARY libflexiblas_r.dll"
+    echo "EXPORTS"
+    sed 's/.*/& = Rblas_ref.&/' Rblas.exports
+    comm -13 Rblas.exports Rlapack.exports | sed 's/.*/& = Rlapack_ref.&/'
+} > r.def
+$TARGET-gcc -shared -nostdlib -Wl,-e,0 -o "$DIST/forwarders/libflexiblas_r.dll" fwd.c r.def
+printf '[R]\nlibrary = libflexiblas_r.dll\n' > "$DIST/forwarders/R.conf"
+
 ls -la "$DIST/forwarders"
