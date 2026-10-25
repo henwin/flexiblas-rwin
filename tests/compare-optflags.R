@@ -10,7 +10,9 @@
 ## directories are in $OPTFLAGS_WORK, or optflags-work.
 args <- commandArgs(TRUE)
 mode <- args[1]
-work <- normalizePath(Sys.getenv("OPTFLAGS_WORK", "optflags-work"), mustWork = FALSE)
+## with / on Windows: testInstalledPackage() pastes the library path into R
+## code, where a backslash starts an escape
+work <- normalizePath(Sys.getenv("OPTFLAGS_WORK", "optflags-work"), winslash = "/", mustWork = FALSE)
 dir.create(work, showWarnings = FALSE)
 repos <- "https://cloud.r-project.org"
 
@@ -81,9 +83,15 @@ if (mode == "base") {
     out <- file.path(work, paste0("out-", run))
     dir.create(file.path(out, "base"), recursive = TRUE, showWarnings = FALSE)
     dir.create(file.path(out, "recommended"), showWarnings = FALSE)
-    cat("testInstalledBasic:", tools::testInstalledBasic("both", outDir = file.path(out, "base")), "\n")
-    cat("testInstalledPackages:", tools::testInstalledPackages(outDir = file.path(out, "recommended"), scope = "recommended",
-                                                               types = c("examples", "tests"), errorsAreFatal = FALSE), "\n")
+    ## failures are part of the result, not reasons to stop
+    for (s in c("basic", "devel"))
+        cat(sprintf("testInstalledBasic(\"%s\"): %s\n", s,
+                    tryCatch(tools::testInstalledBasic(s, outDir = file.path(out, "base")),
+                             error = function(e) conditionMessage(e))))
+    cat(sprintf("testInstalledPackages: %s\n",
+                tryCatch(tools::testInstalledPackages(outDir = file.path(out, "recommended"), scope = "recommended",
+                                                      types = c("examples", "tests"), errorsAreFatal = FALSE),
+                         error = function(e) conditionMessage(e))))
 }
 
 if (mode == "compare") {
@@ -97,7 +105,8 @@ if (mode == "compare") {
         l <- readLines(f, warn = FALSE)
         h <- grep("user +system +elapsed", l)
         if (length(h)) l <- l[-c(h, h + 1L)]
-        gsub('0x[0-9a-fA-F]+|<[0-9A-F]{8,16}>|"[0-9a-f]{16}"', "ADDR", l)
+        l <- gsub('0x[0-9a-fA-F]+|<[0-9A-F]{8,16}>|"[0-9a-f]{16}"', "ADDR", l)
+        gsub("C:/R-o3", "C:/R", l, fixed = TRUE)          # the copy with the -O3 BLAS
     }
     groups <- list.dirs(file.path(work, paste0("out-", run[1])), full.names = FALSE, recursive = FALSE)
     nflag <- 0L
