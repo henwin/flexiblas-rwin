@@ -47,7 +47,12 @@ timings <- function() c(
     "dgemm, n = 1500"  = system.time(B %*% B)[["elapsed"]],
     "dpotrf, n = 1500" = system.time(chol(SB))[["elapsed"]],
     "dgesv, n = 1500"  = system.time(solve(B, B[, 1]))[["elapsed"]],
-    "dsyevr, n = 1500" = system.time(eigen(SB, symmetric = TRUE))[["elapsed"]])
+    "dsyevr, n = 1500" = system.time(eigen(SB, symmetric = TRUE))[["elapsed"]],
+    ## many small calls, where FlexiBLAS's dispatch would show
+    "1e5 x dgemm, n = 10" = system.time(for (i in 1:1e5) a10 %*% a10)[["elapsed"]],
+    "1e5 x dgesv, n = 10" = system.time(for (i in 1:1e5) solve(a10, b10))[["elapsed"]])
+a10 <- matrix(rnorm(100), 10)
+b10 <- rnorm(10)
 
 if (identical(mode, "ref")) {
     saveRDS(list(results = run(), timings = timings()), "identical-ref.rds")
@@ -70,6 +75,6 @@ for (k in names(ref)) {
 }
 cat(diffs, "of", length(ref), "results differ from R's own\n\n")
 t1 <- timings()
-cat(sprintf("%-18s %8s %8s\n", "elapsed (s)", "R's own", cur))
-for (k in names(t1)) cat(sprintf("%-18s %8.2f %8.2f\n", k, saved$timings[[k]], t1[[k]]))
+cat(sprintf("%-20s %8s %8s\n", "elapsed (s)", "R's own", cur))
+for (k in names(t1)) cat(sprintf("%-20s %8.2f %8.2f\n", k, saved$timings[[k]], t1[[k]]))
 quit(status = as.integer(diffs > 0))
