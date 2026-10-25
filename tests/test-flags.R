@@ -3,8 +3,17 @@
 ##   Rscript test-flags.R ref          saves the results to flags-ref.rds
 ##   Rscript test-flags.R cmp LABEL    compares with them, bit for bit
 ## Both print timings, the median of five runs, as "LABEL op seconds".
+##   Rscript test-flags.R table LOG    tabulates the timings in LOG
 args <- commandArgs(TRUE)
 mode <- args[1]
+if (mode == "table") {
+    l <- grep("|", readLines(args[2]), fixed = TRUE, value = TRUE)
+    d <- read.table(text = l, sep = "|", col.names = c("build", "op", "s"), quote = "")
+    d$build <- factor(d$build, unique(d$build)); d$op <- factor(d$op, unique(d$op))
+    options(width = 250)
+    print(xtabs(s ~ op + build, d))
+    quit(save = "no")
+}
 label <- if (length(args) > 1) args[2] else mode
 
 rnd <- function(n, m = n, cx = FALSE) {

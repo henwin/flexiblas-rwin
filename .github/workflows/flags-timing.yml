@@ -70,12 +70,9 @@ jobs:
           run "both native -O3"      $w/blas-native-O3/Rblas.dll $w/lapack-native-O3/Rlapack.dll
           run "CRAN again"           $w/Rblas-cran.dll $w/Rlapack-cran.dll
           cp $w/Rblas-cran.dll "$bin/Rblas.dll"; cp $w/Rlapack-cran.dll "$bin/Rlapack.dll"
-          # timings as a table, seconds, operations by build
-          "$rhome/bin/Rscript" -e '
-            l <- grep("|", readLines("flags.log"), fixed = TRUE, value = TRUE)
-            d <- read.table(text = l, sep = "|", col.names = c("build", "op", "s"), quote = "")
-            d$build <- factor(d$build, unique(d$build)); d$op <- factor(d$op, unique(d$op))
-            options(width = 250); print(xtabs(s ~ op + build, d))' > timings.txt 2>&1
+          # timings as a table, seconds, operations by build; Rscript -e on
+          # Windows does not take a program over several lines
+          "$rhome/bin/Rscript" tests/test-flags.R table flags.log > timings.txt 2>&1
           cat timings.txt
 
       - name: Publish as annotations
