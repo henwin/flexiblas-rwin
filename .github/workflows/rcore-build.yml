@@ -1,13 +1,15 @@
 name: R-core's setup.ps1 and build.sh
 
-# Builds R-devel and its installer with R-core's own scripts from R-dev-web
+# Builds R-devel or R-patched and its installer with R-core's own scripts
+# from R-dev-web
 # (WindowsBuilds/winutf8/ucrt3/r): setup.ps1 installs Inno Setup, MiKTeX,
 # qpdf, Ghostscript and MSYS2, and build.sh --check unpacks the toolchain
 # tarball and the Tcl/Tk bundle, checks out R, applies the r_*.diff
 # patches, runs make distribution and then make check-devel and check-all.
 # Added here: the FlexiBLAS bundle from the latest successful run of
 # build-test.yml, patches/r as further r_*.diff, and
-# patches/r-dev-web/0002 to build.sh, which uses the bundle when present.
+# patches/r-dev-web/0002 to build.sh, which uses the bundle when present,
+# and 0004, without which build.sh --patched checks out no branch.
 # The test job then installs the installer and runs tests/ against it.
 # Long, so it runs only on demand.
 on:
@@ -16,6 +18,11 @@ on:
       backend:
         description: FlexiBLAS backend for the build and checks
         default: OPENBLAS
+      r:
+        description: The R to build, and to test against CRAN's build of the same
+        type: choice
+        options: [devel, patched]
+        default: devel
       check:
         description: Run make check-devel and check-all (build.sh --check)
         type: boolean
@@ -122,6 +129,7 @@ jobs:
           done
           cd /c/rbuild
           patch -p0 < "$w/patches/r-dev-web/0002-build-flexiblas-bundle.patch"
+          patch -p0 < "$w/patches/r-dev-web/0004-build-patched-branch-name.patch"
           ls -la
 
       - name: Run build.sh --check
@@ -131,7 +139,7 @@ jobs:
           FLEXIBLAS: ${{ inputs.backend }}
         working-directory: C:\rbuild
         run: |
-          ./build.sh ${{ inputs.check && '--check' || '' }} > build.log 2>&1
+          ./build.sh ${{ inputs.check && '--check' || '' }} ${{ inputs.r == 'patched' && '--patched' || '' }} > build.log 2>&1
           tail -30 build.log
           ls -la build
 
@@ -144,7 +152,7 @@ jobs:
           CHERE_INVOKING: 1
         run: |
           exec > >(tee /c/rbuild/install.log) 2>&1
-          /c/rbuild/build/R-devel-win.exe //VERYSILENT //SUPPRESSMSGBOXES //NORESTART //CURRENTUSER //DIR='C:\R-inst'
+          /c/rbuild/build/R-${{ inputs.r }}-win.exe //VERYSILENT //SUPPRESSMSGBOXES //NORESTART //CURRENTUSER //DIR='C:\R-inst'
           ls /c/R-inst/bin/x64/flexiblas /c/R-inst/etc
           for b in NETLIB OPENBLAS; do
             FLEXIBLAS=$b /c/R-inst/bin/Rscript -e 'cat(extSoftVersion()[["BLAS"]], La_library(), sep = "\n")'
@@ -153,9 +161,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: R-devel-installer
+          name: R-installer
           path: |
-            C:/rbuild/build/R-devel-win.exe
+            C:/rbuild/build/R-*-win.exe
             C:/rbuild/build/*.out
             C:/rbuild/*.log
           if-no-files-found: ignore
@@ -166,7 +174,7 @@ jobs:
         run: |
           b=/c/rbuild
           {
-            echo "backend: ${{ inputs.backend }}"
+            echo "R-${{ inputs.r }}, backend: ${{ inputs.backend }}"
             if [ -f $b/setup.log ]; then
               echo "setup.log (Inno Setup, errors):"
               grep -v 'DEBUG:' $b/setup.log | sed -e 's/\x1b\[[0-9;]*m//g' | grep -v '^\s*$' | grep -i -E -A3 'inno|error|exception|denied' | head -40
@@ -177,7 +185,7 @@ jobs:
             for f in checkdevel.out checkall.out; do
               [ -f $b/build/$f ] && { echo "$f (tail):"; tail -8 $b/build/$f; }
             done
-            for f in $(find $b/trunk/tests $b/trunk/src/library -name '*.Rout.fail' 2>/dev/null); do
+            for f in $(find $b/trunk/tests $b/trunk/src/library $b/patched/tests $b/patched/src/library -name '*.Rout.fail' 2>/dev/null); do
               echo "== $f"
               tail -15 "$f"
             done
@@ -190,7 +198,8 @@ jobs:
           done
 
   # The installer from the build job, tested as the old "Build and test"
-  # tested CRAN's R with the forwarders copied in. CRAN's R-devel, with
+  # tested CRAN's R with the forwarders copied in. CRAN's build of the same
+  # R (R-devel against R-devel, R-patched against R-patched), with
   # R's own BLAS and LAPACK, gives the reference results.
   test:
     name: Test the installed R
@@ -202,15 +211,16 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          name: R-devel-installer
+          name: R-installer
           path: inst
 
       - uses: r-lib/actions/setup-r@v2
         with:
-          r-version: devel
+          # "next" is R-patched
+          r-version: ${{ inputs.r == 'patched' && 'next' || 'devel' }}
           rtools-version: '45'
 
-      - name: Reference results with CRAN's R-devel and R's own BLAS and LAPACK
+      - name: Reference results with CRAN's build of the same R, with R's own BLAS and LAPACK
         timeout-minutes: 5
         shell: pwsh
         run: |
@@ -222,7 +232,7 @@ jobs:
         timeout-minutes: 10
         shell: pwsh
         run: |
-          $exe = (Get-ChildItem inst -Recurse -Filter "R-devel-win.exe")[0].FullName
+          $exe = (Get-ChildItem inst -Recurse -Filter "R-*-win.exe")[0].FullName
           & $exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /DIR=C:\R-inst | Out-Null
           Get-ChildItem C:\R-inst\bin\x64\flexiblas, C:\R-inst\etc\flexiblasrc*
           "C:\R-inst\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH

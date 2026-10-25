@@ -1,0 +1,20 @@
+Index: build.sh
+===================================================================
+--- build.sh	(revision 6985)
++++ build.sh	(working copy)
+@@ -220,6 +220,7 @@
+   DIRNAME=trunk
+ else
+   rm -rf patched
++  BNAME=`svn ls https://svn.r-project.org/R/branches | grep R-.-.-branch | tail -1 | tr -d /`
+   svn checkout $SVNEXTRA https://svn.r-project.org/R/branches/${BNAME} patched
+   # see branch above
+   cd patched
+@@ -229,7 +230,6 @@
+     exit 2
+   fi
+   cd ..
+-  BNAME=`svn ls https://svn.r-project.org/R/branches | grep R-.-.-branch | tail -1 | tr -d /`
+   DIRNAME=patched
+ fi
+ 

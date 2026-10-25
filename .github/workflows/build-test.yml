@@ -13,6 +13,7 @@ on:
       - .github/workflows/rcore-build.yml
       - patches/r-dev-web/0002-build-flexiblas-bundle.patch
       - patches/r-dev-web/0003-setup-inno-setup-from-github.patch
+      - patches/r-dev-web/0004-build-patched-branch-name.patch
   pull_request:
     paths-ignore:
       - '**.md'
@@ -24,6 +25,7 @@ on:
       - .github/workflows/rcore-build.yml
       - patches/r-dev-web/0002-build-flexiblas-bundle.patch
       - patches/r-dev-web/0003-setup-inno-setup-from-github.patch
+      - patches/r-dev-web/0004-build-patched-branch-name.patch
   workflow_dispatch:
 
 env:
