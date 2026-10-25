@@ -134,10 +134,11 @@ jobs:
         run: |
           r=$R_SRC
           export PATH=/x86_64-w64-mingw32.static.posix/bin:$PATH
+          exec > >(tee blas.log) 2>&1
           for d in Rblas Rlapack; do
             echo "$d.dll: $(objdump -p "$r/bin/x64/$d.dll" | grep -c 'Forwarder RVA -- libflexiblas') entry points forwarded"
           done
-          ls "$r/bin/x64" "$r/bin/x64/flexiblas" "$r/etc"
+          ls "$r/bin/x64/flexiblas" "$r/etc"
           "$r/bin/Rscript" -e 'cat(La_version(), extSoftVersion()[["BLAS"]], La_library(), sep = "\n")'
 
       - name: make check-all
@@ -161,6 +162,8 @@ jobs:
           r=$R_SRC
           {
             echo "backend: ${{ inputs.backend }}"
+            [ -f blas.log ] && cat blas.log
+            [ -f check-all.log ] && { echo "check-all.log (tail):"; tail -5 check-all.log; }
             [ -f pacman.log ] && { echo "pacman.log:"; grep -i -E 'error|warning|conflict|restart|close' pacman.log | head -15; tail -8 pacman.log; }
             [ -f svn.log ] && { echo "svn.log:"; tail -25 svn.log; }
             [ -f build.log ] && { echo "build.log (errors and tail):"; grep -n -E 'Error|error:|\*\*\*' build.log | head -20; tail -25 build.log; }
