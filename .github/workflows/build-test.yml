@@ -10,6 +10,7 @@ on:
       - .github/workflows/r-check.yml
       - .github/workflows/optflags.yml
       - tests/compare-optflags.R
+      - patches/r/**
   pull_request:
     paths-ignore:
       - '**.md'
@@ -18,6 +19,7 @@ on:
       - .github/workflows/r-check.yml
       - .github/workflows/optflags.yml
       - tests/compare-optflags.R
+      - patches/r/**
   workflow_dispatch:
     inputs:
       flexiblas_own_flags:
