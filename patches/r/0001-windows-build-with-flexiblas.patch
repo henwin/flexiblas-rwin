@@ -1,0 +1,132 @@
+Index: src/extra/blas/Makefile.win
+===================================================================
+--- src/extra/blas/Makefile.win	(revision 90763)
++++ src/extra/blas/Makefile.win	(working copy)
+@@ -17,6 +17,19 @@
+ 	@$(ECHO) -------- Building $@ --------
+ 	$(DLL) -s -shared $(DLLFLAGS) -o $@ $^ Rblas.def \
+ 	    -L../../../$(IMPDIR) -lR  $(shell $(PKG_CONFIG) --libs openblas)
++else ifeq "$(USE_FLEXIBLAS)" "YES"
++## Rblas.dll forwards its entry points to libflexiblas.dll, which comes with
++## its backends and configuration from the FlexiBLAS bundle
++FLEXIBLAS_HOME = ../../../FlexiBLAS
++../../../$(BINDIR)/Rblas.dll: ../../gnuwin32/dllversion.o Rblas-flexiblas.def
++	@$(ECHO) -------- Building $@ --------
++	$(CP) -pR $(FLEXIBLAS_HOME)/$(BINDIR)/*.dll $(FLEXIBLAS_HOME)/$(BINDIR)/flexiblas \
++	  ../../../$(BINDIR)
++	$(CP) -pR $(FLEXIBLAS_HOME)/etc/flexiblasrc* ../../../etc
++	$(DLL) -s -shared $(DLLFLAGS) -o $@ $^
++
++Rblas-flexiblas.def: Rblas.def
++	$(SED) -e 's/^ \(.*\)/ \1 = libflexiblas.\1/' $< > $@
+ else
+ ../../../$(BINDIR)/Rblas.dll: blas.o blas2.o cmplxblas.o cmplxblas2.o ../../gnuwin32/dllversion.o
+ 	@$(ECHO) -------- Building $@ --------
+@@ -24,5 +37,6 @@
+ endif
+ 
+ distclean clean:
+-	@$(RM) ../../../$(BINDIR)/Rblas.dll *~ blas.o cmplxblas.o
++	@$(RM) ../../../$(BINDIR)/Rblas.dll *~ blas.o cmplxblas.o \
++	  Rblas-flexiblas.def
+ 
+Index: src/gnuwin32/Makefile
+===================================================================
+--- src/gnuwin32/Makefile	(revision 90763)
++++ src/gnuwin32/Makefile	(working copy)
+@@ -295,6 +295,7 @@
+ 	../../doc/CHANGES.rds ../../doc/html/CHANGES.html
+ 	$(RM) ../../etc/Makeconf ../../etc/Rconsole ../../etc/Rdevga \
+ 	../../etc/Rprofile.site ../../etc/rgb.txt ../../etc/Rcmd_environ \
++	../../etc/flexiblasrc* \
+ 	../../tests/*.Rout ../../tests/*.Rout.fail
+ 	# do both sub-archs
+ 	$(RM) -R ../../etc$(R_ARCH)/Makeconf ../../etc/i386 ../../etc/x64
+Index: src/gnuwin32/MkRules.dist
+===================================================================
+--- src/gnuwin32/MkRules.dist	(revision 90763)
++++ src/gnuwin32/MkRules.dist	(working copy)
+@@ -66,6 +66,11 @@
+ # using pkg-config. OPENBLAS and pkg-config are part of Rtools.
+ # USE_OPENBLAS = NO
+ 
++# Set to YES if you want to use FlexiBLAS, which selects the BLAS and LAPACK
++# at run time. Unpack the FlexiBLAS bundle at the top of the source tree, so
++# that it is in R_HOME/FlexiBLAS (as Tcl is in R_HOME/Tcl).
++# USE_FLEXIBLAS = NO
++
+ # Support for the ACML and Goto BLASes has been withdrawn: see R-admin.html
+ 
+ # Define to use svnversion to set SVN-REVISION (slow, and requires a clean
+Index: src/gnuwin32/MkRules.rules
+===================================================================
+--- src/gnuwin32/MkRules.rules	(revision 90763)
++++ src/gnuwin32/MkRules.rules	(working copy)
+@@ -8,6 +8,7 @@
+ G_FLAG ?= $(if $(USE_LLVM),-g3,-gdwarf-2)
+ USE_ATLAS ?= NO
+ USE_OPENBLAS ?= NO
++USE_FLEXIBLAS ?= NO
+ ATLAS_PATH ?= 
+ TOOL_PATH ?=
+ BINPREF64 ?= 
+Index: src/gnuwin32/installer/Makefile
+===================================================================
+--- src/gnuwin32/installer/Makefile	(revision 90763)
++++ src/gnuwin32/installer/Makefile	(working copy)
+@@ -79,6 +79,9 @@
+ 	if test -f "$(R_HOME)/etc/curl-ca-bundle.crt"; then \
+ 	  $(CP) -p "$(R_HOME)/etc/curl-ca-bundle.crt" $(RPREFIX)/etc; \
+ 	fi
++	if test -f "$(R_HOME)/etc/flexiblasrc"; then \
++	  $(CP) -pR "$(R_HOME)"/etc/flexiblasrc* $(RPREFIX)/etc; \
++	fi
+ ifeq ($(R_HOME_CROSS),)
+ 	$(CP) -p $(R_HOME)/etc$(R_ARCH)/Makeconf $(RPREFIX)/etc$(R_ARCH)
+ else
+Index: src/modules/lapack/Makefile.win
+===================================================================
+--- src/modules/lapack/Makefile.win	(revision 90763)
++++ src/modules/lapack/Makefile.win	(working copy)
+@@ -39,18 +39,39 @@
+ 
+ libRlapack.dll.a: Rlapack.def
+ 
+-Rlapack.def: $(LIBOBJECTS)
++ifeq "$(USE_FLEXIBLAS)" "YES"
++## Rlapack.dll forwards to libflexiblas.dll the entry points FlexiBLAS has:
++## all but dlarscl2 and dlascl2, which LAPACK builds only with its
++## extra-precise routines and nothing in R calls, and la_xisnan's module
++## procedures, which are internal.
++FLEXIBLAS_SYMS = flexiblas.syms
++FLEXIBLAS_FILTER = | grep -F -x -f flexiblas.syms
++
++flexiblas.syms: ../../../FlexiBLAS/$(BINDIR)/libflexiblas.dll.a
++	@$(NM) $< | $(SED) -n $(SYMPAT) > $@
++
++Rlapack-flexiblas.def: Rlapack.def
++	$(SED) -e 's/^ \(.*\)/ \1 = libflexiblas.\1/' $< > $@
++endif
++
++Rlapack.def: $(LIBOBJECTS) $(FLEXIBLAS_SYMS)
+ 	@$(ECHO) EXPORTS > $@
+-	@$(NM) $^ | $(SED) -n $(SYMPAT) | $(SORT) | uniq >> $@
++	@$(NM) $(LIBOBJECTS) | $(SED) -n $(SYMPAT) | $(SORT) | uniq $(FLEXIBLAS_FILTER) >> $@
+ 
+ 
+ $(MODULE).dll: $(OBJS)
+ 
++ifeq "$(USE_FLEXIBLAS)" "YES"
++../../../$(BINDIR)/Rlapack.dll: Rlapackrc.o Rlapack-flexiblas.def
++	$(DLL) -shared -s -o $@ $^
++else
+ ../../../$(BINDIR)/Rlapack.dll: $(LIBOBJECTS) Rlapack.def
+ 	$(DLL) -shared -s -o $@ $^ -L../../../$(IMPDIR) -lR -lRblas $(FLIBS)
++endif
+ 
+ clean:
+ 	@$(RM) Makedeps *.d *.o $(MODULE).def $(MODULE).dll Rlapack.def \
++	  Rlapack-flexiblas.def flexiblas.syms \
+ 	  Rlapack.dll *.a *.mod
+ 
+ 

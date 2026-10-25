@@ -111,9 +111,11 @@ cp configure64.out make64.out install64.out $BHOME/build
 grep -o '"command": "[^"]*/dgemm\.f[^"]*"' build64/compile_commands.json | head -1 || true
 grep -o '"command": "[^"]*/dpotrf\.f[^"]*"' build64/compile_commands.json | head -1 || true
 
-# import libraries, pkg-config files, headers and documentation are not needed
+# pkg-config files, headers, documentation and import libraries are not
+# needed, except libflexiblas.dll.a: R's build reads from it the LAPACK
+# entry points FlexiBLAS has
 cd $BINST
-rm -f `find . -name "*.a"`
+rm -f `find . -name "*.a" ! -name libflexiblas.dll.a`
 rm -rf bin/x64/pkgconfig include share
 ${TRIPLET}-strip `find . -name "*.dll"`
 

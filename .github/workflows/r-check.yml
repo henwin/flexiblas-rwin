@@ -1,9 +1,9 @@
 name: R from source, make check-all
 
 # Builds R from SVN with Rtools45, following R-core's "Building R and
-# packages on Windows" howto, swaps in the FlexiBLAS
-# forwarders from the latest successful "Build and test" run, and runs R's
-# full test suite. Long, so it runs only on demand.
+# packages on Windows" howto, with patches/r applied and USE_FLEXIBLAS = YES,
+# against the FlexiBLAS bundle from the latest successful "Build and test"
+# run, and runs R's full test suite. Long, so it runs only on demand.
 on:
   workflow_dispatch:
     inputs:
@@ -111,6 +111,10 @@ jobs:
           svn checkout -q "https://svn.r-project.org/R/${{ inputs.svn_path }}" "$R_SRC"
           svn info "$R_SRC" | grep -E '^(URL|Revision|Last Changed Date)'
           cd "$R_SRC" && unzip -q ../tcltk.zip
+          # FlexiBLAS as R_HOME/FlexiBLAS, as Tcl is R_HOME/Tcl
+          unzip -q "$(find ../dist -name FlexiBLAS.zip | head -1)"
+          for p in ../patches/r/*.patch; do patch -p0 < "$p"; done
+          echo "USE_FLEXIBLAS = YES" > src/gnuwin32/MkRules.local
 
       - name: Build R
         run: |
@@ -124,15 +128,17 @@ jobs:
               || { tail -60 ../../../build.log; exit 1; }
           ../../bin/R --version
 
-      - name: Install FlexiBLAS into the built R
+      - name: Show the BLAS and LAPACK in use
+        env:
+          FLEXIBLAS: ${{ inputs.backend }}
         run: |
           r=$R_SRC
-          cp "$r/bin/x64/Rblas.dll" "$r/bin/x64/Rblas_ref.dll"
-          cp "$r/bin/x64/Rlapack.dll" "$r/bin/x64/Rlapack_ref.dll"
-          d=$(dirname "$(find dist -type d -name forwarders | head -1)")
-          cp -r "$d"/FlexiBLAS/. "$r/"
-          cp "$d"/forwarders/*.dll "$r/bin/x64/"
-          FLEXIBLAS=${{ inputs.backend }} "$r/bin/Rscript" -e 'cat(extSoftVersion()[["BLAS"]], La_library(), sep = "\n")'
+          export PATH=/x86_64-w64-mingw32.static.posix/bin:$PATH
+          for d in Rblas Rlapack; do
+            echo "$d.dll: $(objdump -p "$r/bin/x64/$d.dll" | grep -c 'Forwarder RVA -- libflexiblas') entry points forwarded"
+          done
+          ls "$r/bin/x64" "$r/bin/x64/flexiblas" "$r/etc"
+          "$r/bin/Rscript" -e 'cat(La_version(), extSoftVersion()[["BLAS"]], La_library(), sep = "\n")'
 
       - name: make check-all
         env:
