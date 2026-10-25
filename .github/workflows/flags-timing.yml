@@ -31,7 +31,7 @@ jobs:
         run: |
           $h = Rscript -e "cat(normalizePath(R.home()))"
           "R_HOME_DIR=$h" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
-          (Get-CimInstance Win32_Processor).Name
+          "CPU: " + (Get-CimInstance Win32_Processor).Name | Tee-Object -FilePath cpu.txt
 
       - name: Build the DLLs
         run: |
@@ -44,7 +44,7 @@ jobs:
           for f in dlamch.f dlapack.f cmplx.f la_constants.f90 la_xisnan.f90 dlartg.f90 dlassq.f90 zlartg.f90 zlassq.f90; do
             curl -sSf -o "src/$f" "https://svn.r-project.org/R/trunk/src/modules/lapack/$f"
           done
-          gfortran -Q --help=target -march=native | grep -E '^\s+-march=' | head -1
+          gfortran -Q --help=target -march=native | grep -E '^\s+-march=' | head -1 | tee -a cpu.txt
           cd work && bash ../tests/flags-build.sh ../src "$rhome"
 
       - name: Compare results and timings
@@ -73,16 +73,16 @@ jobs:
           # timings as a table, seconds, operations by build
           "$rhome/bin/Rscript" -e '
             l <- grep("|", readLines("flags.log"), fixed = TRUE, value = TRUE)
-            d <- do.call(rbind, strsplit(l, "|", fixed = TRUE))
-            t <- tapply(as.numeric(d[, 3]), list(factor(d[, 2], unique(d[, 2])), factor(d[, 1], unique(d[, 1]))), identity)
-            options(width = 250); print(t)' > timings.txt
+            d <- read.table(text = l, sep = "|", col.names = c("build", "op", "s"), quote = "")
+            d$build <- factor(d$build, unique(d$build)); d$op <- factor(d$op, unique(d$op))
+            options(width = 250); print(xtabs(s ~ op + build, d))' > timings.txt 2>&1
           cat timings.txt
 
       - name: Publish as annotations
         if: always()
         shell: bash
         run: |
-          { grep -v '|' flags.log; echo; cat timings.txt; } > summary.log 2>/dev/null || true
+          { cat cpu.txt; grep -v '|' flags.log; echo; cat timings.txt; } > summary.log 2>/dev/null || true
           split -l 30 -d summary.log part-
           for p in part-*; do
             t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
