@@ -35,6 +35,21 @@ for (opt in names(mk)) {
 }
 Sys.unsetenv("R_MAKEVARS_USER")
 
+## testInstalledPackage() runs each file in R --vanilla, which skips the
+## profiles; R_DEFAULT_PACKAGES is still read, so a package attached there
+## seeds the RNG in every run and makes tests that draw random numbers
+## reproducible.
+seed <- file.path(work, "seedone")
+dir.create(file.path(seed, "R"), recursive = TRUE, showWarnings = FALSE)
+writeLines(c("Package: seedone", "Version: 1.0", "Title: Seed the RNG",
+             "Description: Calls set.seed(1) when loaded.", "License: GPL-2",
+             "Author: none", "Maintainer: none <none@example.org>"),
+           file.path(seed, "DESCRIPTION"))
+writeLines(".onLoad <- function(libname, pkgname) set.seed(1)",
+           file.path(seed, "R", "zzz.R"))
+system2(file.path(R.home("bin"), "R"), c("CMD", "INSTALL", paste0("--library=", shQuote(.Library)), shQuote(seed)))
+Sys.setenv(R_DEFAULT_PACKAGES = "datasets,utils,grDevices,graphics,stats,methods,seedone")
+
 ## Examples and tests of each build; testInstalledPackage() writes .Rout files.
 ## The -O2 build runs twice ("O2b"), so that differences from run to run can
 ## be told from differences between the builds.
