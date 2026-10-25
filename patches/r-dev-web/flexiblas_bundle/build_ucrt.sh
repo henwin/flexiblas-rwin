@@ -60,9 +60,25 @@ tar xfz $BHOME/flexiblas-$VER.tar.gz
 cd flexiblas-$VER
 patch -p1 < $BHOME/flexiblas.diff
 
+# Compile as R compiles its own BLAS and LAPACK (src/gnuwin32/Makefile):
+# Rblas.dll with FFLAGS='-O2 $(EOPTS)', the rest, LAPACK included, with
+# '-O3 $(EOPTS)'.  The NETLIB backend, FlexiBLAS's copy of the reference
+# BLAS, gets -O2 through a deferred call, since its target is defined in a
+# subdirectory.
+EOPTS="-mfpmath=sse -msse2 -mstackrealign"
+cat > $BHOME/build/rflags.cmake <<'EOF'
+cmake_language(DEFER CALL set_property TARGET flexiblas_netlib_objs APPEND PROPERTY
+  COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-O2>")
+EOF
+
 # ZDOTC_MKL_EXITCODE answers a try_run that cannot run when cross-compiling:
 # OpenBLAS built with gfortran returns complex values the GNU way.
 ${TRIPLET}-cmake -S . -B build64 \
+  -DCMAKE_BUILD_TYPE=Release \
+  "-DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG $EOPTS" \
+  "-DCMAKE_Fortran_FLAGS_RELEASE=-O3 $EOPTS" \
+  -DCMAKE_PROJECT_FlexiBLAS_INCLUDE=$BHOME/build/rflags.cmake \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
   -DCMAKE_INSTALL_PREFIX=$BINST \
   -DCMAKE_INSTALL_BINDIR=bin/x64 \
   -DBUILD_SHARED_LIBS=ON \
@@ -79,6 +95,9 @@ ${TRIPLET}-cmake -S . -B build64 \
 make -C build64 -j 2>&1 | tee make64.out
 make -C build64 install 2>&1 | tee install64.out
 cp configure64.out make64.out install64.out $BHOME/build
+# the flags the reference BLAS and LAPACK were compiled with
+grep -o '"command": "[^"]*/dgemm\.f[^"]*"' build64/compile_commands.json | head -1 || true
+grep -o '"command": "[^"]*/dpotrf\.f[^"]*"' build64/compile_commands.json | head -1 || true
 
 # import libraries, pkg-config files, headers and documentation are not needed
 cd $BINST

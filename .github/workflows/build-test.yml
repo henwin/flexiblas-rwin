@@ -111,7 +111,9 @@ jobs:
       - name: NA/NaN/Inf propagation with R's own BLAS and LAPACK
         timeout-minutes: 5
         shell: pwsh
-        run: Rscript tests/test-nan.R ref
+        run: |
+          Rscript tests/test-nan.R ref
+          Rscript tests/test-identical.R ref
 
       - name: Install FlexiBLAS into R
         shell: bash
@@ -126,8 +128,6 @@ jobs:
           d=$(dirname "$(find dist -type d -name forwarders | head -1)")
           cp -r "$d"/FlexiBLAS/. "$r/"
           cp "$d"/forwarders/*.dll "$bin/"
-          # Backend "R": R's own BLAS and LAPACK (scripts/forwarders.sh).
-          cp "$d"/forwarders/R.conf "$r/etc/flexiblasrc.d/"
           ls "$r"/etc/flexiblasrc* "$bin"/libflexiblas*.dll "$bin"/flexiblas
 
       - name: Install the flexiblas R package, patched for Windows
@@ -192,6 +192,14 @@ jobs:
           $hits | ForEach-Object { $_.Line }
           if (($hits | Measure-Object).Count -lt 2) { exit 1 }
 
+      - name: NETLIB gives bit for bit the results of R's own BLAS and LAPACK
+        if: always()
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          Rscript tests/test-identical.R cmp 2>&1 | Tee-Object -FilePath identical.log
+          exit $LASTEXITCODE
+
       - name: Backend selection by environment and user configuration
         if: always()
         timeout-minutes: 5
@@ -201,14 +209,12 @@ jobs:
           cur() { Rscript -e 'cat(flexiblas::flexiblas_current_backend())'; }
           fail=0
           check() { printf '%-45s %s\n' "$1" "$2"; [ "$2" = "$3" ] || { echo "  expected $3"; fail=1; }; }
-          FLEXIBLAS_VERBOSE=2 FLEXIBLAS=R Rscript -e 'cat("R started\n"); x <- matrix(1:4+0, 2); print(x %*% x); print(chol(crossprod(x)))' 2>&1 | grep -v '^<flexiblas> *$' | tail -40; echo "exit status ${PIPESTATUS[0]}"
           check "default" "$(cur)" NETLIB
           check "FLEXIBLAS=OPENBLAS" "$(FLEXIBLAS=OPENBLAS cur)" OPENBLAS
-          check "FLEXIBLAS=R" "$(FLEXIBLAS=R cur)" R
           u="$(cygpath -u "$APPDATA")/flexiblasrc"
-          printf 'default = R\n' > "$u"
-          check "user config %APPDATA%\\flexiblasrc: default = R" "$(cur)" R
-          check "  overridden by FLEXIBLAS=OPENBLAS" "$(FLEXIBLAS=OPENBLAS cur)" OPENBLAS
+          printf 'default = OPENBLAS\n' > "$u"
+          check "user config %APPDATA%\\flexiblasrc: default = OPENBLAS" "$(cur)" OPENBLAS
+          check "  overridden by FLEXIBLAS=NETLIB" "$(FLEXIBLAS=NETLIB cur)" NETLIB
           rm "$u"
           exit $fail
 
@@ -252,7 +258,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "reg-BLAS.log", "pkg-install.log", "pkg-tests.log", "profile-nonzero.log", "nan.log", "memory.log", "backends.log") {
+          foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "reg-BLAS.log", "pkg-install.log", "pkg-tests.log", "profile-nonzero.log", "nan.log", "memory.log", "backends.log", "identical.log") {
             if (Test-Path $f) {
               # Annotations are cut at about 4 KB, so publish in parts.
               $lines = Get-Content $f

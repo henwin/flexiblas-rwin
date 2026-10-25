@@ -132,7 +132,6 @@ jobs:
           d=$(dirname "$(find dist -type d -name forwarders | head -1)")
           cp -r "$d"/FlexiBLAS/. "$r/"
           cp "$d"/forwarders/*.dll "$r/bin/x64/"
-          cp "$d"/forwarders/R.conf "$r/etc/flexiblasrc.d/"
           FLEXIBLAS=${{ inputs.backend }} "$r/bin/Rscript" -e 'cat(extSoftVersion()[["BLAS"]], La_library(), sep = "\n")'
 
       - name: make check-all
