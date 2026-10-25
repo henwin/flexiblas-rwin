@@ -44,7 +44,7 @@ for s in "${SETS[@]:1}"; do
   name=${s%%|*}
   echo "== $name: ${s#*|}"
   rc=0; ./blas-bitwise.exe blas-R.dll "blas-$name.dll" > "cmp-$name.txt" || rc=$?
-  grep -v ' 0 differ$' "cmp-$name.txt" || true
+  grep -v ' 0 differ, ' "cmp-$name.txt" || true
   [ $rc -le 1 ] || { echo "error (exit status $rc)"; status=1; }
 done
 exit $status

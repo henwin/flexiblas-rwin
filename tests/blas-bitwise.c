@@ -231,15 +231,29 @@ static const struct { const char *name; test_fn f; } tests[] = {
     T(ztpmv), T(ztpsv), T(ztrmm), T(ztrmv), T(ztrsm), T(ztrsv)
 };
 
+/* How two output arrays differ: 0 not at all; 1 only in which NaN, e.g. NA
+   against a plain NaN; 2 in a value that is not NaN in both, or NaN in
+   one only */
+static int kind(const double *a, const double *b, int n)
+{
+    int k = 0;
+    for (int i = 0; i < n; i++) {
+        if (!memcmp(a + i, b + i, sizeof *a)) continue;
+        if (isnan(a[i]) && isnan(b[i])) { if (!k) k = 1; }
+        else return 2;
+    }
+    return k;
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 3) { fprintf(stderr, "usage: blas-bitwise ref.dll other.dll\n"); return 2; }
     for (int i = 0; i < 2; i++)
         if (!(lib[i] = LoadLibraryExA(argv[i + 1], NULL, LOAD_WITH_ALTERED_SEARCH_PATH))) { fprintf(stderr, "cannot load %s\n", argv[i + 1]); return 2; }
-    int ntest = sizeof tests / sizeof tests[0], nbad = 0;
+    int ntest = sizeof tests / sizeof tests[0], nbad = 0, nval = 0;
     long total = 0;
     for (int t = 0; t < ntest; t++) {
-        long ncase = 0, ndiff = 0;
+        long ncase = 0, ndiff = 0, nnan = 0;
         for (int c = 0;; c++) {
             int more = 1;
             for (cur = 0; cur < 2; cur++) {
@@ -251,15 +265,21 @@ int main(int argc, char **argv)
             }
             if (!more) break;
             ncase++;
-            if (memcmp(xs[0], xs[1], sizeof X) || memcmp(ys[0], ys[1], sizeof Y) || memcmp(as[0], as[1], sizeof A) ||
-                memcmp(bs[0], bs[1], sizeof B) || memcmp(cs[0], cs[1], sizeof C) || memcmp(ps[0], ps[1], sizeof P) ||
-                memcmp(res[0], res[1], sizeof res[0]))
-                ndiff++;
+            int k = kind(xs[0], xs[1], NBUF), k2;
+            if ((k2 = kind(ys[0], ys[1], NBUF)) > k) k = k2;
+            if ((k2 = kind(as[0], as[1], NBUF)) > k) k = k2;
+            if ((k2 = kind(bs[0], bs[1], NBUF)) > k) k = k2;
+            if ((k2 = kind(cs[0], cs[1], NBUF)) > k) k = k2;
+            if ((k2 = kind(ps[0], ps[1], 8)) > k) k = k2;
+            if ((k2 = kind(res[0], res[1], 2)) > k) k = k2;
+            if (k) ndiff++;
+            if (k == 1) nnan++;
         }
         total += ncase;
         if (ndiff) nbad++;
-        printf("%-8s %6ld cases, %6ld differ\n", tests[t].name, ncase, ndiff);
+        if (ndiff > nnan) nval++;
+        printf("%-8s %6ld cases, %6ld differ, %6ld of them only in which NaN\n", tests[t].name, ncase, ndiff, nnan);
     }
-    printf("%d of %d routines differ (%ld cases)\n", nbad, ntest, total);
+    printf("%d of %d routines differ (%ld cases), %d of them in more than which NaN\n", nbad, ntest, total, nval);
     return nbad > 0;
 }
