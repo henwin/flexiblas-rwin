@@ -17,6 +17,7 @@ on:
       - scripts/compare-codegen.sh
       - .github/workflows/blas-bitwise.yml
       - .github/workflows/flags-timing.yml
+      - .github/actions/**
   pull_request:
     paths-ignore:
       - '**.md'
@@ -32,6 +33,7 @@ on:
       - scripts/compare-codegen.sh
       - .github/workflows/blas-bitwise.yml
       - .github/workflows/flags-timing.yml
+      - .github/actions/**
   workflow_dispatch:
 
 env:

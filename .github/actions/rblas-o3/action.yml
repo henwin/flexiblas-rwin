@@ -1,0 +1,31 @@
+name: R with Rblas.dll built with -O3
+description: >
+  Copies the R installed by setup-r to C:\R-o3 and replaces its Rblas.dll
+  with one built from R-devel's src/extra/blas as R's build does, but with
+  -O3 instead of -O2 (r76787). Needs Rtools45.
+runs:
+  using: composite
+  steps:
+    - name: Copy R
+      shell: pwsh
+      run: |
+        $h = Rscript -e "cat(normalizePath(R.home()))"
+        Copy-Item -Recurse $h C:\R-o3
+        "R_HOME_DIR=$h" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+    - name: Build Rblas.dll with -O3
+      shell: C:\rtools45\usr\bin\bash.exe --login -eo pipefail {0}
+      env:
+        CHERE_INVOKING: 1
+      run: |
+        export PATH=/x86_64-w64-mingw32.static.posix/bin:$PATH
+        d=$(mktemp -d)
+        for f in blas.f blas2.f90 cmplxblas.f cmplxblas2.f90 Rblas.def; do
+          curl -sSf -o "$d/$f" "https://svn.r-project.org/R/trunk/src/extra/blas/$f"
+        done
+        for f in blas.f blas2.f90 cmplxblas.f cmplxblas2.f90; do
+          gfortran -O3 -mfpmath=sse -msse2 -mstackrealign -c "$d/$f" -o "$d/${f%.*}.o" -J "$d"
+        done
+        gfortran -shared -s -o /c/R-o3/bin/x64/Rblas.dll "$d"/*.o "$d/Rblas.def" -L/c/R-o3/bin/x64 -lR
+        ls -la /c/R-o3/bin/x64/Rblas.dll "$(cygpath -u "$R_HOME_DIR")/bin/x64/Rblas.dll"
+        /c/R-o3/bin/Rscript -e 'A <- matrix(rnorm(9), 3); stopifnot(all.equal(solve(A) %*% A, diag(3)))'
