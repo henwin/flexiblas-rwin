@@ -201,6 +201,7 @@ jobs:
           cur() { Rscript -e 'cat(flexiblas::flexiblas_current_backend())'; }
           fail=0
           check() { printf '%-45s %s\n' "$1" "$2"; [ "$2" = "$3" ] || { echo "  expected $3"; fail=1; }; }
+          FLEXIBLAS_VERBOSE=2 FLEXIBLAS=R Rscript -e 'cat("R started\n"); x <- matrix(1:4+0, 2); print(x %*% x); print(chol(crossprod(x)))' 2>&1 | grep -v '^<flexiblas> *$' | tail -40; echo "exit status ${PIPESTATUS[0]}"
           check "default" "$(cur)" NETLIB
           check "FLEXIBLAS=OPENBLAS" "$(FLEXIBLAS=OPENBLAS cur)" OPENBLAS
           check "FLEXIBLAS=R" "$(FLEXIBLAS=R cur)" R
