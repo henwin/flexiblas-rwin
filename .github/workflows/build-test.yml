@@ -15,6 +15,11 @@ on:
       - .github/workflows/platforms.yml
       - .github/workflows/r-check.yml
   workflow_dispatch:
+    inputs:
+      flexiblas_own_flags:
+        description: "Experiment: build the bundle with FlexiBLAS's compiler flags instead of R's"
+        type: boolean
+        default: false
 
 env:
   R_VERSION: 4.6.1
@@ -57,6 +62,8 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build in Docker
+        env:
+          FLEXIBLAS_OWN_FLAGS: ${{ inputs.flexiblas_own_flags && '1' || '0' }}
         run: |
           set -o pipefail
           bash scripts/build-in-docker.sh 2>&1 | tee docker-build.log

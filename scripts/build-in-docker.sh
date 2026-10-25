@@ -10,5 +10,5 @@ cd "$(dirname "$0")/.."
 
 image=flexiblas-rwin-mxe
 docker build -t "$image" -f docker/Dockerfile .
-docker run --rm -v "$PWD":/work -w /work "$image" bash -c \
+docker run --rm -e FLEXIBLAS_OWN_FLAGS -v "$PWD":/work -w /work "$image" bash -c \
     'bash scripts/build-mxe.sh && bash scripts/build-bundle.sh && bash scripts/forwarders.sh'

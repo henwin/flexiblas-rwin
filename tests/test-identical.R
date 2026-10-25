@@ -40,13 +40,23 @@ run <- function() list(
     zgesdd     = svd(Z)$d
 )
 
+## Timings on the same runner, for the effect of the compiler flags.
+B <- matrix(rnorm(1500^2), 1500)
+SB <- crossprod(B) + diag(1500)
+timings <- function() c(
+    "dgemm, n = 1500"  = system.time(B %*% B)[["elapsed"]],
+    "dpotrf, n = 1500" = system.time(chol(SB))[["elapsed"]],
+    "dgesv, n = 1500"  = system.time(solve(B, B[, 1]))[["elapsed"]],
+    "dsyevr, n = 1500" = system.time(eigen(SB, symmetric = TRUE))[["elapsed"]])
+
 if (identical(mode, "ref")) {
-    saveRDS(run(), "identical-ref.rds")
-    cat("saved", length(run()), "results from R's own BLAS and LAPACK\n")
+    saveRDS(list(results = run(), timings = timings()), "identical-ref.rds")
+    cat("saved", length(run()), "results and timings from R's own BLAS and LAPACK\n")
     quit(status = 0)
 }
 
-ref <- readRDS("identical-ref.rds")
+saved <- readRDS("identical-ref.rds")
+ref <- saved$results
 res <- run()
 cur <- if (requireNamespace("flexiblas", quietly = TRUE)) flexiblas::flexiblas_current_backend() else "?"
 cat("backend:", cur, "\n")
@@ -58,5 +68,8 @@ for (k in names(ref)) {
     cat(sprintf("%-12s %s\n", k, if (same) "identical" else sprintf("differs (max abs diff %.2e)", d)))
     diffs <- diffs + !same
 }
-cat(diffs, "of", length(ref), "results differ from R's own\n")
+cat(diffs, "of", length(ref), "results differ from R's own\n\n")
+t1 <- timings()
+cat(sprintf("%-18s %8s %8s\n", "elapsed (s)", "R's own", cur))
+for (k in names(t1)) cat(sprintf("%-18s %8.2f %8.2f\n", k, saved$timings[[k]], t1[[k]]))
 quit(status = as.integer(diffs > 0))
