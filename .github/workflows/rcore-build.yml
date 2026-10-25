@@ -67,12 +67,13 @@ jobs:
 
       # setup.ps1 downloads Inno Setup from jrsoftware.org/download.php,
       # which here returns a 10 kB page instead of the installer. Its own
-      # fallback is a copy in C:\installers under the name it expects.
+      # fallback is a copy in C:\installers under the name it expects, here
+      # from jrsoftware's GitHub releases.
       - name: Put Inno Setup 6.4.1 in C:\installers
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force C:\installers | Out-Null
-          Invoke-WebRequest https://files.jrsoftware.org/is/6/innosetup-6.4.1.exe -OutFile C:\installers\innosetup-6.4.1.exe -UseBasicParsing
+          Invoke-WebRequest https://github.com/jrsoftware/issrc/releases/download/is-6_4_1/innosetup-6.4.1.exe -OutFile C:\installers\innosetup-6.4.1.exe -UseBasicParsing
           Get-Item C:\installers\innosetup-6.4.1.exe | Select-Object Name, Length
 
       # In a process of its own, as when run by hand: the step's shell sets
