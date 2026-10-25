@@ -69,7 +69,7 @@ jobs:
       # $ErrorActionPreference to Stop, which turns errors setup.ps1 lives
       # with into fatal ones.
       - name: Run setup.ps1
-        timeout-minutes: 60
+        timeout-minutes: 15
         shell: pwsh
         run: |
           pwsh -NoProfile -ExecutionPolicy Bypass -File C:\rbuild\setup.ps1 *> C:\rbuild\setup.log
