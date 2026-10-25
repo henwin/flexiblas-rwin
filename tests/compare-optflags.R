@@ -47,8 +47,11 @@ writeLines(c("Package: seedone", "Version: 1.0", "Title: Seed the RNG",
            file.path(seed, "DESCRIPTION"))
 writeLines(".onLoad <- function(libname, pkgname) set.seed(1)",
            file.path(seed, "R", "zzz.R"))
-system2(file.path(R.home("bin"), "R"), c("CMD", "INSTALL", paste0("--library=", shQuote(.Library)), shQuote(seed)))
-Sys.setenv(R_DEFAULT_PACKAGES = "datasets,utils,grDevices,graphics,stats,methods,seedone")
+seedlib <- file.path(work, "seedlib")
+dir.create(seedlib, showWarnings = FALSE)
+system2(file.path(R.home("bin"), "R"), c("CMD", "INSTALL", paste0("--library=", shQuote(seedlib)), shQuote(seed)))
+Sys.setenv(R_LIBS_SITE = seedlib,
+           R_DEFAULT_PACKAGES = "datasets,utils,grDevices,graphics,stats,methods,seedone")
 
 ## Examples and tests of each build; testInstalledPackage() writes .Rout files.
 ## The -O2 build runs twice ("O2b"), so that differences from run to run can
