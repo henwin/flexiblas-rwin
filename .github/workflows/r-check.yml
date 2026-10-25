@@ -1,4 +1,4 @@
-name: R from source, make check-all
+name: R from source, check-all and installer
 
 # Builds R from SVN with Rtools45, following R-core's "Building R and
 # packages on Windows" howto, with patches/r applied and USE_FLEXIBLAS = YES,
@@ -87,6 +87,29 @@ jobs:
           Expand-Archive qpdf.zip -DestinationPath qpdf
           (Get-ChildItem qpdf -Directory | Select-Object -First 1).FullName + "\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
 
+      # Inno Setup as in R-core's setup.ps1, for the installer.
+      - name: Install Inno Setup
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe?site=2" -OutFile innosetup.exe -UseBasicParsing
+          Start-Process -Wait -NoNewWindow -FilePath .\innosetup.exe -ArgumentList "/VERYSILENT /ALLUSERS /NOICONS /DIR=`"C:\Program Files (x86)\InnoSetup`""
+          Get-ChildItem "C:\Program Files (x86)\InnoSetup\iscc.exe"
+
+      # The MSYS2 login shell does not inherit the Windows PATH, so the tools
+      # installed above go on PATH in tools.sh, which the build and check
+      # steps source, as the howto's export PATH lines do.
+      - name: Put the tools on PATH
+        run: |
+          qpdf=$(ls -d "$(cygpath -u "$GITHUB_WORKSPACE")"/qpdf/*/ | head -1)
+          cat > tools.sh <<EOF
+          export PATH=/x86_64-w64-mingw32.static.posix/bin:\$PATH
+          export PATH="\$PATH:$(cygpath -u "$LOCALAPPDATA")/Programs/MiKTeX/miktex/bin/x64:${qpdf}bin:/c/Program Files/gs/gs/bin"
+          export TAR=/usr/bin/tar TAR_OPTIONS=--force-local
+          QPDF=$(cygpath -m "$qpdf")
+          EOF
+          cat tools.sh
+
       - name: Fetch the Tcl/Tk bundle
         shell: pwsh
         run: Invoke-WebRequest https://cran.r-project.org/bin/windows/Rtools/rtools45/files/tcltk-6768-6663.zip -OutFile tcltk.zip
@@ -114,26 +137,36 @@ jobs:
           # FlexiBLAS as R_HOME/FlexiBLAS, as Tcl is R_HOME/Tcl
           unzip -q "$(find ../dist -name FlexiBLAS.zip | head -1)"
           for p in ../patches/r/*.patch; do patch -p0 < "$p"; done
-          echo "USE_FLEXIBLAS = YES" > src/gnuwin32/MkRules.local
+          . ../tools.sh
+          # ISDIR and QPDF as in R-core's build.sh
+          cat > src/gnuwin32/MkRules.local <<EOF
+          ISDIR = C:/Program Files (x86)/InnoSetup
+          QPDF = ${QPDF%/}
+          USE_FLEXIBLAS = YES
+          EOF
+          cat src/gnuwin32/MkRules.local
 
-      - name: Build R
+      # As in the howto and R-core's build.sh; "make distribution" adds the
+      # Cairo devices, vignettes, manuals and the installer.
+      - name: Build R and the installer
         run: |
-          export PATH=/x86_64-w64-mingw32.static.posix/bin:$PATH
-          export TAR=/usr/bin/tar TAR_OPTIONS=--force-local
+          . ./tools.sh
+          which make gcc pdflatex tar qpdf gswin64c
           cd "$R_SRC/src/gnuwin32"
           make rsync-recommended > ../../../build.log 2>&1
           # "all" and "recommended" in one parallel make race: recommended
           # needs MkRules, which "all" creates.
-          { make -j4 all && make -j4 recommended && make cairodevices; } >> ../../../build.log 2>&1 \
+          { make -j4 all && make -j4 recommended && make distribution; } >> ../../../build.log 2>&1 \
               || { tail -60 ../../../build.log; exit 1; }
           ../../bin/R --version
+          ls -la installer/*.exe
 
       - name: Show the BLAS and LAPACK in use
         env:
           FLEXIBLAS: ${{ inputs.backend }}
         run: |
           r=$R_SRC
-          export PATH=/x86_64-w64-mingw32.static.posix/bin:$PATH
+          . ./tools.sh
           exec > >(tee blas.log) 2>&1
           for d in Rblas Rlapack; do
             echo "$d.dll: $(objdump -p "$r/bin/x64/$d.dll" | grep -c 'Forwarder RVA -- libflexiblas') entry points forwarded"
@@ -145,16 +178,30 @@ jobs:
         env:
           FLEXIBLAS: ${{ inputs.backend }}
         run: |
-          export PATH=/x86_64-w64-mingw32.static.posix/bin:$PATH
-          # The MSYS2 login shell does not inherit the Windows PATH, so the
-          # tools installed above are added here, as the howto does.
-          qpdf=$(ls -d "$(cygpath -u "$GITHUB_WORKSPACE")"/qpdf/*/bin | head -1)
-          export PATH="$PATH:$(cygpath -u "$LOCALAPPDATA")/Programs/MiKTeX/miktex/bin/x64:$qpdf:/c/Program Files/gs/gs/bin"
-          pdflatex --version | head -1; qpdf --version | head -1; gswin64c --version
-          export TAR=/usr/bin/tar TAR_OPTIONS=--force-local
+          . ./tools.sh
           cd "$R_SRC/src/gnuwin32"
           make -k check-all > ../../../check-all.log 2>&1 || echo "check-all exit status $?" >> ../../../check-all.log
           tail -60 ../../../check-all.log
+
+      # The installer, installed silently into a fresh directory: FlexiBLAS's
+      # DLLs, backends and configuration must come with it.
+      - name: Install R from the installer
+        timeout-minutes: 15
+        run: |
+          exec > >(tee install.log) 2>&1
+          exe=$(ls "$R_SRC"/src/gnuwin32/installer/R-*.exe | head -1)
+          "$exe" //VERYSILENT //SUPPRESSMSGBOXES //NORESTART //CURRENTUSER //DIR='C:\R-inst'
+          ls /c/R-inst/bin/x64/flexiblas /c/R-inst/etc
+          for b in NETLIB OPENBLAS; do
+            FLEXIBLAS=$b /c/R-inst/bin/Rscript -e 'cat(extSoftVersion()[["BLAS"]], La_library(), sep = "\n")'
+          done
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: R-installer
+          path: ${{ env.R_SRC }}/src/gnuwin32/installer/R-*.exe
+          if-no-files-found: ignore
 
       - name: Summarise failures
         if: always()
@@ -163,6 +210,7 @@ jobs:
           {
             echo "backend: ${{ inputs.backend }}"
             [ -f blas.log ] && cat blas.log
+            [ -f install.log ] && { echo "install.log:"; cat install.log; }
             [ -f check-all.log ] && { echo "check-all.log (tail):"; tail -5 check-all.log; }
             [ -f pacman.log ] && { echo "pacman.log:"; grep -i -E 'error|warning|conflict|restart|close' pacman.log | head -15; tail -8 pacman.log; }
             [ -f svn.log ] && { echo "svn.log:"; tail -25 svn.log; }
