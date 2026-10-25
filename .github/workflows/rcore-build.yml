@@ -153,7 +153,11 @@ jobs:
           b=/c/rbuild
           {
             echo "backend: ${{ inputs.backend }}"
-            [ -f $b/setup.log ] && { echo "setup.log (errors and tail):"; grep -n -i -E 'error|exception|not recognized|denied' $b/setup.log | head -15; tail -15 $b/setup.log; }
+            if [ -f $b/setup.log ]; then
+              echo "setup.log (Inno Setup, errors):"
+              grep -v 'DEBUG:' $b/setup.log | sed -e 's/\x1b\[[0-9;]*m//g' | grep -v '^\s*$' | grep -i -E -A3 'inno|error|exception|denied' | head -40
+              ls -la /c/temp "/c/Program Files (x86)" 2>&1 | grep -i -E 'inno|\.exe' | head
+            fi
             [ -f $b/build.log ] && { echo "build.log (errors and tail):"; grep -n -E 'Error|error:|\*\*\*|not available' $b/build.log | head -20; tail -15 $b/build.log; }
             [ -f $b/install.log ] && { echo "install.log:"; cat $b/install.log; }
             for f in checkdevel.out checkall.out; do
