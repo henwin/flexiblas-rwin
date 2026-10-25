@@ -36,8 +36,10 @@ for (opt in names(mk)) {
 Sys.unsetenv("R_MAKEVARS_USER")
 
 ## Examples and tests of each build; testInstalledPackage() writes .Rout files.
-for (opt in names(mk)) for (p in pkgs) {
-    lib <- file.path(work, paste0("lib-", opt))
+## The -O2 build runs twice ("O2b"), so that differences from run to run can
+## be told from differences between the builds.
+for (opt in c(names(mk), "O2b")) for (p in pkgs) {
+    lib <- file.path(work, paste0("lib-", sub("b$", "", opt)))
     out <- file.path(work, paste0("out-", opt), p)
     dir.create(out, recursive = TRUE, showWarnings = FALSE)
     old <- .libPaths(); .libPaths(c(lib, old))
@@ -47,16 +49,22 @@ for (opt in names(mk)) for (p in pkgs) {
 }
 
 ## Compare the outputs, ignoring lines with timings.
+compare <- function(x, y) {
 ndiff <- 0L
 for (p in pkgs) {
-    a <- file.path(work, "out-O2", p); b <- file.path(work, "out-O3", p)
+    a <- file.path(work, paste0("out-", x), p); b <- file.path(work, paste0("out-", y), p)
     files <- sort(union(list.files(a, "\\.Rout$", recursive = TRUE),
                         list.files(b, "\\.Rout$", recursive = TRUE)))
-    cat(sprintf("\n== %s: %d output files\n", p, length(files)))
+    cat(sprintf("\n== %s, %s against %s: %d output files\n", p, y, x, length(files)))
     for (f in files) {
         la <- if (file.exists(file.path(a, f))) readLines(file.path(a, f)) else "(missing)"
         lb <- if (file.exists(file.path(b, f))) readLines(file.path(b, f)) else "(missing)"
-        keep <- function(x) x[!grepl("Time|elapsed|seconds|user +system", x)]
+        ## drop timings: system.time()'s header and the line of values under it
+        keep <- function(l) {
+            h <- grep("user +system +elapsed", l)
+            if (length(h)) l <- l[-c(h, h + 1L)]
+            l[!grepl("Time|elapsed|seconds", l)]
+        }
         la <- keep(la); lb <- keep(lb)
         if (identical(la, lb)) {
             cat(sprintf("%-40s identical\n", f))
@@ -65,8 +73,11 @@ for (p in pkgs) {
             n <- max(length(la), length(lb))
             d <- which(rep_len(la, n) != rep_len(lb, n))
             cat(sprintf("%-40s %d lines differ\n", f, length(d)))
-            for (k in head(d, 6)) cat(sprintf("  -O2: %s\n  -O3: %s\n", la[k], lb[k]))
+            for (k in head(d, 6)) cat(sprintf("  %s: %s\n  %s: %s\n", x, la[k], y, lb[k]))
         }
     }
 }
-cat("\n", ndiff, "output files differ between -O2 and -O3\n")
+cat("\n", ndiff, "output files differ between", x, "and", y, "\n")
+}
+compare("O2", "O2b")
+compare("O2", "O3")
