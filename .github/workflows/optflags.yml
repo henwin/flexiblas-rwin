@@ -33,13 +33,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group:
-          - mvtnorm coin libcoin survival quantreg robustbase expm KernSmooth
-          - glmnet e1071 randomForest gss minqa deSolve fields mclust
-          - lme4 nlme MASS cluster mgcv nnet rpart class
-          - Matrix data.table zoo xts ranger spam Rfast polspline
+        # the packages given, or the sample in four groups
+        group: ${{ fromJSON(inputs.packages && format('["{0}"]', inputs.packages) || '["mvtnorm coin libcoin survival quantreg robustbase expm KernSmooth", "glmnet e1071 randomForest gss minqa deSolve fields mclust", "lme4 nlme MASS cluster mgcv nnet rpart class", "Matrix data.table zoo xts ranger spam Rfast polspline"]') }}
     env:
-      PKGS: ${{ inputs.packages || matrix.group }}
+      PKGS: ${{ matrix.group }}
     steps:
       - uses: actions/checkout@v7
 
