@@ -60,15 +60,20 @@ tar xfz $BHOME/flexiblas-$VER.tar.gz
 cd flexiblas-$VER
 patch -p1 < $BHOME/flexiblas.diff
 
-# Compile as R compiles its own BLAS and LAPACK (src/gnuwin32/Makefile):
-# Rblas.dll with FFLAGS='-O2 $(EOPTS)', the rest, LAPACK included, with
-# '-O3 $(EOPTS)'.  The NETLIB backend, FlexiBLAS's copy of the reference
-# BLAS, gets -O2 through a deferred call, since its target is defined in a
-# subdirectory.
+# Compile as R compiles its own BLAS and LAPACK (src/gnuwin32/Makefile and
+# src/modules/lapack/Makefile.win): Rblas.dll with FFLAGS='-O2 $(EOPTS)',
+# Rlapack.dll with '-O3 $(EOPTS)' and dlamch.f also with -ffloat-store.
+# FlexiBLAS's reference BLAS (the NETLIB backend) and LAPACK (the fallback)
+# are targets in subdirectories, and LAPACK's own CMake sets -O2, so the
+# optimisation level is appended to them in deferred calls.
 EOPTS="-mfpmath=sse -msse2 -mstackrealign"
 cat > $BHOME/build/rflags.cmake <<'EOF'
 cmake_language(DEFER CALL set_property TARGET flexiblas_netlib_objs APPEND PROPERTY
   COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-O2>")
+cmake_language(DEFER CALL set_property TARGET flexiblas_fallback_lapack_objs APPEND PROPERTY
+  COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-O3>")
+cmake_language(DEFER CALL set_property SOURCE ${CMAKE_SOURCE_DIR}/contributed/lapack-3.12.1/INSTALL/dlamch.f
+  DIRECTORY ${CMAKE_SOURCE_DIR}/contributed/lapack-3.12.1/SRC APPEND PROPERTY COMPILE_OPTIONS -ffloat-store)
 EOF
 
 # ZDOTC_MKL_EXITCODE answers a try_run that cannot run when cross-compiling:
