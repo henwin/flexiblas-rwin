@@ -23,6 +23,10 @@ on:
         type: choice
         options: [devel, patched]
         default: devel
+      build:
+        description: Build R; otherwise test the installer of the latest successful run
+        type: boolean
+        default: true
       check:
         description: Run make check-devel and check-all (build.sh --check)
         type: boolean
@@ -41,6 +45,7 @@ env:
 
 jobs:
   build:
+    if: inputs.build
     runs-on: windows-2025
     timeout-minutes: 360
     steps:
@@ -204,15 +209,28 @@ jobs:
   test:
     name: Test the installed R
     needs: build
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
     timeout-minutes: 45
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v7
 
+      - name: Find the latest successful run's installer
+        id: prev
+        if: ${{ !inputs.build }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $id = gh run list -R $env:GITHUB_REPOSITORY -w rcore-build.yml -s success -L 1 --json databaseId --jq '.[0].databaseId'
+          "run_id=$id" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+
       - uses: actions/download-artifact@v8
         with:
           name: R-installer
           path: inst
+          run-id: ${{ steps.prev.outputs.run_id || github.run_id }}
+          github-token: ${{ github.token }}
 
       - uses: r-lib/actions/setup-r@v2
         with:
@@ -227,6 +245,7 @@ jobs:
           Rscript -e "sessionInfo()"
           Rscript tests/test-nan.R ref
           Rscript tests/test-identical.R ref
+          Rscript tests/test-chol.R "R's own" 2>&1 | Tee-Object -FilePath chol.log
 
       - name: Install R from the installer
         timeout-minutes: 10
@@ -236,6 +255,16 @@ jobs:
           & $exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /DIR=C:\R-inst | Out-Null
           Get-ChildItem C:\R-inst\bin\x64\flexiblas, C:\R-inst\etc\flexiblasrc*
           "C:\R-inst\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+      - name: chol() with non-finite input
+        if: always()
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          foreach ($b in "NETLIB", "OPENBLAS") {
+            $env:FLEXIBLAS = $b
+            Rscript tests/test-chol.R 2>&1 | Tee-Object -Append -FilePath chol.log
+          }
 
       - name: Install the flexiblas R package, patched for Windows
         timeout-minutes: 10
@@ -384,7 +413,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          foreach ($f in "profile-nonzero.log", "nan.log", "memory.log", "backends.log", "identical.log") {
+          foreach ($f in "profile-nonzero.log", "nan.log", "memory.log", "backends.log", "identical.log", "chol.log") {
             if (Test-Path $f) {
               # Annotations are cut at about 4 KB, so publish in parts.
               $lines = Get-Content $f
