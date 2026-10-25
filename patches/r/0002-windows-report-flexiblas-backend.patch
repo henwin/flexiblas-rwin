@@ -1,0 +1,99 @@
+Index: src/main/Makefile.win
+===================================================================
+--- src/main/Makefile.win	(revision 90763)
++++ src/main/Makefile.win	(working copy)
+@@ -8,7 +8,6 @@
+ ## there are headers and include files in this directory
+ CPPFLAGS = -I. -I../include -DHAVE_CONFIG_H -DR_DLL_BUILD $(arch_DEFS)
+ 
+-# (flexiblas not supported on Windows)
+ CSOURCES = \
+ 	CommandLineArgs.c \
+ 	Rdynload.c Renviron.c RNG.c \
+Index: src/main/flexiblas.c
+===================================================================
+--- src/main/flexiblas.c	(revision 90763)
++++ src/main/flexiblas.c	(working copy)
+@@ -28,6 +28,9 @@
+ #ifdef HAVE_DLFCN_H
+ #include <dlfcn.h>
+ #endif
++#ifdef Win32
++#include <windows.h>
++#endif
+ 
+ 
+ attribute_hidden SEXP R_flexiblas_info(void)
+@@ -38,6 +41,12 @@
+     && defined(HAVE_DECL_RTLD_DEFAULT) && HAVE_DECL_RTLD_DEFAULT
+     char *fcb_name = "flexiblas_current_backend";
+     fcb_addr = dlsym(RTLD_DEFAULT, fcb_name);
++#elif defined(Win32)
++    /* built with USE_FLEXIBLAS, Rblas.dll and Rlapack.dll forward to
++       libflexiblas.dll */
++    HMODULE fb = GetModuleHandle(TEXT("libflexiblas.dll"));
++    if (fb)
++	fcb_addr = (void *)(intptr_t) GetProcAddress(fb, "flexiblas_current_backend");
+ #endif
+ 
+     if (fcb_addr != NULL) {
+Index: src/main/platform.c
+===================================================================
+--- src/main/platform.c	(revision 90763)
++++ src/main/platform.c	(working copy)
+@@ -3899,6 +3899,12 @@
+ 	       found, report what we have from the dynamic linker. */
+ 	    SET_STRING_ELT(ans, i, mkChar(dl_info1.dli_fname));
+     }
++#elif defined(Win32)
++    {
++	SEXP nfo = R_flexiblas_info();
++	if (!isNull(nfo))
++	    SET_STRING_ELT(ans, i, nfo);
++    }
+ #endif
+     SET_STRING_ELT(nms, i++, mkChar("BLAS"));
+ 
+Index: src/modules/lapack/Lapack.c
+===================================================================
+--- src/modules/lapack/Lapack.c	(revision 90763)
++++ src/modules/lapack/Lapack.c	(working copy)
+@@ -1576,6 +1576,14 @@
+ #elif defined __GNUC__
+ # pragma GCC diagnostic pop
+ #endif
++#elif defined(Win32)
++	{
++	    SEXP nfo = R_flexiblas_info();
++	    if (!isNull(nfo)) {
++		ans = ScalarString(nfo);
++		break;
++	    }
++	}
+ #endif
+ 	ans = mkString(""); /* LAPACK library not known */
+ 	break;
+Index: src/modules/lapack/Makefile.win
+===================================================================
+--- src/modules/lapack/Makefile.win
++++ src/modules/lapack/Makefile.win
+@@ -11,8 +11,7 @@
+ 	@$(MAKE) --no-print-directory -f Makefile.win install
+ 
+ CSOURCES = Lapack.c
+-# flexiblas not supported on Windows
+-OBJS=$(CSOURCES:.c=.o) dllversion.o
++OBJS=$(CSOURCES:.c=.o) flexiblas.o dllversion.o
+ LIBSOURCES = dlamch.f dlapack.f cmplx.f
+ LIBSOURCES90 = dlartg.f90 dlassq.f90 la_constants.f90 la_xisnan.f90 \
+   zlartg.f90 zlassq.f90
+@@ -75,6 +74,9 @@
+ 	  Rlapack.dll *.a *.mod
+ 
+ 
++flexiblas.o: ../../main/flexiblas.c
++	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
++
+ # Dependencies
+ dllversion.o: ../../include/Rversion.h
+ Rlapackrc.o: ../../include/Rversion.h
