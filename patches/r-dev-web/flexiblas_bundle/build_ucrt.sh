@@ -90,7 +90,6 @@ ${TRIPLET}-cmake -S . -B build64 \
   "-DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG $EOPTS" \
   "-DCMAKE_Fortran_FLAGS_RELEASE=-O3 $EOPTS" \
   -DCMAKE_PROJECT_FlexiBLAS_INCLUDE=$BHOME/build/rflags.cmake \
-  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
   -DCMAKE_INSTALL_PREFIX=$BINST \
   -DCMAKE_INSTALL_BINDIR=bin/x64 \
   -DBUILD_SHARED_LIBS=ON \
@@ -107,9 +106,6 @@ ${TRIPLET}-cmake -S . -B build64 \
 make -C build64 -j 2>&1 | tee make64.out
 make -C build64 install 2>&1 | tee install64.out
 cp configure64.out make64.out install64.out $BHOME/build
-# the flags the reference BLAS and LAPACK were compiled with
-grep -o '"command": "[^"]*/dgemm\.f[^"]*"' build64/compile_commands.json | head -1 || true
-grep -o '"command": "[^"]*/dpotrf\.f[^"]*"' build64/compile_commands.json | head -1 || true
 
 # pkg-config files, headers, documentation and import libraries are not
 # needed, except libflexiblas.dll.a: R's build reads from it the LAPACK

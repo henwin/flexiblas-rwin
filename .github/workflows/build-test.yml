@@ -8,11 +8,9 @@ on:
       - .gitattributes
       - .github/workflows/platforms.yml
       - .github/workflows/optflags.yml
-      - tests/compare-optflags.R
       - patches/r/**
       - tests/**
       - .github/workflows/rcore-build.yml
-      - patches/r-dev-web/0001-setup-ghostscript-10.08.0.patch
       - patches/r-dev-web/0002-build-flexiblas-bundle.patch
       - patches/r-dev-web/0003-setup-inno-setup-from-github.patch
   pull_request:
@@ -21,19 +19,12 @@ on:
       - .gitattributes
       - .github/workflows/platforms.yml
       - .github/workflows/optflags.yml
-      - tests/compare-optflags.R
       - patches/r/**
       - tests/**
       - .github/workflows/rcore-build.yml
-      - patches/r-dev-web/0001-setup-ghostscript-10.08.0.patch
       - patches/r-dev-web/0002-build-flexiblas-bundle.patch
       - patches/r-dev-web/0003-setup-inno-setup-from-github.patch
   workflow_dispatch:
-    inputs:
-      flexiblas_own_flags:
-        description: "Experiment: build the bundle with FlexiBLAS's compiler flags instead of R's"
-        type: boolean
-        default: false
 
 env:
   FLEXIBLAS_VERSION: 3.5.0
@@ -68,8 +59,6 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build in Docker
-        env:
-          FLEXIBLAS_OWN_FLAGS: ${{ inputs.flexiblas_own_flags && '1' || '0' }}
         run: |
           set -o pipefail
           bash scripts/build-in-docker.sh 2>&1 | tee docker-build.log
