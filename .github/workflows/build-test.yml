@@ -254,11 +254,32 @@ jobs:
 
       # Job logs live in blob storage that some API clients cannot reach;
       # annotations are served by the API itself.
-      - name: Publish logs as annotations
+      - name: Publish logs as annotations (1)
         if: always()
         shell: pwsh
         run: |
-          foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "reg-BLAS.log", "pkg-install.log", "pkg-tests.log", "profile-nonzero.log", "nan.log", "memory.log", "backends.log", "identical.log") {
+          foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "reg-BLAS.log", "pkg-install.log", "pkg-tests.log") {
+            if (Test-Path $f) {
+              # Annotations are cut at about 4 KB, so publish in parts.
+              $lines = Get-Content $f
+              $part = 1; $buf = @()
+              foreach ($l in $lines + "<<end>>") {
+                if ($l -eq "<<end>>" -or (($buf -join "`n").Length + $l.Length) -gt 3500) {
+                  $t = ($buf -join "`n") -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
+                  Write-Host "::notice title=$f ($part)::$t"
+                  $part++; $buf = @()
+                }
+                if ($l -ne "<<end>>") { $buf += $l }
+              }
+            }
+          }
+
+      # GitHub keeps at most 10 annotations of each kind per step.
+      - name: Publish logs as annotations (2)
+        if: always()
+        shell: pwsh
+        run: |
+          foreach ($f in "profile-nonzero.log", "nan.log", "memory.log", "backends.log", "identical.log") {
             if (Test-Path $f) {
               # Annotations are cut at about 4 KB, so publish in parts.
               $lines = Get-Content $f
