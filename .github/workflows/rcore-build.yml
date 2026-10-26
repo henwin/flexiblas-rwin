@@ -200,12 +200,20 @@ jobs:
             /c/R-inst/bin/Rscript -e 'sessionInfo()'
           fi
 
+      # The installer under a name that says which R it is, so that a run
+      # that only tests finds one of the right kind; an experiment's
+      # installer has no FlexiBLAS and is never tested.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: R-${{ inputs.r }}${{ inputs.experiment != 'none' && '-experiment' || '' }}-installer
+          path: C:/rbuild/build/R-*-win.exe
+          if-no-files-found: error
+
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: R-installer
+          name: R-${{ inputs.r }}${{ inputs.experiment != 'none' && '-experiment' || '' }}-logs
           path: |
-            C:/rbuild/build/R-*-win.exe
             C:/rbuild/build/*.out
             C:/rbuild/*.log
           if-no-files-found: ignore
@@ -255,20 +263,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Find the latest successful run's installer
+      - name: Find the latest installer of the same R
         id: prev
         if: ${{ !inputs.build }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $id = gh run list -R $env:GITHUB_REPOSITORY -w rcore-build.yml -s success -L 1 --json databaseId --jq '.[0].databaseId'
+          $id = gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts?name=R-${{ inputs.r }}-installer&per_page=20" --jq '[.artifacts[] | select(.expired | not)][0].workflow_run.id'
+          if (-not $id) { throw "no R-${{ inputs.r }}-installer; build one first" }
           "run_id=$id" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
 
-      # R-devel-installer is the artifact's name in runs before R-patched
       - uses: actions/download-artifact@v8
         with:
-          pattern: R-*installer
+          name: R-${{ inputs.r }}-installer
           path: inst
           run-id: ${{ steps.prev.outputs.run_id || github.run_id }}
           github-token: ${{ github.token }}
