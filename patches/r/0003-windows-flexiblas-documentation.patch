@@ -2,29 +2,22 @@ Index: src/gnuwin32/COPYRIGHTS.win
 ===================================================================
 --- src/gnuwin32/COPYRIGHTS.win	(revision 90763)
 +++ src/gnuwin32/COPYRIGHTS.win	(working copy)
-@@ -56,6 +56,22 @@
-     California, Sun Microsystems, Inc., and other parties. [...]
+@@ -129,6 +129,15 @@
+ instructions.  Sources are available via links on that page, or on
+ request from R-windows@r-project.org.
  
- 
-+R_HOME/bin/x64/libflexiblas*.dll and R_HOME/bin/x64/flexiblas/*
-+(when built with USE_FLEXIBLAS = YES):
++A build with USE_FLEXIBLAS = YES contains FlexiBLAS
++(https://www.mpi-magdeburg.mpg.de/projects/flexiblas), distributed under
++LGPL 3 or later, and its backends, built by the scripts in
++https://svn.r-project.org/R-dev-web/trunk/WindowsBuilds/winutf8/ucrt3/flexiblas_bundle
++from the FlexiBLAS sources and the OpenBLAS in Rtools.  FlexiBLAS
++includes the reference BLAS and LAPACK and dlfcn-win32 (MIT licence);
++OpenBLAS is distributed under the BSD 3-clause licence and includes
++ReLAPACK (MIT licence).
 +
-+Compiled from FlexiBLAS (https://www.mpi-magdeburg.mpg.de/projects/flexiblas)
-+
-+    Copyright (C) 2013-2025 Martin Koehler
-+    Distributed under the GNU Lesser General Public License, version 3
-+    or later (see R_HOME/share/licenses/LGPL-3).
-+
-+Its OpenBLAS backend includes OpenBLAS (http://www.openmathlib.org/OpenBLAS/)
-+
-+    Copyright (c) 2011-2014, The OpenBLAS Project
-+    Distributed under the 3-clause BSD licence
-+    (see R_HOME/share/licenses/BSD_3_clause).
-+
-+
- src/extra/trio/* (except compat.c)
- 
- From trio-1.13 (http://daniel.haxx.se/projects/trio/)
+ Rbitmap.dll is built against static libraries for libpng, jpeg and
+ libtiff: the Makefiles and configuration headers used are in the
+ src/gnuwin32/bitmap direcctory.  The exact sources used for these
 Index: doc/manual/R-admin.texi
 ===================================================================
 --- doc/manual/R-admin.texi	(revision 90763)
