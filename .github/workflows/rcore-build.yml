@@ -191,10 +191,14 @@ jobs:
         run: |
           exec > >(tee /c/rbuild/install.log) 2>&1
           /c/rbuild/build/R-${{ inputs.r }}-win.exe //VERYSILENT //SUPPRESSMSGBOXES //NORESTART //CURRENTUSER //DIR='C:\R-inst'
-          ls /c/R-inst/bin/x64/flexiblas /c/R-inst/etc
-          for b in NETLIB OPENBLAS; do
-            FLEXIBLAS=$b /c/R-inst/bin/Rscript -e 'cat(extSoftVersion()[["BLAS"]], La_library(), sep = "\n")'
-          done
+          if [ "${{ inputs.experiment }}" = none ]; then
+            ls /c/R-inst/bin/x64/flexiblas /c/R-inst/etc
+            for b in NETLIB OPENBLAS; do
+              FLEXIBLAS=$b /c/R-inst/bin/Rscript -e 'cat(extSoftVersion()[["BLAS"]], La_library(), sep = "\n")'
+            done
+          else
+            /c/R-inst/bin/Rscript -e 'sessionInfo()'
+          fi
 
       - uses: actions/upload-artifact@v7
         if: always()
