@@ -9,12 +9,12 @@ Index: src/extra/blas/Makefile.win
 +else ifeq "$(USE_FLEXIBLAS)" "YES"
 +## Rblas.dll forwards its entry points to libflexiblas.dll, which comes with
 +## its backends and configuration from the FlexiBLAS bundle
-+FLEXIBLAS_HOME = ../../../FlexiBLAS
++FLEXIBLAS_PATH = ../../../FlexiBLAS
 +../../../$(BINDIR)/Rblas.dll: ../../gnuwin32/dllversion.o Rblas-flexiblas.def
 +	@$(ECHO) -------- Building $@ --------
-+	$(CP) -pR $(FLEXIBLAS_HOME)/$(BINDIR)/*.dll $(FLEXIBLAS_HOME)/$(BINDIR)/flexiblas \
++	$(CP) -pR $(FLEXIBLAS_PATH)/$(BINDIR)/*.dll $(FLEXIBLAS_PATH)/$(BINDIR)/flexiblas \
 +	  ../../../$(BINDIR)
-+	$(CP) -pR $(FLEXIBLAS_HOME)/etc/flexiblasrc* ../../../etc
++	$(CP) -pR $(FLEXIBLAS_PATH)/etc/flexiblasrc* ../../../etc
 +	$(DLL) -s -shared $(DLLFLAGS) -o $@ $^
 +
 +Rblas-flexiblas.def: Rblas.def
@@ -94,7 +94,7 @@ Index: src/modules/lapack/Makefile.win
 ===================================================================
 --- src/modules/lapack/Makefile.win	(revision 90763)
 +++ src/modules/lapack/Makefile.win	(working copy)
-@@ -39,18 +39,41 @@
+@@ -39,18 +39,42 @@
  
  libRlapack.dll.a: Rlapack.def
  
@@ -106,10 +106,11 @@ Index: src/modules/lapack/Makefile.win
 +## all but dlarscl2 and dlascl2, which LAPACK builds only with its
 +## extra-precise routines and nothing in R calls, and la_xisnan's module
 +## procedures, which are internal.
++FLEXIBLAS_PATH = ../../../FlexiBLAS
 +FLEXIBLAS_SYMS = flexiblas.syms
 +FLEXIBLAS_FILTER = | grep -F -x -f flexiblas.syms
 +
-+flexiblas.syms: ../../../FlexiBLAS/$(BINDIR)/libflexiblas.dll.a
++flexiblas.syms: $(FLEXIBLAS_PATH)/$(BINDIR)/libflexiblas.dll.a
 +	@$(NM) $< | $(SED) -n $(SYMPAT) > $@
 +
 +Rlapack-flexiblas.def: Rlapack.def
