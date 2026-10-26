@@ -1,0 +1,13 @@
+Index: src/gnuwin32/Makefile
+===================================================================
+--- src/gnuwin32/Makefile	(revision 90764)
++++ src/gnuwin32/Makefile	(working copy)
+@@ -224,7 +224,7 @@
+ #                          ===== BLAS ======
+ 
+ Rblas:
+-	@$(MK) -C ../extra/blas -f Makefile.win FFLAGS='-O2 $(EOPTS)'
++	@$(MK) -C ../extra/blas -f Makefile.win FFLAGS='-O3 $(EOPTS)'
+ 
+ Rblas-clean:
+ 	@$(MK) -C ../extra/blas -f Makefile.win clean

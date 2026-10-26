@@ -18,6 +18,11 @@ on:
       backend:
         description: FlexiBLAS backend for the build and checks
         default: OPENBLAS
+      experiment:
+        description: "Rblas -O3: R without FlexiBLAS, its own BLAS built with -O3 (patches/experiments/rblas-O3.diff); no test job"
+        type: choice
+        options: [none, Rblas -O3]
+        default: none
       r:
         description: The R to build, and to test against CRAN's build of the same
         type: choice
@@ -138,12 +143,17 @@ jobs:
           CHERE_INVOKING: 1
         run: |
           w=$(cygpath -u "$GITHUB_WORKSPACE")
-          cp "$(find "$w/dist" -name FlexiBLAS.zip | head -1)" /c/rbuild/FlexiBLAS.zip
           i=100
           for p in "$w"/patches/r/*.patch; do
             i=$((i + 1))
             cp "$p" "/c/rbuild/r_${i}_$(basename "$p" .patch).diff"
           done
+          if [ "${{ inputs.experiment }}" = "Rblas -O3" ]; then
+            # R's own BLAS, built with -O3 instead of -O2 (r76787)
+            cp "$w/patches/experiments/rblas-O3.diff" /c/rbuild/r_201_rblas-O3.diff
+          else
+            cp "$(find "$w/dist" -name FlexiBLAS.zip | head -1)" /c/rbuild/FlexiBLAS.zip
+          fi
           cd /c/rbuild
           patch -p0 < "$w/patches/r-dev-web/0002-build-flexiblas-bundle.patch"
           patch -p0 < "$w/patches/r-dev-web/0004-build-patched-branch-name.patch"
@@ -202,7 +212,7 @@ jobs:
         run: |
           b=/c/rbuild
           {
-            echo "R-${{ inputs.r }}, backend: ${{ inputs.backend }}"
+            echo "R-${{ inputs.r }}, backend: ${{ inputs.backend }}, experiment: ${{ inputs.experiment }}"
             cat /c/bundle.txt 2>/dev/null
             [ -f $b/build/svn_revision ] && echo "R revision $(cat $b/build/svn_revision), toolchain $TOOLCHAIN, Tcl/Tk $TCLTK"
             if [ -f $b/setup.log ]; then
@@ -234,7 +244,7 @@ jobs:
   test:
     name: Test the installed R
     needs: build
-    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped') && inputs.experiment == 'none'
     timeout-minutes: 45
     runs-on: windows-2025
     steps:
