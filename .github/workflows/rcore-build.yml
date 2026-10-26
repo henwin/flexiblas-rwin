@@ -222,6 +222,9 @@ jobs:
         if: always()
         shell: bash
         run: |
+          # a report, not a check: a missing file is not a failure (with
+          # bash -e, a loop ending in a false test would end the step)
+          set +e
           b=/c/rbuild
           {
             echo "R-${{ inputs.r }}, backend: ${{ inputs.backend }}, experiment: ${{ inputs.experiment }}"
