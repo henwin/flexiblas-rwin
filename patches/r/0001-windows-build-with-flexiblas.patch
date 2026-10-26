@@ -46,13 +46,14 @@ Index: src/gnuwin32/MkRules.dist
 ===================================================================
 --- src/gnuwin32/MkRules.dist	(revision 90763)
 +++ src/gnuwin32/MkRules.dist	(working copy)
-@@ -66,6 +66,11 @@
+@@ -66,6 +66,12 @@
  # using pkg-config. OPENBLAS and pkg-config are part of Rtools.
  # USE_OPENBLAS = NO
  
 +# Set to YES if you want to use FlexiBLAS, which selects the BLAS and LAPACK
 +# at run time. Unpack the FlexiBLAS bundle at the top of the source tree, so
-+# that it is in R_HOME/FlexiBLAS (as Tcl is in R_HOME/Tcl).
++# that it is in R_HOME/FlexiBLAS (as Tcl is in R_HOME/Tcl). USE_ATLAS and
++# USE_OPENBLAS take precedence.
 +# USE_FLEXIBLAS = NO
 +
  # Support for the ACML and Goto BLASes has been withdrawn: see R-admin.html
@@ -93,12 +94,14 @@ Index: src/modules/lapack/Makefile.win
 ===================================================================
 --- src/modules/lapack/Makefile.win	(revision 90763)
 +++ src/modules/lapack/Makefile.win	(working copy)
-@@ -39,18 +39,39 @@
+@@ -39,18 +39,41 @@
  
  libRlapack.dll.a: Rlapack.def
  
 -Rlapack.def: $(LIBOBJECTS)
-+ifeq "$(USE_FLEXIBLAS)" "YES"
++## FlexiBLAS only when Rblas.dll uses it: ATLAS and OpenBLAS come first in
++## ../../extra/blas/Makefile.win
++ifeq "$(USE_ATLAS)$(USE_OPENBLAS)$(USE_FLEXIBLAS)" "NONOYES"
 +## Rlapack.dll forwards to libflexiblas.dll the entry points FlexiBLAS has:
 +## all but dlarscl2 and dlascl2, which LAPACK builds only with its
 +## extra-precise routines and nothing in R calls, and la_xisnan's module
@@ -121,7 +124,7 @@ Index: src/modules/lapack/Makefile.win
  
  $(MODULE).dll: $(OBJS)
  
-+ifeq "$(USE_FLEXIBLAS)" "YES"
++ifeq "$(USE_ATLAS)$(USE_OPENBLAS)$(USE_FLEXIBLAS)" "NONOYES"
 +../../../$(BINDIR)/Rlapack.dll: Rlapackrc.o Rlapack-flexiblas.def
 +	$(DLL) -shared -s -o $@ $^
 +else
