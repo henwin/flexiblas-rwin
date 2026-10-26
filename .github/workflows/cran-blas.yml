@@ -109,7 +109,8 @@ jobs:
 
       - name: Summarise
         run: |
-          cat log-*/optflags.log > all.log
+          # the logs come from Windows; a carriage return would end an annotation
+          cat log-*/optflags.log | tr -d '\r' > all.log
           {
             echo "packages compared: $(grep -ac '^== .* output files,' all.log)"
             echo "not installed: $(grep -ac ' not installed$' all.log)"
