@@ -93,11 +93,10 @@ Index: src/modules/lapack/Makefile.win
 ===================================================================
 --- src/modules/lapack/Makefile.win	(revision 90763)
 +++ src/modules/lapack/Makefile.win	(working copy)
-@@ -39,18 +39,42 @@
+@@ -39,18 +39,44 @@
  
  libRlapack.dll.a: Rlapack.def
  
--Rlapack.def: $(LIBOBJECTS)
 +## FlexiBLAS only when Rblas.dll uses it: ATLAS and OpenBLAS come first in
 +## ../../extra/blas/Makefile.win
 +ifeq "$(USE_ATLAS)$(USE_OPENBLAS)$(USE_FLEXIBLAS)" "NONOYES"
@@ -106,20 +105,21 @@ Index: src/modules/lapack/Makefile.win
 +## extra-precise routines and nothing in R calls, and la_xisnan's module
 +## procedures, which are internal.
 +FLEXIBLAS_PATH = ../../../FlexiBLAS
-+FLEXIBLAS_SYMS = flexiblas.syms
-+FLEXIBLAS_FILTER = | grep -F -x -f flexiblas.syms
 +
 +flexiblas.syms: $(FLEXIBLAS_PATH)/$(BINDIR)/libflexiblas.dll.a
 +	@$(NM) $< | $(SED) -n $(SYMPAT) > $@
 +
++Rlapack.def: $(LIBOBJECTS) flexiblas.syms
++	@$(ECHO) EXPORTS > $@
++	@$(NM) $(LIBOBJECTS) | $(SED) -n $(SYMPAT) | $(SORT) | uniq | grep -F -x -f flexiblas.syms >> $@
++
 +Rlapack-flexiblas.def: Rlapack.def
 +	$(SED) -e 's/^ \(.*\)/ \1 = libflexiblas.\1/' $< > $@
-+endif
-+
-+Rlapack.def: $(LIBOBJECTS) $(FLEXIBLAS_SYMS)
++else
+ Rlapack.def: $(LIBOBJECTS)
  	@$(ECHO) EXPORTS > $@
--	@$(NM) $^ | $(SED) -n $(SYMPAT) | $(SORT) | uniq >> $@
-+	@$(NM) $(LIBOBJECTS) | $(SED) -n $(SYMPAT) | $(SORT) | uniq $(FLEXIBLAS_FILTER) >> $@
+ 	@$(NM) $^ | $(SED) -n $(SYMPAT) | $(SORT) | uniq >> $@
++endif
  
  
  $(MODULE).dll: $(OBJS)
