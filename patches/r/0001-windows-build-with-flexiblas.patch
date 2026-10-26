@@ -38,8 +38,8 @@ Index: src/gnuwin32/Makefile
  	../../doc/CHANGES.rds ../../doc/html/CHANGES.html
  	$(RM) ../../etc/Makeconf ../../etc/Rconsole ../../etc/Rdevga \
  	../../etc/Rprofile.site ../../etc/rgb.txt ../../etc/Rcmd_environ \
-+	../../etc/flexiblasrc* \
  	../../tests/*.Rout ../../tests/*.Rout.fail
++	$(RM) -R ../../etc/flexiblasrc*
  	# do both sub-archs
  	$(RM) -R ../../etc$(R_ARCH)/Makeconf ../../etc/i386 ../../etc/x64
 Index: src/gnuwin32/MkRules.dist
