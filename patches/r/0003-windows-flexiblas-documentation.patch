@@ -18,37 +18,20 @@ Index: src/gnuwin32/COPYRIGHTS.win
  Rbitmap.dll is built against static libraries for libpng, jpeg and
  libtiff: the Makefiles and configuration headers used are in the
  src/gnuwin32/bitmap direcctory.  The exact sources used for these
-Index: doc/manual/R-admin.texi
-===================================================================
---- doc/manual/R-admin.texi	(revision 90763)
-+++ doc/manual/R-admin.texi	(working copy)
-@@ -3845,6 +3845,12 @@
- builds of @I{OpenBLAS} and @I{BLIS}, and perhaps others@footnote{for
- example, Intel @I{MKL} not packaged by Fedora.}.  This can be controlled
- from a running @R{} session by package @CRANpkg{flexiblas}.
-+On Windows, setting @code{USE_FLEXIBLAS = YES} in
-+@file{src/gnuwin32/MkRules.local}, with the @I{FlexiBLAS} bundle unpacked
-+as @file{@var{R_HOME}/FlexiBLAS}, makes @file{Rblas.dll} and
-+@file{Rlapack.dll} forward to @I{FlexiBLAS}; its configuration is in
-+@file{@var{R_HOME}/etc/flexiblasrc}, and the environment variable
-+@env{FLEXIBLAS} selects the backend.
- 
- BLAS implementations which use parallel computations can be
- non-deterministic: this is known for ATLAS.
 Index: doc/manual/rw-FAQ.texi
 ===================================================================
 --- doc/manual/rw-FAQ.texi	(revision 90763)
 +++ doc/manual/rw-FAQ.texi	(working copy)
-@@ -1759,6 +1759,12 @@
- to your system using the R sources.  Unfortunately the process has been
- less successful when tried for the common current CPUs.
+@@ -1761,6 +1761,12 @@
  
-+R built with @I{FlexiBLAS} (@code{USE_FLEXIBLAS = YES}, see
-+@ref{, , , R-admin, R Installation and Administration}) can switch the
-+BLAS and LAPACK at run time instead: set the environment variable
-+@env{FLEXIBLAS}, for example to @code{OPENBLAS}, before starting R, or
-+change the default in @file{R_HOME\etc\flexiblasrc}.
-+
  With a native build of R on ARM, exclude @file{\x64} from the above.
  
++R built with @I{FlexiBLAS} (@code{USE_FLEXIBLAS = YES} in
++@file{src/gnuwin32/MkRules.local}) can switch the BLAS and LAPACK
++at run time instead: set the environment variable @env{FLEXIBLAS},
++for example to @code{OPENBLAS}, before starting R, or change the
++default in @file{R_HOME\etc\flexiblasrc}.
++
  @c Versions of Dr Kazushige Goto's BLAS (see
+ @c @uref{https://en.wikipedia.org/wiki/Kazushige_Goto}) for 64-bit Windows
+ @c by Ei-Ji Nakama can be found at
