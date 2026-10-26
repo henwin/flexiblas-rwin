@@ -82,14 +82,20 @@ jobs:
         shell: bash
         run: |
           # one package at a time, so that a package that hangs costs only its own time
-          for p in $PKGS; do
-            for r in O2 O2b O3; do
-              R=Rscript; [ $r = O3 ] && R=/c/R-o3/bin/Rscript
-              timeout 1200 $R tests/compare-optflags.R test $r default $p > /dev/null 2>&1 ||
-                echo "$p $r: exit status $?" | tee -a optflags.log
-            done
+          run() {   # run package
+            R=Rscript; [ "${1:0:2}" = O3 ] && R=/c/R-o3/bin/Rscript
+            timeout 1200 $R tests/compare-optflags.R test $1 default $2 > /dev/null 2>&1 ||
+              echo "$2 $1: exit status $?" | tee -a optflags.log
+          }
+          for p in $PKGS; do for r in O2 O2b O3; do run $r $p; done; done
+          Rscript tests/compare-optflags.R compare O2,O2b O3 2>&1 > pass1.log
+          # Two runs of the reference can agree on a line by chance, a timing
+          # that rounds to 0, say; a package with differences runs once more
+          # each way, and a line counts only if all five runs bear it out.
+          for p in $(awk '/^== .* output files,/ && $10 > 0 {print $2}' pass1.log); do
+            run O2c $p; run O3b $p
           done
-          Rscript tests/compare-optflags.R compare O2 O2b O3 2>&1 | tee -a optflags.log
+          Rscript tests/compare-optflags.R compare O2,O2b,O2c O3,O3b 2>&1 | tee -a optflags.log
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -115,9 +121,9 @@ jobs:
             echo "packages compared: $(grep -ac '^== .* output files,' all.log)"
             echo "not installed: $(grep -ac ' not installed$' all.log)"
             echo "test runs that failed or timed out: $(grep -ac ': exit status ' all.log)"
-            echo "output files that vary between O2 and O2b: $(grep -a '^== .* output files,' all.log | awk '{s += $6} END {print s}')"
-            echo "packages with output files that differ in O3:"
-            grep -a '^== .* output files,' all.log | awk '$12 > 0 {print "  " $2 ": " $12}'
+            echo "output files that vary between runs of the reference: $(grep -a '^== .* output files,' all.log | awk '{s += $6} END {print s}')"
+            echo "packages with output files that differ with the -O3 Rblas.dll:"
+            grep -a '^== .* output files,' all.log | awk '$10 > 0 {print "  " $2 ": " $10}'
           } > summary.txt
           cat summary.txt
           # the differing lines, at most 25 lines per annotation

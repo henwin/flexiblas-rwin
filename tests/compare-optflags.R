@@ -6,7 +6,8 @@
 ##   Rscript compare-optflags.R binary PKG...         install CRAN's binary of PKG and add the tests from its source
 ##   Rscript compare-optflags.R test RUN LIB PKG...   examples and tests of PKG in lib-LIB (LIB "default": the first library), into out-RUN
 ##   Rscript compare-optflags.R base RUN              R's tests (testInstalledBasic, recommended packages), into out-RUN
-##   Rscript compare-optflags.R compare A A2 B        out-B against out-A, on the lines out-A and out-A2 agree on
+##   Rscript compare-optflags.R compare A,A2.. B,B2.. the B runs against the A runs, on the lines each set agrees on
+##                                                   ("compare A A2 B" is "compare A,A2 B")
 ## The R running "test" and "base" is the one whose output is recorded; the
 ## directories are in $OPTFLAGS_WORK, or optflags-work.
 args <- commandArgs(TRUE)
@@ -119,11 +120,16 @@ if (mode == "base") {
 }
 
 if (mode == "compare") {
-    ## Lines that differ between runs A and A2 (addresses, dates, timings,
-    ## packages' own random numbers) say nothing about what B changes; a line
-    ## counts only when A and A2 agree on it and B does not. Addresses and
-    ## system.time() values are blanked first.
-    run <- args[2:4]
+    ## Lines that differ between runs of the reference (addresses, dates,
+    ## timings, packages' own random numbers) say nothing about what the
+    ## alternative changes; a line counts only when every run of the
+    ## reference agrees on it, every run of the alternative agrees on it, and
+    ## the two disagree. Addresses and system.time() values are blanked first.
+    ## "compare A A2 B" is "compare A,A2 B"; a run whose directory lacks a
+    ## package is left out for that package.
+    a <- args[-1]
+    if (length(a) == 3) a <- c(paste(a[1:2], collapse = ","), a[3])
+    ref <- strsplit(a[1], ",")[[1]]; alt <- strsplit(a[2], ",")[[1]]
     norm <- function(f) {
         if (!file.exists(f)) return(NULL)
         l <- readLines(f, warn = FALSE, encoding = "bytes")
@@ -135,40 +141,44 @@ if (mode == "compare") {
         ## widths of columns follow their widest entry, a path or a timing
         gsub(" +", " ", trimws(l, "right"), useBytes = TRUE)
     }
+    dir <- function(r, g) file.path(work, paste0("out-", r), g)
     ## c(noisy, flagged) for one output file
-    one <- function(g, f) {
-        dir <- function(r) file.path(work, paste0("out-", r), g)
-        a <- norm(file.path(dir(run[1]), f)); a2 <- norm(file.path(dir(run[2]), f)); b <- norm(file.path(dir(run[3]), f))
-        if (is.null(a) || is.null(a2) || is.null(b)) {
-            cat(sprintf("  %s: missing in %s\n", f, paste(run[c(is.null(a), is.null(a2), is.null(b))], collapse = ", ")))
+    one <- function(g, f, ref, alt) {
+        R <- lapply(ref, function(r) norm(file.path(dir(r, g), f)))
+        A <- lapply(alt, function(r) norm(file.path(dir(r, g), f)))
+        miss <- c(ref, alt)[vapply(c(R, A), is.null, NA)]
+        if (length(miss)) {
+            cat(sprintf("  %s: missing in %s\n", f, paste(miss, collapse = ", ")))
             return(c(0L, 1L))
         }
-        noisy <- as.integer(!identical(a, a2))
-        if (length(a) != length(a2)) return(c(noisy, 0L))
-        if (length(b) != length(a)) {
-            cat(sprintf("  %s: %d lines in %s, %d in %s\n", f, length(a), run[1], length(b), run[3]))
+        noisy <- as.integer(length(unique(R)) > 1)
+        n <- lengths(c(R, A))
+        if (length(unique(n[seq_along(R)])) > 1) return(c(noisy, 0L))
+        if (length(unique(n)) > 1) {
+            cat(sprintf("  %s: %d lines in %s, %d in %s\n", f, n[1], ref[1], n[length(R) + 1], alt[1]))
             return(c(noisy, 1L))
         }
-        d <- which(a == a2 & a != b)
+        same <- function(L) Reduce(`&`, lapply(L[-1], function(l) l == L[[1]]), rep(TRUE, n[1]))
+        d <- which(same(R) & same(A) & R[[1]] != A[[1]])
         if (length(d)) {
             cat(sprintf("  %s: %d stable lines differ\n", f, length(d)))
             for (k in head(d, 3))
-                cat(sprintf("    %s: %s\n    %s: %s\n", run[1], substr(a[k], 1, 100), run[3], substr(b[k], 1, 100)))
+                cat(sprintf("    %s: %s\n    %s: %s\n", ref[1], substr(R[[1]][k], 1, 100), alt[1], substr(A[[1]][k], 1, 100)))
         }
         c(noisy, as.integer(length(d) > 0))
     }
-    groups <- list.dirs(file.path(work, paste0("out-", run[1])), full.names = FALSE, recursive = FALSE)
+    groups <- list.dirs(file.path(work, paste0("out-", ref[1])), full.names = FALSE, recursive = FALSE)
     nflag <- 0L
     for (g in groups) {
-        files <- sort(unique(unlist(lapply(run, function(r)
-            list.files(file.path(work, paste0("out-", r), g), "\\.Rout$", recursive = TRUE)))))
+        rg <- ref[dir.exists(dir(ref, g))]; ag <- alt[dir.exists(dir(alt, g))]
+        files <- sort(unique(unlist(lapply(c(rg, ag), function(r) list.files(dir(r, g), "\\.Rout$", recursive = TRUE)))))
         n <- c(0L, 0L)
         for (f in files)
-            n <- n + tryCatch(one(g, f), error = function(e) {
+            n <- n + tryCatch(one(g, f, rg, ag), error = function(e) {
                 cat(sprintf("  %s: not compared: %s\n", f, conditionMessage(e))); c(0L, 1L) })
         nflag <- nflag + n[2]
-        cat(sprintf("== %-12s %3d output files, %3d vary between %s and %s, %3d differ in %s\n",
-                    g, length(files), n[1], run[1], run[2], n[2], run[3]))
+        cat(sprintf("== %-12s %3d output files, %3d vary between %s, %3d differ in %s\n",
+                    g, length(files), n[1], paste(rg, collapse = "+"), n[2], paste(ag, collapse = "+")))
     }
-    cat(sprintf("== %d output files differ in %s\n", nflag, run[3]))
+    cat(sprintf("== %d output files differ in %s\n", nflag, paste(alt, collapse = "+")))
 }
