@@ -1,0 +1,137 @@
+name: CRAN packages with an -O3 Rblas.dll
+
+# The examples and tests of the CRAN packages that call the BLAS or LAPACK
+# themselves (tests/cran-blas-users.sh: a DLL in their Windows binary imports
+# from Rblas.dll or Rlapack.dll), run with CRAN's R and its Rblas.dll and
+# with a copy of R whose Rblas.dll is built with -O3 (r76787). The packages
+# are CRAN's binaries, with the tests taken from their sources. As in
+# optflags.yml, the reference runs twice, and only output lines on which both
+# runs agree count (tests/compare-optflags.R).
+on:
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: CRAN packages, separated by spaces (empty for all that call the BLAS or LAPACK)
+        default: ''
+      groups:
+        description: Number of parallel jobs (at most 256)
+        default: '64'
+
+env:
+  OPTFLAGS_WORK: ${{ github.workspace }}\optflags-work
+
+jobs:
+  select:
+    runs-on: ubuntu-24.04
+    outputs:
+      groups: ${{ steps.split.outputs.groups }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Packages that call the BLAS or LAPACK
+        run: |
+          if [ -n "${{ inputs.packages }}" ]; then
+            echo ${{ inputs.packages }} | tr ' ' '\n' > packages.txt
+          else
+            # the version of setup-r's "release"
+            v=$(curl -sSf https://api.r-hub.io/rversions/resolve/release | jq -r .version | cut -d. -f1,2)
+            tests/cran-blas-users.sh "$v" > packages.txt
+          fi
+          echo "$(wc -l < packages.txt) packages"
+
+      - name: Split into groups
+        id: split
+        run: |
+          n=$(wc -l < packages.txt); g=${{ inputs.groups }}; [ "$g" -gt "$n" ] && g=$n
+          # round robin, so that groups get packages from the whole alphabet
+          awk -v g="$g" '{a[NR % g] = a[NR % g] " " $1} END {for (i = 0; i < g; i++) print substr(a[i], 2)}' packages.txt |
+            jq -R . | jq -sc . > groups.json
+          echo "groups=$(cat groups.json)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: packages.txt
+
+  packages:
+    needs: select
+    runs-on: windows-2025
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJSON(needs.select.outputs.groups) }}
+    env:
+      PKGS: ${{ matrix.group }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          rtools-version: '45'
+
+      - name: R with Rblas.dll built with -O3
+        uses: ./.github/actions/rblas-o3
+
+      - name: Install the packages
+        shell: bash
+        run: Rscript tests/compare-optflags.R binary $PKGS 2>&1 | tee -a optflags.log
+
+      - name: Run examples and tests
+        shell: bash
+        run: |
+          # one package at a time, so that a package that hangs costs only its own time
+          for p in $PKGS; do
+            for r in O2 O2b O3; do
+              R=Rscript; [ $r = O3 ] && R=/c/R-o3/bin/Rscript
+              timeout 1200 $R tests/compare-optflags.R test $r default $p > /dev/null 2>&1 ||
+                echo "$p $r: exit status $?" | tee -a optflags.log
+            done
+          done
+          Rscript tests/compare-optflags.R compare O2 O2b O3 2>&1 | tee -a optflags.log
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: log-${{ strategy.job-index }}
+          path: optflags.log
+
+  summary:
+    needs: packages
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: log-*
+          merge-multiple: false
+
+      - name: Summarise
+        run: |
+          cat log-*/optflags.log > all.log
+          {
+            echo "packages compared: $(grep -c '^== .* output files,' all.log)"
+            echo "not installed: $(grep -c ' not installed$' all.log)"
+            echo "test runs that failed or timed out: $(grep -c ': exit status ' all.log)"
+            echo "output files that vary between O2 and O2b: $(grep '^== .* output files,' all.log | awk '{s += $6} END {print s}')"
+            echo "packages with output files that differ in O3:"
+            grep '^== .* output files,' all.log | awk '$12 > 0 {print "  " $2 ": " $12}'
+          } > summary.txt
+          cat summary.txt
+          # the differing lines, at most 25 lines per annotation
+          grep -E '^(== |  \S+: |    O[23]: )' all.log | grep -vE '^== (.* output files,|[0-9]+ output files differ)' > detail.txt || true
+          for f in summary.txt; do
+            echo "::notice title=CRAN packages with an -O3 Rblas.dll::$(sed -e 's/%/%25/g' $f | sed -e ':a;N;$!ba;s/\n/%0A/g')"
+          done
+          split -l 25 -d detail.txt part-
+          for p in part-*; do
+            echo "::notice title=Differences (${p#part-})::$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: summary
+          path: |
+            all.log
+            summary.txt

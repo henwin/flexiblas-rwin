@@ -3,7 +3,8 @@
 ## without the sed in src/gnuwin32/fixed/Makefile (r57974), or R's own and
 ## packages' tests with R's Rblas.dll and with one built with -O3.
 ##   Rscript compare-optflags.R build O2|O3 PKG...    install PKG from source into lib-O2 or lib-O3
-##   Rscript compare-optflags.R test RUN LIB PKG...   examples and tests of PKG in lib-LIB, into out-RUN
+##   Rscript compare-optflags.R binary PKG...         install CRAN's binary of PKG and add the tests from its source
+##   Rscript compare-optflags.R test RUN LIB PKG...   examples and tests of PKG in lib-LIB (LIB "default": the first library), into out-RUN
 ##   Rscript compare-optflags.R base RUN              R's tests (testInstalledBasic, recommended packages), into out-RUN
 ##   Rscript compare-optflags.R compare A A2 B        out-B against out-A, on the lines out-A and out-A2 agree on
 ## The R running "test" and "base" is the one whose output is recorded; the
@@ -45,8 +46,31 @@ if (mode == "build") {
     }
 }
 
+if (mode == "binary") {
+    ## CRAN's binaries, built with R's package flags, with their
+    ## dependencies, Suggests included; binaries leave out the tests, so
+    ## they are copied from the source package
+    pkgs <- args[-1]
+    install.packages(pkgs, repos = repos, dependencies = TRUE, type = "binary", quiet = TRUE)
+    src <- download.packages(pkgs, destdir = work, repos = repos, type = "source", quiet = TRUE)
+    for (i in seq_len(nrow(src))) {
+        p <- src[i, 1]
+        inst <- tryCatch(find.package(p), error = function(e) "")
+        if (!nzchar(inst)) { cat(sprintf("%-12s not installed\n", p)); next }
+        files <- untar(src[i, 2], list = TRUE)
+        t <- grep(sprintf("^%s/tests/", p), files, value = TRUE)
+        if (length(t)) {
+            untar(src[i, 2], files = t, exdir = work)
+            file.copy(file.path(work, p, "tests"), inst, recursive = TRUE)
+        }
+        cat(sprintf("%-12s binary %s, %d test files\n", p, packageVersion(p), length(t)))
+    }
+}
+
 if (mode == "test") {
-    run <- args[2]; lib <- file.path(work, paste0("lib-", args[3])); pkgs <- args[-(1:3)]
+    run <- args[2]
+    lib <- if (args[3] == "default") .libPaths()[1] else file.path(work, paste0("lib-", args[3]))
+    pkgs <- args[-(1:3)]
     ## testInstalledPackage() runs each file in R --vanilla, which skips the
     ## profiles; R_DEFAULT_PACKAGES is still read, so a package attached
     ## there seeds the RNG in every run and makes tests that draw random
