@@ -33,7 +33,7 @@ Index: src/main/flexiblas.c
 +       libflexiblas.dll */
 +    HMODULE fb = GetModuleHandle(TEXT("libflexiblas.dll"));
 +    if (fb)
-+	fcb_addr = (void *)(intptr_t) GetProcAddress(fb, "flexiblas_current_backend");
++	fcb_addr = (void *) GetProcAddress(fb, "flexiblas_current_backend");
  #endif
  
      if (fcb_addr != NULL) {
