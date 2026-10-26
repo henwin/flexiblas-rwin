@@ -111,16 +111,16 @@ jobs:
         run: |
           cat log-*/optflags.log > all.log
           {
-            echo "packages compared: $(grep -c '^== .* output files,' all.log)"
-            echo "not installed: $(grep -c ' not installed$' all.log)"
-            echo "test runs that failed or timed out: $(grep -c ': exit status ' all.log)"
-            echo "output files that vary between O2 and O2b: $(grep '^== .* output files,' all.log | awk '{s += $6} END {print s}')"
+            echo "packages compared: $(grep -ac '^== .* output files,' all.log)"
+            echo "not installed: $(grep -ac ' not installed$' all.log)"
+            echo "test runs that failed or timed out: $(grep -ac ': exit status ' all.log)"
+            echo "output files that vary between O2 and O2b: $(grep -a '^== .* output files,' all.log | awk '{s += $6} END {print s}')"
             echo "packages with output files that differ in O3:"
-            grep '^== .* output files,' all.log | awk '$12 > 0 {print "  " $2 ": " $12}'
+            grep -a '^== .* output files,' all.log | awk '$12 > 0 {print "  " $2 ": " $12}'
           } > summary.txt
           cat summary.txt
           # the differing lines, at most 25 lines per annotation
-          grep -E '^(== |  \S+: |    O[23]: )' all.log | grep -vE '^== (.* output files,|[0-9]+ output files differ)' > detail.txt || true
+          grep -aE '^(== |  \S+: |    O[23]: )' all.log | grep -avE '^== (.* output files,|[0-9]+ output files differ)' > detail.txt || true
           for f in summary.txt; do
             echo "::notice title=CRAN packages with an -O3 Rblas.dll::$(sed -e 's/%/%25/g' $f | sed -e ':a;N;$!ba;s/\n/%0A/g')"
           done
