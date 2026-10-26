@@ -46,14 +46,13 @@ Index: src/gnuwin32/MkRules.dist
 ===================================================================
 --- src/gnuwin32/MkRules.dist	(revision 90763)
 +++ src/gnuwin32/MkRules.dist	(working copy)
-@@ -66,6 +66,12 @@
+@@ -66,6 +66,11 @@
  # using pkg-config. OPENBLAS and pkg-config are part of Rtools.
  # USE_OPENBLAS = NO
  
 +# Set to YES if you want to use FlexiBLAS, which selects the BLAS and LAPACK
-+# at run time. Unpack the FlexiBLAS bundle at the top of the source tree, so
-+# that it is in R_HOME/FlexiBLAS (as Tcl is in R_HOME/Tcl). USE_ATLAS and
-+# USE_OPENBLAS take precedence.
++# at run time. The FlexiBLAS bundle must be unpacked in $(R_HOME)/FlexiBLAS.
++# USE_ATLAS and USE_OPENBLAS take precedence.
 +# USE_FLEXIBLAS = NO
 +
  # Support for the ACML and Goto BLASes has been withdrawn: see R-admin.html
