@@ -135,6 +135,12 @@ jobs:
           for p in part-*; do
             echo "::notice title=Differences (${p#part-})::$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')"
           done
+          # the runs that failed or timed out (124), which run of which package
+          grep -a ': exit status ' all.log | sort > failed.txt || true
+          split -l 40 -d failed.txt failed-
+          for p in failed-*; do
+            echo "::notice title=Failed or timed out (${p#failed-})::$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')"
+          done
 
       - uses: actions/upload-artifact@v4
         with:
