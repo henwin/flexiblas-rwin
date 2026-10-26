@@ -1,0 +1,55 @@
+name: NA against NaN across platforms
+
+# Where NA and NaN meet in one result (tests/test-nan-mixed.R), with R's
+# own BLAS, LAPACK and arithmetic of CRAN's R (Posit's builds on Linux), on
+# Windows, Linux and macOS, x86-64 and arm64, then compared.
+on:
+  workflow_dispatch:
+
+jobs:
+  run:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-2025, label: windows-x86-64 }
+          - { os: ubuntu-24.04, label: linux-x86-64 }
+          - { os: ubuntu-24.04-arm, label: linux-arm64 }
+          - { os: macos-15, label: macos-arm64 }
+          - { os: macos-13, label: macos-x86-64 }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+      - name: Record
+        shell: bash
+        run: Rscript tests/test-nan-mixed.R run ${{ matrix.label }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nan-mixed-${{ matrix.label }}
+          path: nan-mixed-${{ matrix.label }}.txt
+
+  compare:
+    needs: run
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: nan-mixed-*
+          merge-multiple: true
+      - name: Compare
+        run: |
+          Rscript tests/test-nan-mixed.R compare nan-mixed-*.txt 2>&1 | tee compare.log
+          split -l 20 -d compare.log part-
+          for p in part-*; do
+            t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
+            echo "::notice title=compare (${p#part-})::$t"
+          done
