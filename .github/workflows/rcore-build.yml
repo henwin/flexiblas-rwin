@@ -215,6 +215,7 @@ jobs:
             echo "R-${{ inputs.r }}, backend: ${{ inputs.backend }}, experiment: ${{ inputs.experiment }}"
             cat /c/bundle.txt 2>/dev/null
             [ -f $b/build/svn_revision ] && echo "R revision $(cat $b/build/svn_revision), toolchain $TOOLCHAIN, Tcl/Tk $TCLTK"
+            [ -f $b/build.log ] && grep -m1 -o -E 'gfortran [^&;]* -c blas\.f' $b/build.log
             if [ -f $b/setup.log ]; then
               echo "setup.log (Inno Setup, errors):"
               grep -v 'DEBUG:' $b/setup.log | sed -e 's/\x1b\[[0-9;]*m//g' | grep -v '^\s*$' | grep -i -E -A3 'inno|error|exception|denied' | head -40
