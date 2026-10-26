@@ -34,14 +34,14 @@ Index: src/gnuwin32/Makefile
 ===================================================================
 --- src/gnuwin32/Makefile	(revision 90763)
 +++ src/gnuwin32/Makefile	(working copy)
-@@ -295,6 +295,7 @@
- 	../../doc/CHANGES.rds ../../doc/html/CHANGES.html
+@@ -296,6 +296,7 @@
  	$(RM) ../../etc/Makeconf ../../etc/Rconsole ../../etc/Rdevga \
  	../../etc/Rprofile.site ../../etc/rgb.txt ../../etc/Rcmd_environ \
  	../../tests/*.Rout ../../tests/*.Rout.fail
 +	$(RM) -R ../../etc/flexiblasrc*
  	# do both sub-archs
  	$(RM) -R ../../etc$(R_ARCH)/Makeconf ../../etc/i386 ../../etc/x64
+ 	$(RM) -R ../../share/zoneinfo
 Index: src/gnuwin32/MkRules.dist
 ===================================================================
 --- src/gnuwin32/MkRules.dist	(revision 90763)
@@ -74,16 +74,21 @@ Index: src/gnuwin32/installer/Makefile
 ===================================================================
 --- src/gnuwin32/installer/Makefile	(revision 90763)
 +++ src/gnuwin32/installer/Makefile	(working copy)
-@@ -79,6 +79,9 @@
- 	if test -f "$(R_HOME)/etc/curl-ca-bundle.crt"; then \
- 	  $(CP) -p "$(R_HOME)/etc/curl-ca-bundle.crt" $(RPREFIX)/etc; \
+@@ -81,8 +81,14 @@
  	fi
+ ifeq ($(R_HOME_CROSS),)
+ 	$(CP) -p $(R_HOME)/etc$(R_ARCH)/Makeconf $(RPREFIX)/etc$(R_ARCH)
 +	if test -f "$(R_HOME)/etc/flexiblasrc"; then \
 +	  $(CP) -pR "$(R_HOME)"/etc/flexiblasrc* $(RPREFIX)/etc; \
 +	fi
- ifeq ($(R_HOME_CROSS),)
- 	$(CP) -p $(R_HOME)/etc$(R_ARCH)/Makeconf $(RPREFIX)/etc$(R_ARCH)
  else
+ 	$(CP) -p $(R_HOME_CROSS)/etc$(R_ARCH_TARGET)/Makeconf $(RPREFIX)/etc$(R_ARCH_TARGET)
++	if test -f "$(R_HOME_CROSS)/etc/flexiblasrc"; then \
++	  $(CP) -pR "$(R_HOME_CROSS)"/etc/flexiblasrc* $(RPREFIX)/etc; \
++	fi
+ endif
+ # copy info and documentation files
+ 	$(MKDIR) -p $(RPREFIX)/doc
 Index: src/modules/lapack/Makefile.win
 ===================================================================
 --- src/modules/lapack/Makefile.win	(revision 90763)

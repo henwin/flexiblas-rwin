@@ -11,18 +11,31 @@ Index: build.sh
  #
  #   for target aarch64:
  #     llvm19_ucrt3_full_aarch64*tar.zst
-@@ -260,6 +262,10 @@
+@@ -153,11 +155,13 @@
+   TRIPLET=aarch64-w64-mingw32.static.posix
+   TCFILE=`ls -1 llvm19_ucrt3_full_aarch64*tar.zst | head -1`
+   TCLFILE=`ls -1 Tcl-aarch64*zip | head -1`
++  FBFILE=
+   TCTS=llvm19_ucrt3.ts 
+ else
+   TRIPLET=x86_64-w64-mingw32.static.posix
+   TCFILE=`ls -1 gcc14_ucrt3_full*tar.zst | head -1`
+   TCLFILE=`ls -1 Tcl*zip | grep -v aarch64 | head -1`
++  FBFILE=`ls -1 FlexiBLAS*zip 2>/dev/null | grep -v aarch64 | head -1`
+   TCTS=gcc14_ucrt3.ts
+ fi
+ 
+@@ -260,6 +264,9 @@
  svn diff > ../build/ucrt3.diff
  svn info --show-item revision > ../build/svn_revision
  unzip ../$TCLFILE
-+FBFILE=`ls -1 ../FlexiBLAS*zip 2>/dev/null | grep -v aarch64 | head -1`
 +if [ "X$FBFILE" != X ] ; then
-+  unzip $FBFILE
++  unzip ../$FBFILE
 +fi
  
  # Not needed as we use Schannel - https://curl.se/docs/sslcerts.html
  cd etc
-@@ -280,6 +286,10 @@
+@@ -280,6 +287,10 @@
  ISDIR = ${MISDIR}
  EOF
  
