@@ -345,6 +345,18 @@ jobs:
           Rscript tests/test-flexiblas.R 2>&1 | Tee-Object -FilePath tests-omp1.log
           exit $LASTEXITCODE
 
+      - name: Run tests with OMP_THREAD_LIMIT=1
+        if: always()
+        timeout-minutes: 8
+        shell: pwsh
+        env:
+          # Checks patches/openblas/0002-thread-limit.patch: without it, an
+          # explicit count above OMP_THREAD_LIMIT deadlocks.
+          OMP_THREAD_LIMIT: 1
+        run: |
+          Rscript tests/test-flexiblas.R 2>&1 | Tee-Object -FilePath tests-limit1.log
+          exit $LASTEXITCODE
+
       - name: NA/NaN/Inf propagation through FlexiBLAS backends
         if: always()
         timeout-minutes: 5
@@ -433,7 +445,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "reg-BLAS.log", "pkg-install.log", "pkg-tests.log") {
+          foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "tests-limit1.log", "reg-BLAS.log", "pkg-install.log", "pkg-tests.log") {
             if (Test-Path $f) {
               # Annotations are cut at about 4 KB, so publish in parts.
               $lines = Get-Content $f

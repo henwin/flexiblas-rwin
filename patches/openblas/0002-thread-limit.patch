@@ -1,0 +1,23 @@
+diff --git a/driver/others/blas_server_omp.c b/driver/others/blas_server_omp.c
+index f43e748..9ae4985 100644
+--- a/driver/others/blas_server_omp.c
++++ b/driver/others/blas_server_omp.c
+@@ -120,6 +120,9 @@ void goto_set_num_threads(int num_threads) {
+ }
+ void openblas_set_num_threads(int num_threads) {
+ 	blas_is_num_threads_set_explicitly = 1;
++	/* A team never exceeds OMP_THREAD_LIMIT; a larger count leaves the
++	   threaded level-3 kernels waiting for partners that never start. */
++	if (num_threads > omp_get_thread_limit()) num_threads = omp_get_thread_limit();
+ 	goto_set_num_threads(num_threads);
+ }
+ 
+@@ -147,6 +150,8 @@ extern int openblas_omp_num_threads_env(void);
+ #else
+     blas_omp_number_max = omp_get_max_threads();
+ #endif
++  if (blas_omp_number_max > omp_get_thread_limit())
++    blas_omp_number_max = omp_get_thread_limit();
+ 
+   blas_get_cpu_number();
+ 
