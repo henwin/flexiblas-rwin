@@ -38,7 +38,7 @@ results <- function() {
         o <- list(
             gemm = A %*% B, gemv = A %*% v, syrk = crossprod(A), tcp = tcrossprod(A),
             trsm = backsolve(R, B), trsm_t = backsolve(R, B, transpose = TRUE), fsolve = forwardsolve(t(R), B),
-            zgemm = Z %*% W, zherk = crossprod(Conj(Z), Z),
+            zgemm = Z %*% W, `zgemm cp` = crossprod(Conj(Z), Z),
             solve = solve(A, B), inverse = solve(A), zsolve = solve(Z, W),
             chol = chol(S), chol2inv = chol2inv(R), pivot = chol(S, pivot = TRUE),
             qr_linpack = qr(A)$qr, qr_lapack = qr(A, LAPACK = TRUE)$qr,

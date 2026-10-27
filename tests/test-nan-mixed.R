@@ -44,7 +44,7 @@ if (args[1] == "run") {
         rec(paste0("dgemm tcp", s), tcrossprod(A, B))
         rec(paste0("dtrsm", s), backsolve(U, B))
         rec(paste0("zgemm", s), Z %*% W)
-        rec(paste0("zherk", s), crossprod(Conj(Z), Z))
+        rec(paste0("zgemm cp", s), crossprod(Conj(Z), Z))
         rec(paste0("dgesv", s), tryCatch(solve(A, B), error = function(e) NULL))
         rec(paste0("dgeqp3", s), qr(A, LAPACK = TRUE)$qr)
         rec(paste0("LINPACK dqrdc2", s), qr(A)$qr)

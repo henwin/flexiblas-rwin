@@ -14,7 +14,7 @@ A <- matrix(rnorm(n * n), n)
 S <- crossprod(A) + diag(n)
 b <- rnorm(n)
 Z <- matrix(complex(real = rnorm(n * n), imaginary = rnorm(n * n)), n)
-H <- crossprod(Z) + diag(n)
+H <- crossprod(Conj(Z), Z) + diag(n)   # Hermitian: crossprod() does not conjugate
 v <- rnorm(n)
 
 run <- function() list(
@@ -23,7 +23,7 @@ run <- function() list(
     dsyrk      = crossprod(A),
     dtcrossprod = tcrossprod(A),
     zgemm      = Z %*% Z,
-    zherk      = crossprod(Conj(Z), Z),
+    zgemm_cp   = crossprod(Conj(Z), Z),   # R's complex crossprod() calls zgemm
     dgesv      = solve(A, b),
     dgetri     = solve(A),
     dpotrf     = chol(S),
