@@ -84,8 +84,11 @@ jobs:
           # one package at a time, so that a package that hangs costs only its own time
           run() {   # run package
             R=Rscript; [ "${1:0:2}" = O3 ] && R=/c/R-o3/bin/Rscript
-            timeout 1800 $R tests/compare-optflags.R test $1 default $2 > /dev/null 2>&1 ||
+            timeout 1800 $R tests/compare-optflags.R test $1 default $2 > /dev/null 2>&1 || {
+              # a killed run leaves a truncated .Rout, which must not be compared
               echo "$2 $1: exit status $?" | tee -a optflags.log
+              rm -rf "$OPTFLAGS_WORK/out-$1/$2"
+            }
           }
           for p in $PKGS; do for r in O2 O2b O3; do run $r $p; done; done
           Rscript tests/compare-optflags.R compare O2,O2b O3 2>&1 > pass1.log

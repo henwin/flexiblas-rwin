@@ -153,11 +153,11 @@ if (mode == "compare") {
         if (length(h)) l <- l[-c(h, h + 1L)]
         ## byte-wise: outputs need not be valid in the session's encoding
         l <- gsub('0x[0-9a-fA-F]+|<[0-9A-F]{8,16}>|"[0-9a-f]{16}"', "ADDR", l, useBytes = TRUE)
-        l <- gsub("C:/R-o3", "C:/R", l, fixed = TRUE, useBytes = TRUE)   # the copy with the -O3 BLAS
+        l <- gsub("C:([/\\\\]+)R-o3", "C:\\1R", l, useBytes = TRUE)   # the copy with the -O3 BLAS
         ## timings the test frameworks print, which a faster BLAS changes
         ## systematically: tinytest's "12 tests OK 92ms" and "(1.3s)",
         ## testthat's "[ FAIL 0 | ... ]" summary line; and gc()'s table
-        l <- gsub("( tests OK| tests FAILED|All ok, [0-9]+ results) \\(?[0-9.]+m?s\\)?", "\\1 TIME", l, useBytes = TRUE)
+        l <- gsub("([0-9]+ tests( OK| FAILED)?|All ok, [0-9]+ results) \\(?[0-9.]+m?s\\)?", "\\1 TIME", l, useBytes = TRUE)
         l <- l[!grepl("^(Ncells|Vcells) +[0-9]", l, useBytes = TRUE)]
         ## widths of columns follow their widest entry, a path or a timing
         gsub(" +", " ", trimws(l, "right"), useBytes = TRUE)
@@ -197,8 +197,10 @@ if (mode == "compare") {
         d <- which(same(R) & same(A) & R[[1]] != A[[1]])
         if (length(d)) {
             cat(sprintf("  %s: %d stable lines differ\n", f, length(d)))
+            ## bytes: substr() refuses strings in the "bytes" encoding
+            head100 <- function(x) rawToChar(head(charToRaw(x), 100))
             for (k in head(d, 3))
-                cat(sprintf("    %s: %s\n    %s: %s\n", ref[1], substr(R[[1]][k], 1, 100), alt[1], substr(A[[1]][k], 1, 100)))
+                cat(sprintf("    %s: %s\n    %s: %s\n", ref[1], head100(R[[1]][k]), alt[1], head100(A[[1]][k])))
             return("differ")
         }
         if (all(fr)) "failed" else "same"
