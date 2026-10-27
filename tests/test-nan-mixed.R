@@ -25,7 +25,7 @@ if (args[1] == "run") {
         if (is.null(r)) { out <<- c(out, sprintf("%s|%s|error|||", label, op)); return() }
         f <- tempfile(); writeBin(r, f)
         out <<- c(out, sprintf("%s|%s|%d|%d|%d|%s", label, op, sum(r == 1L), sum(r == 2L),
-                               sum(r >= 3L), substr(unname(tools::md5sum(f)), 1, 8)))
+                               sum(r >= 3L), unname(tools::md5sum(f))))
     }
     for (n in c(3, 17, 100)) {
         set.seed(n)
