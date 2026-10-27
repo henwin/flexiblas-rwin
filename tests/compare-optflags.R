@@ -21,7 +21,11 @@ mode <- args[1]
 ## code, where a backslash starts an escape
 work <- normalizePath(Sys.getenv("OPTFLAGS_WORK", "optflags-work"), winslash = "/", mustWork = FALSE)
 dir.create(work, showWarnings = FALSE)
-repos <- "https://cloud.r-project.org"
+## CRAN and the Bioconductor release that goes with this R (R's own
+## repositories file), for packages whose Suggests come from there
+setRepositories(ind = 1:4)
+repos <- getOption("repos")
+repos["CRAN"] <- "https://cloud.r-project.org"
 
 if (mode == "build") {
     opt <- args[2]; pkgs <- args[-(1:2)]
