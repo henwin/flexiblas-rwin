@@ -16,8 +16,9 @@
 
 typedef double complex dcx;
 #define NBUF 4096
-static double X[NBUF], Y[NBUF], A[NBUF], B[NBUF], C[NBUF], P[8];
-static double xs[2][NBUF], ys[2][NBUF], as[2][NBUF], bs[2][NBUF], cs[2][NBUF], ps[2][8];
+#define NP 9                                   /* drotmg: dd1, dd2, dx1, dy1 and 5 of dparam */
+static double X[NBUF], Y[NBUF], A[NBUF], B[NBUF], C[NBUF], P[NP];
+static double xs[2][NBUF], ys[2][NBUF], as[2][NBUF], bs[2][NBUF], cs[2][NBUF], ps[2][NP];
 static double res[2][2];                       /* scalar results */
 static HMODULE lib[2];
 static int cur;                                /* which DLL is being called */
@@ -50,7 +51,7 @@ static void fill(unsigned long long seed)
 {
     rs = seed * 0x9E3779B97F4A7C15ULL + 1;
     for (int i = 0; i < NBUF; i++) { X[i] = unif(); Y[i] = unif(); A[i] = unif(); B[i] = unif(); C[i] = unif(); }
-    for (int i = 0; i < 8; i++) P[i] = unif();
+    for (int i = 0; i < NP; i++) P[i] = unif();
     if (seed % 4 == 0) {
         double *v[] = {X, Y, A, B, C};
         for (int j = 0; j < 5; j++)
@@ -270,7 +271,7 @@ int main(int argc, char **argv)
             if ((k2 = kind(as[0], as[1], NBUF)) > k) k = k2;
             if ((k2 = kind(bs[0], bs[1], NBUF)) > k) k = k2;
             if ((k2 = kind(cs[0], cs[1], NBUF)) > k) k = k2;
-            if ((k2 = kind(ps[0], ps[1], 8)) > k) k = k2;
+            if ((k2 = kind(ps[0], ps[1], NP)) > k) k = k2;
             if ((k2 = kind(res[0], res[1], 2)) > k) k = k2;
             if (k) ndiff++;
             if (k == 1) nnan++;
