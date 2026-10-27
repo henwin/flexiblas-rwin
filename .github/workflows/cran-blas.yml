@@ -1,27 +1,34 @@
-name: CRAN packages with an -O3 Rblas.dll
+name: R and CRAN packages with an -O3 Rblas.dll
 
-# The examples and tests of the CRAN packages that call the BLAS or LAPACK
-# themselves (tests/cran-blas-users.sh: a DLL in their Windows binary imports
-# from Rblas.dll or Rlapack.dll), run with CRAN's R and its Rblas.dll and
-# with a copy of R whose Rblas.dll is built with -O3 (r76787). The packages
-# are CRAN's binaries, with the tests taken from their sources. As in
-# optflags.yml, the reference runs twice, and only output lines on which both
-# runs agree count (tests/compare-optflags.R).
+# What an Rblas.dll built with -O3 instead of -O2 (r76787) changes in the
+# output of examples and tests, with CRAN's R and its Rblas.dll against a
+# copy of R whose Rblas.dll is rebuilt with -O3 (.github/actions/rblas-o3):
+# R's own tests and the recommended packages (job base), and CRAN packages
+# (job packages), by default those that call the BLAS or LAPACK themselves
+# (tests/cran-blas-users.sh: a DLL in their Windows binary imports from
+# Rblas.dll or Rlapack.dll), as CRAN's binaries with the tests taken from
+# their sources. The reference runs twice, and only output lines on which
+# both runs agree count (tests/compare-optflags.R).
 on:
   workflow_dispatch:
     inputs:
       packages:
-        description: CRAN packages, separated by spaces (empty for all that call the BLAS or LAPACK)
+        description: CRAN packages, separated by spaces (empty for all that call the BLAS or LAPACK; "none" for no packages)
         default: ''
       groups:
-        description: Number of parallel jobs (at most 256)
+        description: Number of parallel jobs for the packages (at most 256)
         default: '64'
+      base:
+        description: Also R's own tests and the recommended packages
+        type: boolean
+        default: false
 
 env:
   OPTFLAGS_WORK: ${{ github.workspace }}\optflags-work
 
 jobs:
   select:
+    if: inputs.packages != 'none'
     runs-on: ubuntu-24.04
     outputs:
       groups: ${{ steps.split.outputs.groups }}
@@ -154,3 +161,38 @@ jobs:
           path: |
             all.log
             summary.txt
+
+  base:
+    if: inputs.base
+    runs-on: windows-2025
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          rtools-version: '45'
+
+      - name: R with Rblas.dll built with -O3
+        uses: ./.github/actions/rblas-o3
+
+      - name: R's tests and the recommended packages
+        shell: bash
+        run: |
+          Rscript tests/compare-optflags.R base O2 2>&1 | tee -a optflags.log
+          Rscript tests/compare-optflags.R base O2b 2>&1 | tee -a optflags.log
+          /c/R-o3/bin/Rscript tests/compare-optflags.R base O3 2>&1 | tee -a optflags.log
+          Rscript tests/compare-optflags.R compare O2 O2b O3 2>&1 | tee -a optflags.log
+
+      - name: Publish the comparison as annotations
+        if: always()
+        shell: bash
+        run: |
+          [ -f optflags.log ] || exit 0
+          grep -aE '^(O[23]b?: |test|== |  \S+: |    O[23]: )' optflags.log | tr -d '\r' > summary.log || true
+          split -l 25 -d summary.log part-
+          for p in part-*; do
+            t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
+            echo "::notice title=R's tests (${p#part-})::$t"
+          done

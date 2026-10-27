@@ -1,41 +1,31 @@
 name: FlexiBLAS bundle
 
+# Runs when the bundle's inputs change (the same list as rcore-build's
+# provenance check), and by hand.
 on:
   push:
     branches: [master]
-    paths-ignore:
-      - '**.md'
-      - .gitattributes
-      - .github/workflows/platforms.yml
-      - .github/workflows/optflags.yml
-      - patches/r/**
-      - tests/**
-      - .github/workflows/rcore-build.yml
-      - patches/r-dev-web/0002-build-flexiblas-bundle.patch
-      - patches/r-dev-web/0003-setup-inno-setup-from-github.patch
-      - patches/r-dev-web/0004-build-patched-branch-name.patch
-      - scripts/compare-codegen.sh
-      - .github/workflows/blas-bitwise.yml
-      - .github/workflows/flags-timing.yml
-      - .github/actions/**
-      - .github/workflows/nan-platforms.yml
+    paths:
+      - docker/**
+      - scripts/build-mxe.sh
+      - scripts/build-bundle.sh
+      - scripts/build-in-docker.sh
+      - patches/rtools-mxe/**
+      - patches/openblas/**
+      - patches/flexiblas/**
+      - patches/r-dev-web/flexiblas_bundle/**
+      - .github/workflows/build-test.yml
   pull_request:
-    paths-ignore:
-      - '**.md'
-      - .gitattributes
-      - .github/workflows/platforms.yml
-      - .github/workflows/optflags.yml
-      - patches/r/**
-      - tests/**
-      - .github/workflows/rcore-build.yml
-      - patches/r-dev-web/0002-build-flexiblas-bundle.patch
-      - patches/r-dev-web/0003-setup-inno-setup-from-github.patch
-      - patches/r-dev-web/0004-build-patched-branch-name.patch
-      - scripts/compare-codegen.sh
-      - .github/workflows/blas-bitwise.yml
-      - .github/workflows/flags-timing.yml
-      - .github/actions/**
-      - .github/workflows/nan-platforms.yml
+    paths:
+      - docker/**
+      - scripts/build-mxe.sh
+      - scripts/build-bundle.sh
+      - scripts/build-in-docker.sh
+      - patches/rtools-mxe/**
+      - patches/openblas/**
+      - patches/flexiblas/**
+      - patches/r-dev-web/flexiblas_bundle/**
+      - .github/workflows/build-test.yml
   workflow_dispatch:
 
 env:

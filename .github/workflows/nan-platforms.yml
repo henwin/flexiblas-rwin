@@ -1,13 +1,91 @@
-name: NA against NaN across platforms
+name: NA, NaN and Inf outside Windows
 
-# Where NA and NaN meet in one result (tests/test-nan-mixed.R), with R's
-# own BLAS, LAPACK and arithmetic of CRAN's R (Posit's builds on Linux), on
-# Windows, Linux and macOS, x86-64 and arm64, then compared.
+# Three comparisons of how NA, NaN and Inf come out, to put the Windows
+# results in context: FlexiBLAS's backends against each other on Fedora
+# and Accelerate against R's BLAS on macOS (tests/test-nan.R, with the
+# memory use of the OpenBLAS backends, tests/test-memory.R); and where NA
+# and NaN meet in one result (tests/test-nan-mixed.R), R's own BLAS, LAPACK
+# and arithmetic of CRAN's R (Posit's builds on Linux) on Windows, Linux
+# and macOS, x86-64 and arm64, compared with each other.
 on:
+  push:
+    branches: [master]
+    paths: [tests/test-nan.R, tests/test-nan-mixed.R, tests/test-memory.R, .github/workflows/nan-platforms.yml]
   workflow_dispatch:
 
 jobs:
-  run:
+  backends-linux:
+    name: Fedora, FlexiBLAS backends against each other
+    runs-on: ubuntu-24.04
+    container: fedora:latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install R with FlexiBLAS and its backends
+        run: |
+          dnf install -y -q R-core R-flexiblas flexiblas-netlib binutils \
+              flexiblas-openblas-serial flexiblas-openblas-openmp flexiblas-openblas-threads
+          flexiblas list
+          # OpenBLAS's build configuration, including MAX_THREADS (NUM_THREADS)
+          for f in /usr/lib64/libopenblas*.so.0; do echo "$f: $(strings "$f" | grep -m1 'MAX_THREADS')"; done
+
+      - name: Compare backends
+        run: Rscript tests/test-nan.R cmp 2>&1 | tee nan.log
+
+      - name: Memory use
+        run: |
+          for b in OPENBLAS-OPENMP OPENBLAS-THREADS; do
+            Rscript tests/test-memory.R $b
+            OPENBLAS_NUM_THREADS=1 Rscript tests/test-memory.R $b
+          done 2>&1 | tee memory.log
+
+      - name: Publish log as annotations
+        if: always()
+        run: |
+          for f in nan.log memory.log; do
+            [ -f $f ] || continue
+            split -l 25 -d $f part-$f-
+            for p in part-$f-*; do
+              t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
+              echo "::notice title=$f-linux (${p#part-$f-})::$t"
+            done
+          done
+
+  backends-macos:
+    name: macOS arm64, R's BLAS against Accelerate
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+
+      - name: Reference with R's own BLAS
+        run: Rscript tests/test-nan.R ref
+
+      - name: Switch libRblas to Accelerate (vecLib) and compare
+        run: |
+          lib=$(Rscript -e 'cat(R.home("lib"))')
+          ls -l "$lib"/libRblas*
+          ln -sf libRblas.vecLib.dylib "$lib/libRblas.dylib"
+          Rscript -e 'sessionInfo()' | grep -i -A2 blas
+          Rscript tests/test-nan.R cmp 2>&1 | tee nan.log
+
+      - name: Publish log as annotations
+        if: always()
+        run: |
+          [ -f nan.log ] || exit 0
+          split -l 25 nan.log part-
+          for p in part-*; do
+            t=$(perl -pe 's/%/%25/g; s/\n/%0A/' "$p")
+            echo "::notice title=nan-macos.log (${p#part-})::$t"
+          done
+
+  platforms:
+    name: R's own BLAS, LAPACK and arithmetic per platform
     strategy:
       fail-fast: false
       matrix:
@@ -33,7 +111,7 @@ jobs:
           path: nan-mixed-${{ matrix.label }}.txt
 
   compare:
-    needs: run
+    needs: platforms
     if: always()
     runs-on: ubuntu-24.04
     steps:
