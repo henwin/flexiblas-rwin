@@ -65,7 +65,7 @@ signature <- function(x) {
     k[is.na(x) & !is.nan(x)] <- 1L; k[is.nan(x)] <- 2L
     k[x == Inf & !is.na(x)] <- 3L; k[x == -Inf & !is.na(x)] <- 4L
     f <- tempfile(); writeBin(k, f); on.exit(unlink(f))
-    sprintf("A%d N%d I%d #%s", sum(k == 1L), sum(k == 2L), sum(k >= 3L), substr(unname(tools::md5sum(f)), 1, 6))
+    sprintf("A%d N%d I%d #%s", sum(k == 1L), sum(k == 2L), sum(k >= 3L), unname(tools::md5sum(f)))
 }
 run <- function() lapply(c(cases(4), cases(500)), signature)
 
