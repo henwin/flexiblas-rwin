@@ -41,3 +41,20 @@ RUN cd usr/x86_64-w64-mingw32.static.posix/bin \
     done
 
 RUN bash -o pipefail -c 'make ccache 2>&1 | tail -20'
+
+# The aarch64 target (LLVM: clang, flang, libomp) in a tree of its own from
+# the base and cross tarballs, as the howto has them in /usr/lib/mxe/usr_aarch64;
+# only when asked for, since the x86_64 build does not need it.
+ARG WITH_AARCH64=no
+RUN if [ "$WITH_AARCH64" = yes ]; then \
+        svn checkout -q -r $MXE_REV \
+            https://svn.r-project.org/R-dev-web/trunk/WindowsBuilds/winutf8/ucrt3/toolchain_libs/mxe /opt/mxe-aarch64 \
+        && mkdir /opt/mxe-aarch64/usr && cd /opt/mxe-aarch64/usr \
+        && for k in base cross; do \
+               f=rtools45-toolchain-libs-$k-aarch64-$MXE_REV.tar.zst; \
+               wget -q https://cran.r-project.org/bin/windows/Rtools/rtools45/files/$f \
+               && tar --zstd -xf $f && rm $f; \
+           done \
+        && ln -s /opt/mxe-aarch64/usr /usr/lib/mxe/usr_aarch64 \
+        && cd /opt/mxe-aarch64 && bash -o pipefail -c 'make ccache 2>&1 | tail -5'; \
+    fi

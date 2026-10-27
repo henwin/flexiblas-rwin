@@ -8,18 +8,20 @@ set -e
 # ../toolchain_libs), which must be on PATH.
 #
 # For the x86_64 target, it hence needs x86_64-w64-mingw32.static.posix-gcc,
-# x86_64-w64-mingw32.static.posix-cmake, etc.  Only x86_64 is supported so
-# far.
+# x86_64-w64-mingw32.static.posix-cmake, etc.
+#
+# The target is x86_64 by default. It can also be specified as aarch64.
 #
 # FlexiBLAS loads its backends at run time and is therefore built as DLLs.
 # The OPENBLAS backend contains the toolchain's static OpenBLAS.  The runtime
 # libraries are linked in statically but not exported, since MinGW's
 # export-all would otherwise export libssp's __stack_chk_fail and libgomp.
 #
-# The bundle has R's layout: the DLLs in bin/x64, the OPENBLAS backend in
-# bin/x64/flexiblas, and the configuration in etc, which FlexiBLAS finds
-# relative to its DLLs (../../etc, set by CMAKE_INSTALL_BINDIR).  R's
-# Rblas.dll and Rlapack.dll forward to libflexiblas.dll.
+# The bundle has R's layout: the DLLs in bin/x64 (bin on aarch64), the
+# OPENBLAS backend in bin/x64/flexiblas, and the configuration in etc, which
+# FlexiBLAS finds relative to its DLLs (../../etc, set by
+# CMAKE_INSTALL_BINDIR).  R's Rblas.dll and Rlapack.dll forward to
+# libflexiblas.dll.
 #
 # flexiblas.diff fixes finding the configuration and the vendor backends on
 # Windows, and finding an autotools-built dlfcn-win32.
@@ -36,14 +38,24 @@ if [ "X$RTARGET" == X ] ; then
   RTARGET="x86_64"
 fi
 
-if [ ${RTARGET} != "x86_64" ] ; then
-  echo "Unsupported target."
-  exit 1
+if [ ${RTARGET} == "aarch64" ] ; then
+  TRIPLET=aarch64-w64-mingw32.static.posix
+  CC=clang
+  # R's bin directory and EOPTS on aarch64 (WIN= and USE_LLVM=1 in MkRules)
+  BINDIR=bin
+  EOPTS=
+  # the Fortran and OpenMP runtimes of LLVM, as R's FLIBS and -fopenmp
+  FLIBS="FortranRuntime;FortranDecimal;c++;omp;pthread"
+  EXCLUDE=libFortranRuntime.a:libFortranDecimal.a:libFortran_main.a:libc++.a:libunwind.a:libomp.a:libwinpthread.a:libdl.a
+else
+  TRIPLET=x86_64-w64-mingw32.static.posix
+  CC=gcc
+  BINDIR=bin/x64
+  EOPTS="-mfpmath=sse -msse2 -mstackrealign"
+  FLIBS="gfortran;quadmath;gomp;pthread"
+  EXCLUDE=libssp.a:libssp_nonshared.a:libgcc.a:libgcc_eh.a:libgfortran.a:libquadmath.a:libgomp.a:libwinpthread.a:libdl.a
 fi
-
-TRIPLET=x86_64-w64-mingw32.static.posix
-TLIB=`dirname \`which ${TRIPLET}-gcc\``/../${TRIPLET}/lib
-EXCLUDE=libssp.a:libssp_nonshared.a:libgcc.a:libgcc_eh.a:libgfortran.a:libquadmath.a:libgomp.a:libwinpthread.a:libdl.a
+TLIB=`dirname \`which ${TRIPLET}-${CC}\``/../${TRIPLET}/lib
 
 echo "Building for target $RTARGET."
 
@@ -69,30 +81,37 @@ patch -p1 < $BHOME/flexiblas.diff
 # change results but made its BLAS two to four times slower than R's, so they
 # are switched off again.  -frecursive stays: it keeps local arrays off
 # static storage, which LAPACK needs to be called from several threads.
-EOPTS="-mfpmath=sse -msse2 -mstackrealign"
+# FlexiBLAS adds those flags for GNU compilers only, and R does without
+# -ffloat-store for dlamch.f with LLVM, so with flang only the optimisation
+# levels remain.
 cat > $BHOME/build/rflags.cmake <<'EOF'
 cmake_language(DEFER CALL set_property TARGET flexiblas_netlib_objs APPEND PROPERTY COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-O2>")
+cmake_language(DEFER CALL set_property TARGET flexiblas_fallback_lapack_objs APPEND PROPERTY COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-O3>")
+EOF
+if [ ${RTARGET} != "aarch64" ] ; then
+cat >> $BHOME/build/rflags.cmake <<'EOF'
 cmake_language(DEFER CALL set_property TARGET flexiblas_netlib_objs APPEND PROPERTY COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-fno-float-store>")
 cmake_language(DEFER CALL set_property TARGET flexiblas_netlib_objs APPEND PROPERTY COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-fno-stack-protector>")
 cmake_language(DEFER CALL set_property TARGET flexiblas_netlib_objs APPEND PROPERTY COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-fno-stack-clash-protection>")
-cmake_language(DEFER CALL set_property TARGET flexiblas_fallback_lapack_objs APPEND PROPERTY COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-O3>")
 cmake_language(DEFER CALL set_property TARGET flexiblas_fallback_lapack_objs APPEND PROPERTY COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-fno-stack-protector>")
 cmake_language(DEFER CALL set_property TARGET flexiblas_fallback_lapack_objs APPEND PROPERTY COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:Fortran>:-fno-stack-clash-protection>")
 cmake_language(DEFER CALL set_property SOURCE ${CMAKE_SOURCE_DIR}/contributed/lapack-3.12.1/INSTALL/dlamch.f
   DIRECTORY ${CMAKE_SOURCE_DIR}/contributed/lapack-3.12.1/SRC APPEND PROPERTY COMPILE_OPTIONS -ffloat-store)
 EOF
+fi
 
 # The C and Fortran flags are CMake's Release defaults with R's EOPTS; they
 # reach FlexiBLAS itself, the BLAS and LAPACK get R's flags above.
 # ZDOTC_MKL_EXITCODE answers a try_run that cannot run when cross-compiling:
-# OpenBLAS built with gfortran returns complex values the GNU way.
+# OpenBLAS built with gfortran, or with flang on aarch64, returns complex
+# values the GNU way.
 ${TRIPLET}-cmake -S . -B build64 \
   -DCMAKE_BUILD_TYPE=Release \
   "-DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG $EOPTS" \
   "-DCMAKE_Fortran_FLAGS_RELEASE=-O3 $EOPTS" \
   -DCMAKE_PROJECT_FlexiBLAS_INCLUDE=$BHOME/build/rflags.cmake \
   -DCMAKE_INSTALL_PREFIX=$BINST \
-  -DCMAKE_INSTALL_BINDIR=bin/x64 \
+  -DCMAKE_INSTALL_BINDIR=$BINDIR \
   -DBUILD_SHARED_LIBS=ON \
   -DINTEGER8=OFF \
   -DTESTS=OFF \
@@ -100,7 +119,7 @@ ${TRIPLET}-cmake -S . -B build64 \
   -DLTO=OFF \
   -DBLAS_AUTO_DETECT=OFF \
   -DEXTRA=OPENBLAS \
-  "-DOPENBLAS_LIBRARY=-Wl,--whole-archive;$TLIB/libopenblas.a;-Wl,--no-whole-archive;gfortran;quadmath;gomp;pthread" \
+  "-DOPENBLAS_LIBRARY=-Wl,--whole-archive;$TLIB/libopenblas.a;-Wl,--no-whole-archive;$FLIBS" \
   -DOPENBLAS_LINKER_FLAGS=-fopenmp \
   -DZDOTC_MKL_EXITCODE=1 \
   "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,--exclude-libs,$EXCLUDE" 2>&1 | tee configure64.out
@@ -113,7 +132,7 @@ cp configure64.out make64.out install64.out $BHOME/build
 # entry points FlexiBLAS has
 cd $BINST
 rm -f `find . -name "*.a" ! -name libflexiblas.dll.a`
-rm -rf bin/x64/pkgconfig include share
+rm -rf $BINDIR/pkgconfig include share
 ${TRIPLET}-strip `find . -name "*.dll"`
 
 # The bundle is in FlexiBLAS
@@ -124,4 +143,4 @@ cp FlexiBLAS.zip build
 # Sanity check
 find FlexiBLAS | md5sum
 du FlexiBLAS -ksk
-${TRIPLET}-objdump -p FlexiBLAS/bin/x64/libflexiblas.dll | grep 'DLL Name'
+${TRIPLET}-objdump -p FlexiBLAS/$BINDIR/libflexiblas.dll | grep 'DLL Name'

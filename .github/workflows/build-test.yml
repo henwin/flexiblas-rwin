@@ -27,6 +27,11 @@ on:
       - patches/r-dev-web/flexiblas_bundle/**
       - .github/workflows/build-test.yml
   workflow_dispatch:
+    inputs:
+      aarch64:
+        description: Also build the bundle for aarch64 (LLVM toolchain; the OpenBLAS build is not cached yet)
+        type: boolean
+        default: false
 
 env:
   FLEXIBLAS_VERSION: 3.5.0
@@ -80,3 +85,52 @@ jobs:
           name: flexiblas-rwin
           path: dist/
           if-no-files-found: error
+
+  # The same for aarch64, with the LLVM toolchain in a second MXE tree; on
+  # demand until it builds.
+  build-aarch64:
+    name: Cross-build for aarch64 with the LLVM toolchain
+    if: inputs.aarch64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Cache MXE build
+        uses: actions/cache@v6
+        with:
+          path: mxe-out
+          key: mxe-aarch64-${{ hashFiles('docker/Dockerfile', 'patches/rtools-mxe/**', 'patches/openblas/**', 'scripts/build-mxe.sh') }}
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          build-args: WITH_AARCH64=yes
+          tags: flexiblas-rwin-mxe
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build in Docker
+        run: |
+          set -o pipefail
+          bash scripts/build-in-docker.sh aarch64 2>&1 | tee docker-build.log
+
+      - name: Publish build errors
+        if: failure()
+        run: |
+          { grep -n -E 'error|Error|ERROR|No such|not found|failed|Failed' docker-build.log | tail -25; echo ...; tail -30 docker-build.log; } > tail.log
+          split -l 30 -d tail.log part-
+          for p in part-*; do
+            t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
+            echo "::error title=docker-build.log (${p#part-})::$t"
+          done
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: flexiblas-rwin-aarch64
+          path: |
+            dist/
+            docker-build.log
