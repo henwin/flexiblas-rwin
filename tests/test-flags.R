@@ -89,7 +89,8 @@ if (mode == "ref") {
     saveRDS(res, "flags-ref.rds")
 } else {
     ref <- readRDS("flags-ref.rds")
-    same <- mapply(identical, res, ref[names(res)])
+    ## identical()'s defaults equate 0 and -0 and all NaN payloads
+    same <- mapply(identical, res, ref[names(res)], MoreArgs = list(num.eq = FALSE, single.NA = FALSE))
     ops <- unique(sub(" n=.*", "", names(res)))
     diff_ops <- unique(sub(" n=.*", "", names(res)[!same]))
     cat(sprintf("%s: %d of %d results differ from R's; operations: %s\n", label, sum(!same), length(same),

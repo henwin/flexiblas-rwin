@@ -2,7 +2,7 @@
 ##   Rscript test-identical.R ref    with R's own Rblas.dll/Rlapack.dll: saves
 ##                                   identical-ref.rds
 ##   Rscript test-identical.R cmp    with FlexiBLAS: compares the current
-##                                   backend (default NETLIB) with identical()
+##                                   backend (default NETLIB) bit for bit
 ## FlexiBLAS's NETLIB backend and LAPACK fallback are compiled from the same
 ## reference sources as R's; this checks that the compilation, too, gives
 ## the same bits.
@@ -67,7 +67,8 @@ cur <- if (requireNamespace("flexiblas", quietly = TRUE)) flexiblas::flexiblas_c
 cat("backend:", cur, "\n")
 diffs <- 0L
 for (k in names(ref)) {
-    same <- identical(res[[k]], ref[[k]])
+    ## identical()'s defaults equate 0 and -0 and all NaN payloads
+    same <- identical(res[[k]], ref[[k]], num.eq = FALSE, single.NA = FALSE)
     num <- function(x) unlist(lapply(if (is.list(x)) x else list(x), function(y) as.complex(unlist(y))))
     d <- if (same) 0 else max(Mod(num(res[[k]]) - num(ref[[k]])), na.rm = TRUE)
     cat(sprintf("%-12s %s\n", k, if (same) "identical" else sprintf("differs (max abs diff %.2e)", d)))
