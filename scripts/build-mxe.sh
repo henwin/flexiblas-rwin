@@ -2,7 +2,8 @@
 # Inside the image from docker/Dockerfile, with this repository at /work:
 # apply patches/rtools-mxe/ to R's MXE tree and rebuild OpenBLAS with MXE,
 # as R-core would rebuild the toolchain. The files OpenBLAS installs are
-# kept in mxe-out/openblas.tar; when that exists, they are unpacked instead.
+# kept in mxe-out/openblas-HASH.tar, HASH from the patches and this script;
+# when that exists, they are unpacked instead.
 set -euo pipefail
 WORK=${WORK:-/work}
 cd /opt/mxe
@@ -11,7 +12,8 @@ for p in "$WORK"/patches/rtools-mxe/*.patch; do
     patch -p0 -N < "$p"
 done
 
-cache=$WORK/mxe-out/openblas.tar
+h=$(cat "$WORK"/patches/rtools-mxe/*.patch "$WORK"/docker/Dockerfile "$0" | sha256sum | cut -c1-12)
+cache=$WORK/mxe-out/openblas-$h.tar
 if [ -f "$cache" ]; then
     tar -xf "$cache"
     exit 0
