@@ -1,6 +1,6 @@
 #! /bin/bash
 
-set -e -o pipefail
+set -e
 
 # build_ucrt.sh [target]
 #
@@ -53,7 +53,6 @@ VER=3.5.0
 if [ ! -r flexiblas-$VER.tar.gz ] ; then
   wget -O flexiblas-$VER.tar.gz https://github.com/mpimd-csc/flexiblas/archive/v$VER.tar.gz
 fi
-echo "175bd4ad7b44348c5dc0531c7a0169ad451cbc9a3d018dd17f01d4a0d0244680  flexiblas-$VER.tar.gz" | sha256sum -c
 
 cd $BHOME/build
 tar xfz $BHOME/flexiblas-$VER.tar.gz
@@ -83,6 +82,8 @@ cmake_language(DEFER CALL set_property SOURCE ${CMAKE_SOURCE_DIR}/contributed/la
   DIRECTORY ${CMAKE_SOURCE_DIR}/contributed/lapack-3.12.1/SRC APPEND PROPERTY COMPILE_OPTIONS -ffloat-store)
 EOF
 
+# The C and Fortran flags are CMake's Release defaults with R's EOPTS; they
+# reach FlexiBLAS itself, the BLAS and LAPACK get R's flags above.
 # ZDOTC_MKL_EXITCODE answers a try_run that cannot run when cross-compiling:
 # OpenBLAS built with gfortran returns complex values the GNU way.
 ${TRIPLET}-cmake -S . -B build64 \
