@@ -100,10 +100,12 @@ if (mode == "test") {
     }
     ## testInstalledPackage() clears R_LIBS for the files it runs, and their
     ## library(pkg) names no library; R_LIBS_USER, searched before the site
-    ## library, is what puts lib first for them. .libPaths() here only
-    ## serves find.package() below.
+    ## library, is what puts lib first for them, and R_LIBS the same for
+    ## anything else, over a value from the environment. .libPaths() here
+    ## only serves find.package() below.
     .libPaths(c(lib, .libPaths()))
-    Sys.setenv(R_LIBS_USER = paste(setdiff(.libPaths(), .Library), collapse = .Platform$path.sep),
+    libs <- paste(setdiff(.libPaths(), .Library), collapse = .Platform$path.sep)
+    Sys.setenv(R_LIBS = libs, R_LIBS_USER = libs,
                R_LIBS_SITE = seedlib,
                R_DEFAULT_PACKAGES = "datasets,utils,grDevices,graphics,stats,methods,seedone")
     cat(sprintf("%s: %s\n", run, R.home()))
@@ -114,6 +116,8 @@ if (mode == "test") {
         from <- system2(file.path(R.home("bin"), "Rscript"), c("--vanilla", "-e",
                         shQuote(sprintf("cat(dirname(find.package('%s')))", p))), stdout = TRUE)
         cat(sprintf("%s %s: loads from %s\n", p, run, paste(from, collapse = " ")))
+        if (normalizePath(from, winslash = "/") != normalizePath(lib, winslash = "/"))
+            stop(p, " would load from ", from, ", not ", lib)
         ## 1L when an example or test file failed; its output is then a
         ## .Rout.fail, which "compare" reports
         st <- try(tools::testInstalledPackage(p, lib.loc = lib, outDir = out, types = c("examples", "tests")))
