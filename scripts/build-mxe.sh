@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Inside the image from docker/Dockerfile, with this repository at /work:
-# apply patches/rtools-mxe/ to R's MXE tree and rebuild OpenBLAS with MXE,
-# as R-core would rebuild the toolchain. The files OpenBLAS installs are
+# apply patches/rtools-mxe/ and patches/openblas/ to R's MXE tree and
+# rebuild OpenBLAS with MXE, as R-core would rebuild the toolchain. The files OpenBLAS installs are
 # kept in mxe-out/openblas-HASH.tar, HASH from the patches and this script;
 # when that exists, they are unpacked instead.
 set -euo pipefail
@@ -11,8 +11,14 @@ cd /opt/mxe
 for p in "$WORK"/patches/rtools-mxe/*.patch; do
     patch -p0 -N < "$p"
 done
+# the OpenBLAS patches, under MXE's names after R-core's openblas-1 and -2;
+# MXE applies src/openblas-*.patch in order
+for p in "$WORK"/patches/openblas/*.patch; do
+    f=$(basename "$p"); n=$((10#${f%%-*} + 2))
+    cp "$p" "src/openblas-$n-${f#*-}"
+done
 
-h=$(cat "$WORK"/patches/rtools-mxe/*.patch "$WORK"/docker/Dockerfile "$0" | sha256sum | cut -c1-12)
+h=$(cat "$WORK"/patches/rtools-mxe/*.patch "$WORK"/patches/openblas/*.patch "$WORK"/docker/Dockerfile "$0" | sha256sum | cut -c1-12)
 cache=$WORK/mxe-out/openblas-$h.tar
 if [ -f "$cache" ]; then
     tar -xf "$cache"

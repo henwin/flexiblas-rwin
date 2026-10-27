@@ -55,7 +55,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: mxe-out
-          key: mxe-${{ hashFiles('docker/Dockerfile', 'patches/rtools-mxe/**', 'scripts/build-mxe.sh') }}
+          key: mxe-${{ hashFiles('docker/Dockerfile', 'patches/rtools-mxe/**', 'patches/openblas/**', 'scripts/build-mxe.sh') }}
 
       # Docker's layer cache in GitHub, so that the Rtools tarballs and R's
       # MXE tree are fetched only when the Dockerfile changes; the docker

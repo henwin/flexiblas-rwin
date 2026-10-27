@@ -6,7 +6,9 @@ set -euo pipefail
 WORK=${WORK:-/work}
 export PATH=/usr/lib/mxe/usr/bin:$PATH
 b=$(mktemp -d)
-cp "$WORK"/patches/r-dev-web/flexiblas_bundle/{build_ucrt.sh,flexiblas.diff} "$b"
+cp "$WORK"/patches/r-dev-web/flexiblas_bundle/build_ucrt.sh "$b"
+# flexiblas.diff, which build_ucrt.sh applies as tcl_bundle applies tcl.diff
+cat "$WORK"/patches/flexiblas/*.patch > "$b/flexiblas.diff"
 cd "$b"
 # CMake takes CMAKE_EXPORT_COMPILE_COMMANDS from the environment, so the
 # flags of the reference BLAS and LAPACK can be shown without changing the
