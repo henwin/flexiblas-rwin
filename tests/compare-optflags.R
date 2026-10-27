@@ -90,13 +90,22 @@ if (mode == "test") {
         system2(file.path(R.home("bin"), "R"), c("CMD", "INSTALL", paste0("--library=", shQuote(seedlib)), shQuote(seed)))
         stopifnot(file.exists(file.path(seedlib, "seedone", "DESCRIPTION")))
     }
-    Sys.setenv(R_LIBS_SITE = seedlib,
+    ## testInstalledPackage() clears R_LIBS for the files it runs, and their
+    ## library(pkg) names no library; R_LIBS_USER, searched before the site
+    ## library, is what puts lib first for them. .libPaths() here only
+    ## serves find.package() below.
+    .libPaths(c(lib, .libPaths()))
+    Sys.setenv(R_LIBS_USER = paste(setdiff(.libPaths(), .Library), collapse = .Platform$path.sep),
+               R_LIBS_SITE = seedlib,
                R_DEFAULT_PACKAGES = "datasets,utils,grDevices,graphics,stats,methods,seedone")
     cat(sprintf("%s: %s\n", run, R.home()))
-    .libPaths(c(lib, .libPaths()))
     for (p in pkgs) {
         out <- file.path(work, paste0("out-", run), p)
         dir.create(out, recursive = TRUE, showWarnings = FALSE)
+        ## the library a fresh R loads p from, as the test files will
+        from <- system2(file.path(R.home("bin"), "Rscript"), c("--vanilla", "-e",
+                        shQuote(sprintf("cat(dirname(find.package('%s')))", p))), stdout = TRUE)
+        cat(sprintf("%s %s: loads from %s\n", p, run, paste(from, collapse = " ")))
         try(tools::testInstalledPackage(p, lib.loc = lib, outDir = out, types = c("examples", "tests")))
     }
 }
