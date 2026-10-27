@@ -1,0 +1,14 @@
+diff --git a/common_thread.h b/common_thread.h
+--- a/common_thread.h
++++ b/common_thread.h
+@@ -147,7 +147,9 @@
+      respect that setting instead of overriding it with
+      `omp_get_max_threads()` below (which is to get a default
+      in case the user hasn't made an explicit choice). */
+-  if (blas_is_num_threads_set_explicitly) {
++  /* Inside a parallel region, the explicit count would open a nested
++     region of one thread and hang the level-3 kernels. */
++  if (blas_is_num_threads_set_explicitly && !omp_in_parallel()) {
+     return blas_cpu_number;
+   }
+ 
