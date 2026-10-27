@@ -1,0 +1,91 @@
+name: Rblas.dll rebuilt from R's sources against a package's outputs
+
+# For a package whose outputs differ with the -O3 Rblas.dll (cran-blas.yml):
+# is it -O3, or the rebuild itself? Rblas.dll is built from the installed
+# R's sources with R's flags (-O2) and with -O3, each is swapped into the R
+# installation, and the package's examples and tests run under CRAN's DLL
+# (twice), the -O2 rebuild and the -O3 rebuild. tests/blas-bitwise.sh also
+# compares the rebuilt DLLs with CRAN's, routine by routine.
+on:
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: CRAN packages, separated by spaces
+        default: fastglmpca
+
+env:
+  OPTFLAGS_WORK: ${{ github.workspace }}\optflags-work
+
+jobs:
+  probe:
+    runs-on: windows-2025
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          rtools-version: '45'
+
+      - name: Locate R and its sources
+        shell: pwsh
+        run: |
+          $h = Rscript -e "cat(normalizePath(R.home()))"
+          "R_HOME_DIR=$h" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          $b = Rscript -e "v <- R.version; cat(if (startsWith(v[['status']], 'Under')) 'trunk' else sprintf('branches/R-%s-%s-branch', v[['major']], sub('[.].*', '', v[['minor']])))"
+          $r = Rscript -e "cat(R.version[['svn rev']])"
+          "R_SVN_PATH=$b" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "R_SVN_REV=$r" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Build Rblas.dll with R's flags and with -O3, compare bit for bit
+        shell: C:\rtools45\usr\bin\bash.exe --login -o pipefail {0}
+        env:
+          CHERE_INVOKING: 1
+        run: |
+          export PATH=/x86_64-w64-mingw32.static.posix/bin:$PATH
+          rhome=$(cygpath -u "$R_HOME_DIR")
+          echo "sources: $R_SVN_PATH at r$R_SVN_REV"
+          mkdir -p src work
+          for f in blas.f blas2.f90 cmplxblas.f cmplxblas2.f90 Rblas.def; do
+            curl -sSf -o "src/$f" "https://svn.r-project.org/R/$R_SVN_PATH/src/extra/blas/$f?p=$R_SVN_REV"
+          done
+          cd work
+          bash ../tests/blas-bitwise.sh ../src "$rhome" 2>&1 | tee ../blas-bitwise.log || true
+          grep -E '^== |of 76 routines' ../blas-bitwise.log
+
+      - name: Install the packages
+        shell: bash
+        run: Rscript tests/compare-optflags.R binary ${{ inputs.packages }} 2>&1 | tee -a probe.log
+
+      - name: Run the examples and tests under each DLL
+        shell: bash
+        run: |
+          bin=$(cygpath -u "$R_HOME_DIR")/bin/x64
+          cp "$bin/Rblas.dll" work/Rblas-cran.dll
+          run() {   # run dll
+            cp "$2" "$bin/Rblas.dll"
+            Rscript tests/compare-optflags.R test $1 default ${{ inputs.packages }} > /dev/null 2>&1 || echo "$1: exit status $?" | tee -a probe.log
+          }
+          run CRAN work/Rblas-cran.dll
+          run CRANb work/Rblas-cran.dll
+          run R2 work/blas-R.dll
+          run O3 work/blas-O3.dll
+          cp work/Rblas-cran.dll "$bin/Rblas.dll"
+          echo "== -O2 rebuild against CRAN's DLL" | tee -a probe.log
+          Rscript tests/compare-optflags.R compare CRAN,CRANb R2 2>&1 | tee -a probe.log
+          echo "== -O3 rebuild against CRAN's DLL" | tee -a probe.log
+          Rscript tests/compare-optflags.R compare CRAN,CRANb O3 2>&1 | tee -a probe.log
+          echo "== -O3 rebuild against the -O2 rebuild" | tee -a probe.log
+          Rscript tests/compare-optflags.R compare R2 O3 2>&1 | tee -a probe.log
+
+      - name: Publish as annotations
+        if: always()
+        shell: bash
+        run: |
+          { grep -E '^== |of 76 routines' blas-bitwise.log; echo; cat probe.log; } > summary.log 2>/dev/null || true
+          split -l 30 -d summary.log part-
+          for p in part-*; do
+            t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
+            echo "::notice title=probe (${p#part-})::$t"
+          done
