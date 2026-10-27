@@ -64,7 +64,10 @@ if (mode == "binary") {
             untar(src[i, 2], files = t, exdir = work)
             file.copy(file.path(work, p, "tests"), inst, recursive = TRUE)
         }
-        cat(sprintf("%-12s binary %s, %d test files\n", p, packageVersion(p), length(t)))
+        ## the tests must be those of the version the binary was built from
+        srcver <- sub(sprintf("^%s_(.*)\\.tar\\.gz$", p), "\\1", basename(src[i, 2]))
+        cat(sprintf("%-12s binary %s, %d test files%s\n", p, packageVersion(p), length(t),
+                    if (packageVersion(p) == srcver) "" else sprintf(", from source %s: VERSION MISMATCH", srcver)))
     }
 }
 
