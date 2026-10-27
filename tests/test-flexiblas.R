@@ -58,9 +58,10 @@ for (be in "OPENBLAS") {
         flexiblas_set_num_threads(k)
         timing("B %*% B", B %*% B, sprintf("%d thread(s)", k))
         timing("chol(S)", chol(S), sprintf("%d thread(s)", k))
-        ## An explicit count is capped at OMP_THREAD_LIMIT.
+        ## An explicit count is capped at OMP_THREAD_LIMIT, and at the 64
+        ## threads the bundle's OpenBLAS is built for (NUM_THREADS)
         check(flexiblas_get_num_threads() ==
-                  min(k, as.integer(Sys.getenv("OMP_THREAD_LIMIT", k))),
+                  min(k, 64L, as.integer(Sys.getenv("OMP_THREAD_LIMIT", k))),
               sprintf("  %d thread(s) after the products (reports %d)", k,
                       flexiblas_get_num_threads()))
     }
