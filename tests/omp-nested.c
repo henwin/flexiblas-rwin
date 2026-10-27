@@ -2,14 +2,12 @@
    openblas_set_num_threads(REQ), as a package's OpenMP loop calling the
    BLAS does: OpenBLAS must then run serially, whatever count was set
    (patches/openblas/0004).  omp-nested LIBOPENBLAS REQ, REQ 0 for none;
-   prints ok, or HANG after 5 s.  gcc -O2 -fopenmp omp-nested.c -ldl */
+   prints ok; a hang is for the caller to time out (tests/omp-cases.sh).
+   gcc -O2 -fopenmp omp-nested.c -ldl */
 #include <dlfcn.h>
 #include <omp.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-static void onalarm(int s) { (void) s; printf("HANG\n"); fflush(stdout); _exit(3); }
 int main(int argc, char **argv)
 {
     void *h = dlopen(argv[1], RTLD_NOW); if (!h) return 2;
@@ -22,13 +20,11 @@ int main(int argc, char **argv)
     for (long i = 0; i < (long) n * n; i++) { a[i] = (i % 7) * 0.1; b[i] = (i % 5) * 0.2; }
     double one = 1, zero = 0;
     if (req > 0) set(req);
-    signal(SIGALRM, onalarm); alarm(5);
     #pragma omp parallel num_threads(2)
     {
         double *ct = c + (long) omp_get_thread_num() * n * n;
         dgemm("N", "N", &n, &n, &n, &one, a, &n, b, &n, &zero, ct, &n);
     }
-    alarm(0);
     printf("ok (set %d, reports %d, in_parallel team 2)\n", req, get());
     return 0;
 }

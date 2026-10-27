@@ -5,18 +5,15 @@
      omp-team LIBOPENBLAS REQUESTED
    with OMP_NUM_THREADS, OMP_THREAD_LIMIT and OMP_DYNAMIC from the
    environment; prints what OpenBLAS reports before and after, and the
-   time, or HANG after 5 s.  Built with: gcc -O2 -fopenmp omp-team.c -ldl
-   (on Windows, without -ldl and with LoadLibrary in place of dlopen). */
+   time; a hang is for the caller to time out (tests/omp-cases.sh).
+   Built with: gcc -O2 -fopenmp omp-team.c -ldl, on Windows with Rtools45
+   (dlfcn-win32). */
 #include <dlfcn.h>
 #include <omp.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
-
-static void onalarm(int s) { (void) s; printf("HANG\n"); fflush(stdout); _exit(3); }
 
 int main(int argc, char **argv)
 {
@@ -34,13 +31,10 @@ int main(int argc, char **argv)
     before = get();
     set(req);
     int mid = get();
-    signal(SIGALRM, onalarm);
-    alarm(5);
     struct timespec t0, t1;
     clock_gettime(CLOCK_MONOTONIC, &t0);
     dgemm("N", "N", &n, &n, &n, &one, a, &n, b, &n, &zero, c, &n);
     clock_gettime(CLOCK_MONOTONIC, &t1);
-    alarm(0);
     after = get();
     printf("ok %.2fs (reported %d, set %d -> %d, after %d; team max %d, limit %d, dynamic %d)\n",
            (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9, before, req, mid, after,
