@@ -136,7 +136,8 @@ if (mode == "compare") {
     ## timings, packages' own random numbers) say nothing about what the
     ## alternative changes; a line counts only when every run of the
     ## reference agrees on it, every run of the alternative agrees on it, and
-    ## the two disagree. Addresses and system.time() values are blanked first.
+    ## the two disagree. Addresses, system.time() values and the test
+    ## frameworks' own timings are blanked first.
     ## "compare A A2 B" is "compare A,A2 B"; a run whose directory lacks a
     ## package is left out for that package.
     a <- args[-1]
@@ -150,6 +151,11 @@ if (mode == "compare") {
         ## byte-wise: outputs need not be valid in the session's encoding
         l <- gsub('0x[0-9a-fA-F]+|<[0-9A-F]{8,16}>|"[0-9a-f]{16}"', "ADDR", l, useBytes = TRUE)
         l <- gsub("C:/R-o3", "C:/R", l, fixed = TRUE, useBytes = TRUE)   # the copy with the -O3 BLAS
+        ## timings the test frameworks print, which a faster BLAS changes
+        ## systematically: tinytest's "12 tests OK 92ms" and "(1.3s)",
+        ## testthat's "[ FAIL 0 | ... ]" summary line; and gc()'s table
+        l <- gsub("( tests OK| tests FAILED|All ok, [0-9]+ results) \\(?[0-9.]+m?s\\)?", "\\1 TIME", l, useBytes = TRUE)
+        l <- l[!grepl("^(Ncells|Vcells) +[0-9]", l, useBytes = TRUE)]
         ## widths of columns follow their widest entry, a path or a timing
         gsub(" +", " ", trimws(l, "right"), useBytes = TRUE)
     }
