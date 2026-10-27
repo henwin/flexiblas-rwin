@@ -18,7 +18,7 @@ for p in "$WORK"/patches/openblas/*.patch; do
     cp "$p" "src/openblas-$n-${f#*-}"
 done
 
-h=$(cat "$WORK"/patches/rtools-mxe/*.patch "$WORK"/patches/openblas/*.patch "$WORK"/docker/Dockerfile "$0" | sha256sum | cut -c1-12)
+h=$(cat "$WORK"/patches/rtools-mxe/*.patch "$WORK"/patches/openblas/*.patch "$WORK"/docker/Dockerfile "$WORK"/scripts/build-mxe.sh | sha256sum | cut -c1-12)
 cache=$WORK/mxe-out/openblas-$h.tar
 if [ -f "$cache" ]; then
     tar -xf "$cache"
