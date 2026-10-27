@@ -39,7 +39,7 @@ Index: build.sh
  ISDIR = ${MISDIR}
  EOF
  
-+if [ -d ../../FlexiBLAS ] ; then
++if [ "X$FBFILE" != X ] ; then
 +  echo "USE_FLEXIBLAS = YES" >> MkRules.local
 +fi
 +
