@@ -1,0 +1,70 @@
+Index: howto.md
+===================================================================
+--- howto.md	(revision 6855)
++++ howto.md	(working copy)
+@@ -182,6 +182,19 @@
+ And a similar trick can be used to obtain other files that always exist but
+ have changing version names.
+ 
++To build R with FlexiBLAS, so that the BLAS and LAPACK can be switched at
++run time, also download the FlexiBLAS bundle from the same place, a file
++named such as `flexiblas-6536-6492.zip`, to the directory holding the R
++sources, and unpack it into them:
++
++```
++FBBUNDLE=flexiblas-6536-6492.zip
++wget https://cran.r-project.org/bin/windows/Rtools/rtools45/files/$FBBUNDLE
++unzip $FBBUNDLE -d trunk
++```
++
++There is no FlexiBLAS bundle for ARM.
++
+ Set environment variables as follows (update the MiKTeX installation
+ directory in the commands below if needed, this one is "non-standard" from
+ an automated installation described later below):
+@@ -236,6 +249,12 @@
+ WIN =
+ ```
+ 
++To build with FlexiBLAS, add this line to `MkRules.local`:
++
++```
++USE_FLEXIBLAS = YES
++```
++
+ Build R and the recommended packages:
+ 
+ ```
+@@ -597,6 +616,19 @@
+ The corresponding version of the bundle for ARM would be named
+ `tcltk-6536-6492-aarch64.zip`.
+ 
++To build R with FlexiBLAS, so that the BLAS and LAPACK can be switched at
++run time, also download the FlexiBLAS bundle from the same place, a file
++named such as `flexiblas-6536-6492.zip`, to the directory holding the R
++sources, and unpack it into them:
++
++```
++FBBUNDLE=flexiblas-6536-6492.zip
++wget https://cran.r-project.org/bin/windows/Rtools/rtools45/files/$FBBUNDLE
++unzip $FBBUNDLE -d trunk
++```
++
++There is no FlexiBLAS bundle for ARM.
++
+ Set environment variables. Note that when building R, one needs to have the
+ compiler toolchain on PATH, it is not added automatically in this case
+ (adjust below if the toolchain tarball was unpacked in a different
+@@ -639,6 +671,12 @@
+ WIN =
+ ```
+ 
++To build with FlexiBLAS, add this line to `MkRules.local`:
++
++```
++USE_FLEXIBLAS = YES
++```
++
+ Build R and recommended packages:
+ 
+ ```
