@@ -14,7 +14,7 @@
 ## (r57974) was run on 32 packages with
 ##   build O2 PKG...; build O3 PKG...; test O2 O2 PKG...; test O2b O2 PKG...;
 ##   test O3 O3 PKG...; compare O2 O2b O3
-## and found only paths, timings and build dates differing (run 40472215704).
+## and found only paths, timings and build dates differing.
 args <- commandArgs(TRUE)
 mode <- args[1]
 ## with / on Windows: testInstalledPackage() pastes the library path into R
