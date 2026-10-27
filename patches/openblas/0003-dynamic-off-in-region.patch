@@ -1,0 +1,23 @@
+diff --git a/driver/others/blas_server_omp.c b/driver/others/blas_server_omp.c
+--- a/driver/others/blas_server_omp.c
++++ b/driver/others/blas_server_omp.c
+@@ -447,6 +447,11 @@
+ #endif
+     openblas_threads_callback_(1, (openblas_dojob_callback) exec_threads, num, sizeof(blas_queue_t), (void*) queue, buf_index);
+   } else {
++ /* With dynamic adjustment on, OpenMP may give the team fewer than num
++    threads; the level-3 kernels synchronise across the queue and need
++    them all. Switch it off for this region. */
++ int dyn = omp_get_dynamic();
++ if (dyn) omp_set_dynamic(0);
+ 
+  /* An explicitly set thread count can exceed omp_get_max_threads(); the
+     team must then be sized for num, or the threaded level-3 kernels wait
+@@ -470,6 +475,7 @@
+   exec_threads(omp_get_thread_num(), &queue[i], buf_index);
+   }
+ }
++ if (dyn) omp_set_dynamic(1);
+ }
+ 
+ #ifdef HAVE_C11
