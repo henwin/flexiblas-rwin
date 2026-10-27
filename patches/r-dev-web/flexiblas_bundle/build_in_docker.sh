@@ -3,25 +3,42 @@
 # Build the FlexiBLAS bundle in an interactive Ubuntu docker container using
 # a cross-compilation toolchain.
 #
-# build_in_docker.sh [target]
+# build_in_docker.sh [target] 
 #
 # This needs files
 #
-#   gcc14_ucrt3_base_REV.tar.zst
-#   gcc14_ucrt3_cross_REV.tar.zst
+#   for target x86_64:
+#     gcc14_ucrt3_base_REV.tar.zst
+#     gcc14_ucrt3_cross_REV.tar.zst
 #
-# in the current directory, where REV is a revision number, e.g.  5168.
+#   for target aarch64:
+#     llvm19_ucrt3_base_aarch64_REV.tar.zst
+#     llvm19_ucrt3_cross_aarch64_REV.tar.zst
+#     
+# in the current directory, where REV is a revision number, e.g.  5168. 
 # These files are produced by ../toolchain_libs and existing builds can
 # be downloaded from https://www.r-project.org/nosvn/winutf8/ucrt3
 # FlexiBLAS's OPENBLAS backend is linked from the toolchain's OpenBLAS.
 #
-# Target is the first (optional) argument; only x86_64 is supported so far.
+# Target is the first (optional) argument, the default is x86_64.  It can be
+# specified also as aarch64 or "all" (to build both targets).
 #
-# FlexiBLAS.zip and textual outputs from the build will appear in the
-# current directory.  It is meant to be published like the Tcl/Tk bundle
-# (../tcl_bundle), as FlexiBLAS-REV-THISREV.zip, where REV is the revision
+# FlexiBLAS.zip (or FlexiBLAS_aarch64.zip) and textual outputs from the
+# build will appear in the current directory.
+#
+# This script is used to create builds that appear as FlexiBLAS-REV-THISREV.zip
+# and FlexiBLAS-aarch64-REV-THISREV.zip at
+# https://www.r-project.org/nosvn/winutf8/ucrt3, where REV is the revision
 # number of the toolchain and THISREV is revision number of the script to
 # build the FlexiBLAS bundle.
+#
+# After testing, the build appears in the current Rtools.  For Rtools XX (XX
+# >= 42):
+#
+# https://cran.r-project.org/bin/windows/Rtools/rtoolsXX/files/
+#
+# as flexiblas-REV-THISREV.zip and flexiblas-aarch64-REV-THISREV.zip.  There
+# is no aarch64 build yet.
 
 DOCKER=`which docker`
 if [ "X$DOCKER" == X ]; then
@@ -34,7 +51,8 @@ if [ "X$RTARGET" == X ] ; then
   RTARGET="x86_64"
 fi
 
-if [ "X${RTARGET}" != "Xx86_64" ]; then
+if [ "X${RTARGET}" != "Xaarch64" ] && [ "X${RTARGET}" != "Xx86_64" ] && \
+   [ "X${RTARGET}" != "Xall" ]; then
    
   echo "Unsupported target."
   exit 1
