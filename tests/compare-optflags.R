@@ -106,7 +106,10 @@ if (mode == "test") {
         from <- system2(file.path(R.home("bin"), "Rscript"), c("--vanilla", "-e",
                         shQuote(sprintf("cat(dirname(find.package('%s')))", p))), stdout = TRUE)
         cat(sprintf("%s %s: loads from %s\n", p, run, paste(from, collapse = " ")))
-        try(tools::testInstalledPackage(p, lib.loc = lib, outDir = out, types = c("examples", "tests")))
+        ## 1L when an example or test file failed; its output is then a
+        ## .Rout.fail, which "compare" reports
+        st <- try(tools::testInstalledPackage(p, lib.loc = lib, outDir = out, types = c("examples", "tests")))
+        if (!identical(st, 0L)) cat(sprintf("%s %s: tests failed\n", p, run))
     }
 }
 
@@ -151,21 +154,35 @@ if (mode == "compare") {
         gsub(" +", " ", trimws(l, "right"), useBytes = TRUE)
     }
     dir <- function(r, g) file.path(work, paste0("out-", r), g)
-    ## c(noisy, flagged) for one output file
+    ## the output of file f in run r: its lines and whether the run failed
+    ## (R CMD BATCH left f.Rout.fail), or NULL when there is neither
+    read <- function(r, g, f) {
+        for (ext in c("", ".fail")) {
+            l <- norm(file.path(dir(r, g), paste0(f, ext)))
+            if (!is.null(l)) return(list(lines = l, failed = ext == ".fail"))
+        }
+        NULL
+    }
+    ## one of "same", "differ", "failed", "missing", "unstable" for output f
     one <- function(g, f, ref, alt) {
-        R <- lapply(ref, function(r) norm(file.path(dir(r, g), f)))
-        A <- lapply(alt, function(r) norm(file.path(dir(r, g), f)))
+        R <- lapply(ref, read, g, f); A <- lapply(alt, read, g, f)
         miss <- c(ref, alt)[vapply(c(R, A), is.null, NA)]
         if (length(miss)) {
             cat(sprintf("  %s: missing in %s\n", f, paste(miss, collapse = ", ")))
-            return(c(0L, 1L))
+            return("missing")
         }
-        noisy <- as.integer(length(unique(R)) > 1)
+        fr <- vapply(R, `[[`, NA, "failed"); fa <- vapply(A, `[[`, NA, "failed")
+        if (any(fr) || any(fa)) {
+            cat(sprintf("  %s: failed in %s\n", f, paste(c(ref[fr], alt[fa]), collapse = ", ")))
+            ## a failure in some runs but not all is a difference
+            if (!(all(fr) && all(fa))) return("differ")
+        }
+        R <- lapply(R, `[[`, "lines"); A <- lapply(A, `[[`, "lines")
         n <- lengths(c(R, A))
-        if (length(unique(n[seq_along(R)])) > 1) return(c(noisy, 0L))
+        if (length(unique(n[seq_along(R)])) > 1) return("unstable")
         if (length(unique(n)) > 1) {
             cat(sprintf("  %s: %d lines in %s, %d in %s\n", f, n[1], ref[1], n[length(R) + 1], alt[1]))
-            return(c(noisy, 1L))
+            return("differ")
         }
         same <- function(L) Reduce(`&`, lapply(L[-1], function(l) l == L[[1]]), rep(TRUE, n[1]))
         d <- which(same(R) & same(A) & R[[1]] != A[[1]])
@@ -173,21 +190,25 @@ if (mode == "compare") {
             cat(sprintf("  %s: %d stable lines differ\n", f, length(d)))
             for (k in head(d, 3))
                 cat(sprintf("    %s: %s\n    %s: %s\n", ref[1], substr(R[[1]][k], 1, 100), alt[1], substr(A[[1]][k], 1, 100)))
+            return("differ")
         }
-        c(noisy, as.integer(length(d) > 0))
+        if (all(fr)) "failed" else "same"
     }
+    kinds <- c("same", "differ", "failed", "missing", "unstable")
     groups <- list.dirs(file.path(work, paste0("out-", ref[1])), full.names = FALSE, recursive = FALSE)
-    nflag <- 0L
+    total <- setNames(integer(length(kinds)), kinds)
     for (g in groups) {
         rg <- ref[dir.exists(dir(ref, g))]; ag <- alt[dir.exists(dir(alt, g))]
-        files <- sort(unique(unlist(lapply(c(rg, ag), function(r) list.files(dir(r, g), "\\.Rout$", recursive = TRUE)))))
-        n <- c(0L, 0L)
-        for (f in files)
-            n <- n + tryCatch(one(g, f, rg, ag), error = function(e) {
-                cat(sprintf("  %s: not compared: %s\n", f, conditionMessage(e))); c(0L, 1L) })
-        nflag <- nflag + n[2]
-        cat(sprintf("== %-12s %3d output files, %3d vary between %s, %3d differ in %s\n",
-                    g, length(files), n[1], paste(rg, collapse = "+"), n[2], paste(ag, collapse = "+")))
+        files <- sort(unique(sub("\\.fail$", "", unlist(lapply(c(rg, ag), function(r)
+            list.files(dir(r, g), "\\.Rout(\\.fail)?$", recursive = TRUE))))))
+        k <- vapply(files, function(f) tryCatch(one(g, f, rg, ag), error = function(e) {
+            cat(sprintf("  %s: not compared: %s\n", f, conditionMessage(e))); "missing" }), "")
+        n <- table(factor(k, kinds))
+        total <- total + n
+        ## "failed" is a failure in every run, so not a difference
+        cat(sprintf("== %-12s %3d output files: %3d same, %3d differ in %s, %3d failed, %3d missing, %3d unstable in %s\n",
+                    g, length(files), n["same"], n["differ"], paste(ag, collapse = "+"), n["failed"], n["missing"],
+                    n["unstable"], paste(rg, collapse = "+")))
     }
-    cat(sprintf("== %d output files differ in %s\n", nflag, paste(alt, collapse = "+")))
+    cat(sprintf("== %d output files: %s\n", sum(total), paste(total, names(total), collapse = ", ")))
 }
