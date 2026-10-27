@@ -6,8 +6,8 @@
 ##   Rscript compare-optflags.R binary PKG...         install CRAN's binary of PKG and add the tests from its source
 ##   Rscript compare-optflags.R test RUN LIB PKG...   examples and tests of PKG in lib-LIB (LIB "default": the first library), into out-RUN
 ##   Rscript compare-optflags.R base RUN              R's tests (testInstalledBasic, recommended packages), into out-RUN
-##   Rscript compare-optflags.R compare A,A2.. B,B2.. the B runs against the A runs, on the lines each set agrees on
-##                                                   ("compare A A2 B" is "compare A,A2 B")
+##   Rscript compare-optflags.R compare A,A2.. B,B2.. [PKG...]  the B runs against the A runs, on the lines each
+##                                                   set agrees on ("compare A A2 B" is "compare A,A2 B")
 ## The R running "test" and "base" is the one whose output is recorded; the
 ## directories are in $OPTFLAGS_WORK, or optflags-work.
 ## cran-blas.yml runs the Rblas.dll comparison. The package-flags comparison
@@ -146,11 +146,12 @@ if (mode == "compare") {
     ## reference agrees on it, every run of the alternative agrees on it, and
     ## the two disagree. Addresses, system.time() values and the test
     ## frameworks' own timings are blanked first.
-    ## "compare A A2 B" is "compare A,A2 B"; a run whose directory lacks a
-    ## package is left out for that package.
+    ## "compare A A2 B" is "compare A,A2 B". The packages are those with
+    ## output from the first run of the reference unless given; a run that
+    ## lacks a package's output is reported as missing.
     a <- args[-1]
-    if (length(a) == 3) a <- c(paste(a[1:2], collapse = ","), a[3])
-    ref <- strsplit(a[1], ",")[[1]]; alt <- strsplit(a[2], ",")[[1]]
+    if (length(a) == 3 && !grepl(",", a[1])) a <- c(paste(a[1:2], collapse = ","), a[3])
+    ref <- strsplit(a[1], ",")[[1]]; alt <- strsplit(a[2], ",")[[1]]; groups <- a[-(1:2)]
     norm <- function(f) {
         if (!file.exists(f)) return(NULL)
         l <- readLines(f, warn = FALSE, encoding = "bytes")
@@ -177,7 +178,11 @@ if (mode == "compare") {
         }
         NULL
     }
-    ## one of "same", "differ", "failed", "missing", "unstable" for output f
+    ## one of "same", "differ", "failed", "missing", "unstable" for output f:
+    ## "same" when every run agrees on every line, "differ" when the runs of
+    ## each set agree on a line and the sets do not (or one set failed and the
+    ## other did not), "unstable" when the runs of a set disagree on a line or
+    ## on failing without a stable difference, "failed" when every run failed
     one <- function(g, f, ref, alt) {
         R <- lapply(ref, read, g, f); A <- lapply(alt, read, g, f)
         miss <- c(ref, alt)[vapply(c(R, A), is.null, NA)]
@@ -188,18 +193,19 @@ if (mode == "compare") {
         fr <- vapply(R, `[[`, NA, "failed"); fa <- vapply(A, `[[`, NA, "failed")
         if (any(fr) || any(fa)) {
             cat(sprintf("  %s: failed in %s\n", f, paste(c(ref[fr], alt[fa]), collapse = ", ")))
-            ## a failure in some runs but not all is a difference
-            if (!(all(fr) && all(fa))) return("differ")
+            if (any(fr) != all(fr) || any(fa) != all(fa)) return("unstable")
+            if (all(fr) != all(fa)) return("differ")
         }
         R <- lapply(R, `[[`, "lines"); A <- lapply(A, `[[`, "lines")
-        n <- lengths(c(R, A))
-        if (length(unique(n[seq_along(R)])) > 1) return("unstable")
-        if (length(unique(n)) > 1) {
-            cat(sprintf("  %s: %d lines in %s, %d in %s\n", f, n[1], ref[1], n[length(R) + 1], alt[1]))
+        n <- lengths(c(R, A)); nr <- n[seq_along(R)]; na <- n[-seq_along(R)]
+        if (length(unique(nr)) > 1 || length(unique(na)) > 1) return("unstable")
+        if (nr[1] != na[1]) {
+            cat(sprintf("  %s: %d lines in %s, %d in %s\n", f, nr[1], ref[1], na[1], alt[1]))
             return("differ")
         }
         same <- function(L) Reduce(`&`, lapply(L[-1], function(l) l == L[[1]]), rep(TRUE, n[1]))
-        d <- which(same(R) & same(A) & R[[1]] != A[[1]])
+        sR <- same(R); sA <- same(A)
+        d <- which(sR & sA & R[[1]] != A[[1]])
         if (length(d)) {
             cat(sprintf("  %s: %d stable lines differ\n", f, length(d)))
             ## bytes: substr() refuses strings in the "bytes" encoding
@@ -208,23 +214,23 @@ if (mode == "compare") {
                 cat(sprintf("    %s: %s\n    %s: %s\n", ref[1], head100(R[[1]][k]), alt[1], head100(A[[1]][k])))
             return("differ")
         }
-        if (all(fr)) "failed" else "same"
+        if (all(fr)) "failed" else if (all(sR & sA)) "same" else "unstable"
     }
     kinds <- c("same", "differ", "failed", "missing", "unstable")
-    groups <- list.dirs(file.path(work, paste0("out-", ref[1])), full.names = FALSE, recursive = FALSE)
+    if (!length(groups))
+        groups <- list.dirs(file.path(work, paste0("out-", ref[1])), full.names = FALSE, recursive = FALSE)
     total <- setNames(integer(length(kinds)), kinds)
     for (g in groups) {
-        rg <- ref[dir.exists(dir(ref, g))]; ag <- alt[dir.exists(dir(alt, g))]
-        files <- sort(unique(sub("\\.fail$", "", unlist(lapply(c(rg, ag), function(r)
+        files <- sort(unique(sub("\\.fail$", "", unlist(lapply(c(ref, alt), function(r)
             list.files(dir(r, g), "\\.Rout(\\.fail)?$", recursive = TRUE))))))
-        k <- vapply(files, function(f) tryCatch(one(g, f, rg, ag), error = function(e) {
+        k <- vapply(files, function(f) tryCatch(one(g, f, ref, alt), error = function(e) {
             cat(sprintf("  %s: not compared: %s\n", f, conditionMessage(e))); "missing" }), "")
         n <- table(factor(k, kinds))
         total <- total + n
         ## "failed" is a failure in every run, so not a difference
-        cat(sprintf("== %-12s %3d output files: %3d same, %3d differ in %s, %3d failed, %3d missing, %3d unstable in %s\n",
-                    g, length(files), n["same"], n["differ"], paste(ag, collapse = "+"), n["failed"], n["missing"],
-                    n["unstable"], paste(rg, collapse = "+")))
+        cat(sprintf("== %-12s %3d output files: %3d same, %3d differ in %s, %3d failed, %3d missing, %3d unstable\n",
+                    g, length(files), n["same"], n["differ"], paste(alt, collapse = "+"), n["failed"], n["missing"],
+                    n["unstable"]))
     }
-    cat(sprintf("== %d output files: %s\n", sum(total), paste(total, names(total), collapse = ", ")))
+    cat(sprintf("total %d output files: %s\n", sum(total), paste(total, names(total), collapse = ", ")))
 }
