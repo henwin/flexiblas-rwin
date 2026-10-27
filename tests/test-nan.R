@@ -55,14 +55,17 @@ cases <- function(n) {
 }
 
 ## Compact signature: counts of NA (not NaN), NaN and Inf entries, plus a
-## checksum of their positions, so that equal signatures mean equal patterns.
+## hash of the pattern (0 finite, 1 NA, 2 NaN, 3 Inf, 4 -Inf), so that equal
+## signatures mean equal patterns.
 signature <- function(x) {
     if (is.character(x)) return(substr(x, 1, 40))
     x <- as.vector(x)
     if (is.complex(x)) x <- c(Re(x), Im(x))
-    na <- is.na(x) & !is.nan(x); nan <- is.nan(x); inf <- is.infinite(x)
-    h <- function(w) sum(as.numeric(which(w))^2) %% 99991
-    sprintf("A%d N%d I%d #%d", sum(na), sum(nan), sum(inf), h(na) + 7 * h(nan) + 13 * h(inf))
+    k <- integer(length(x))
+    k[is.na(x) & !is.nan(x)] <- 1L; k[is.nan(x)] <- 2L
+    k[x == Inf & !is.na(x)] <- 3L; k[x == -Inf & !is.na(x)] <- 4L
+    f <- tempfile(); writeBin(k, f); on.exit(unlink(f))
+    sprintf("A%d N%d I%d #%s", sum(k == 1L), sum(k == 2L), sum(k >= 3L), substr(unname(tools::md5sum(f)), 1, 6))
 }
 run <- function() lapply(c(cases(4), cases(500)), signature)
 
