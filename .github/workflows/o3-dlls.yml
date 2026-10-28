@@ -1,4 +1,4 @@
-name: BLAS and LAPACK flags, results and timings
+name: Rblas.dll with -O3, whole DLLs in R, results and timings
 
 # Builds Rblas.dll and Rlapack.dll from R-devel's sources with R's flags,
 # with the other optimisation level and with -march=native

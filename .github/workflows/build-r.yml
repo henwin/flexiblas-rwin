@@ -1,13 +1,13 @@
-name: R-core's setup.ps1 and build.sh
+name: R with the R-core scripts
 
-# Builds R-devel or R-patched and its installer with R-core's own scripts
+# Builds R-devel or R-patched and its installer with the R-core scripts
 # from R-dev-web
 # (WindowsBuilds/winutf8/ucrt3/r): setup.ps1 installs Inno Setup, MiKTeX,
 # qpdf, Ghostscript and MSYS2, and build.sh --check unpacks the toolchain
 # tarball and the Tcl/Tk bundle, checks out R, applies the r_*.diff
 # patches, runs make distribution and then make check-devel and check-all.
 # Added here: the FlexiBLAS bundle from the latest successful run of
-# build-test.yml, patches/r as further r_*.diff, and
+# build-bundle.yml, patches/r as further r_*.diff, and
 # patches/r-dev-web/0002 to build.sh, which uses the bundle when present,
 # and 0004, without which build.sh --patched checks out no branch.
 # The test job then installs the installer and runs tests/ against it.
@@ -59,7 +59,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      # The bundle from the latest successful build-test.yml run on master,
+      # The bundle from the latest successful build-bundle.yml run on master,
       # which must include the last change to the bundle's sources.
       - name: Find the bundle
         id: build
@@ -67,7 +67,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $run = gh run list -R $env:GITHUB_REPOSITORY -w build-test.yml -b master -s success -L 1 --json databaseId,headSha | ConvertFrom-Json
+          $run = gh run list -R $env:GITHUB_REPOSITORY -w build-bundle.yml -b master -s success -L 1 --json databaseId,headSha | ConvertFrom-Json
           $id = $run[0].databaseId; $sha = $run[0].headSha
           $last = git log -1 --format=%H -- docker scripts/build-mxe.sh scripts/build-bundle.sh scripts/build-in-docker.sh patches/rtools-mxe patches/openblas patches/flexiblas patches/r-dev-web/flexiblas_bundle
           git merge-base --is-ancestor $last $sha
@@ -76,7 +76,7 @@ jobs:
             exit 1
           }
           "run_id=$id" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
-          "bundle: build-test.yml run $id, commit $sha" | Tee-Object -FilePath C:\bundle.txt
+          "bundle: build-bundle.yml run $id, commit $sha" | Tee-Object -FilePath C:\bundle.txt
 
       - uses: actions/download-artifact@v8
         with:

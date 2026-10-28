@@ -1,4 +1,4 @@
-name: BLAS compiler flags, bit for bit
+name: Rblas.dll with -O3, every routine bit for bit
 
 # Builds R's BLAS from R-devel's sources with R's flags and with candidate
 # flags (tests/blas-bitwise.sh) using Rtools45, and compares every routine

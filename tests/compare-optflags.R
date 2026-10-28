@@ -10,7 +10,7 @@
 ##                                                   set agrees on ("compare A A2 B" is "compare A,A2 B")
 ## The R running "test" and "base" is the one whose output is recorded; the
 ## directories are in $OPTFLAGS_WORK, or optflags-work.
-## cran-blas.yml runs the Rblas.dll comparison. The package-flags comparison
+## o3-packages.yml runs the Rblas.dll comparison. The package-flags comparison
 ## (r57974) was run on 32 packages with
 ##   build O2 PKG...; build O3 PKG...; test O2 O2 PKG...; test O2b O2 PKG...;
 ##   test O3 O3 PKG...; compare O2 O2b O3

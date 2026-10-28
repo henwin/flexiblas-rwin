@@ -1,6 +1,6 @@
-name: Rblas.dll rebuilt from R's sources against a package's outputs
+name: Rblas.dll with -O3, one package in detail
 
-# For a package whose outputs differ with the -O3 Rblas.dll (cran-blas.yml):
+# For a package whose outputs differ with the -O3 Rblas.dll (o3-packages.yml):
 # is it -O3, or the rebuild itself? Rblas.dll is built from the installed
 # R's sources with R's flags (-O2) and with -O3, each is swapped into the R
 # installation, and the package's examples and tests run under CRAN's DLL
@@ -12,6 +12,11 @@ on:
       packages:
         description: CRAN packages, separated by spaces
         default: fastglmpca
+      r:
+        description: The R to test with, as CRAN builds it and its package binaries
+        type: choice
+        options: [devel, release]
+        default: devel
 
 env:
   OPTFLAGS_WORK: ${{ github.workspace }}\optflags-work
@@ -29,7 +34,7 @@ jobs:
 
       - uses: r-lib/actions/setup-r@v2
         with:
-          r-version: release
+          r-version: ${{ inputs.r }}
           rtools-version: '45'
 
       - name: Locate R and its sources

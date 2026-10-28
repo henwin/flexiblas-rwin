@@ -1,13 +1,13 @@
-name: R and CRAN packages with an -O3 Rblas.dll
+name: Rblas.dll with -O3, CRAN packages and the R tests
 
 # What an Rblas.dll built with -O3 instead of -O2 (r76787) changes in the
-# output of examples and tests, with CRAN's R and its Rblas.dll against a
-# copy of R whose Rblas.dll is rebuilt with -O3 (.github/actions/rblas-o3):
-# R's own tests and the recommended packages (job base), and CRAN packages
-# (job packages), by default those that call the BLAS or LAPACK themselves
-# (tests/cran-blas-users.sh: a DLL in their Windows binary imports from
-# Rblas.dll or Rlapack.dll), as CRAN's binaries with the tests taken from
-# their sources. The reference runs twice, and only output lines on which
+# output of examples and tests, with the CRAN R (devel by default, or
+# release) and its Rblas.dll against a copy of R whose Rblas.dll is rebuilt
+# with -O3 (.github/actions/rblas-o3): the R tests and the recommended
+# packages (job base), and CRAN packages (job packages), by default those
+# that call the BLAS or LAPACK themselves (tests/cran-blas-users.sh: a DLL
+# in their Windows binary imports from Rblas.dll or Rlapack.dll), as the
+# CRAN binaries for that R with the tests taken from their sources. The reference runs twice, and only output lines on which
 # both runs agree count (tests/compare-optflags.R).
 on:
   workflow_dispatch:
@@ -19,9 +19,14 @@ on:
         description: Number of parallel jobs for the packages (at most 256)
         default: '64'
       base:
-        description: Also R's own tests and the recommended packages
+        description: Also the R tests and the recommended packages
         type: boolean
         default: false
+      r:
+        description: The R to test with, as CRAN builds it and its package binaries
+        type: choice
+        options: [devel, release]
+        default: devel
 
 permissions:
   actions: read
@@ -45,8 +50,8 @@ jobs:
           if [ -n "${{ inputs.packages }}" ]; then
             echo ${{ inputs.packages }} | tr ' ' '\n' > packages.txt
           else
-            # the version of setup-r's "release"
-            v=$(curl -sSf https://api.r-hub.io/rversions/resolve/release | jq -r .version | cut -d. -f1,2)
+            # the version behind "devel" or "release", which names the CRAN binary directory
+            v=$(curl -sSf "https://api.r-hub.io/rversions/resolve/${{ inputs.r }}" | jq -r .version | cut -d. -f1,2)
             tests/cran-blas-users.sh "$v" > packages.txt
           fi
           echo "$(wc -l < packages.txt) packages"
@@ -80,7 +85,7 @@ jobs:
 
       - uses: r-lib/actions/setup-r@v2
         with:
-          r-version: release
+          r-version: ${{ inputs.r }}
           rtools-version: '45'
 
       - name: R with Rblas.dll built with -O3
@@ -187,13 +192,13 @@ jobs:
 
       - uses: r-lib/actions/setup-r@v2
         with:
-          r-version: release
+          r-version: ${{ inputs.r }}
           rtools-version: '45'
 
       - name: R with Rblas.dll built with -O3
         uses: ./.github/actions/rblas-o3
 
-      - name: R's tests and the recommended packages
+      - name: The R tests and the recommended packages
         shell: bash
         run: |
           Rscript tests/compare-optflags.R base O2 2>&1 | tee -a optflags.log
@@ -210,7 +215,7 @@ jobs:
       - uses: ./.github/actions/report
         if: always()
         with:
-          key: ${{ github.workflow }} (R's tests and the recommended packages)
+          key: ${{ github.workflow }} (the R tests and the recommended packages)
           status: ${{ job.status }}
           files: |
             summary.log
