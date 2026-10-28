@@ -2,20 +2,21 @@ Index: build.sh
 ===================================================================
 --- build.sh	(revision 6985)
 +++ build.sh	(working copy)
-@@ -7,6 +7,8 @@
+@@ -7,6 +7,9 @@
  #   for target x86_64:   
  #     gcc14_ucrt3_full*tar.zst (single file, see ../toolchain_libs)
  #     Tcl*.zip (single file, name not including aarch64, see ../tcl_bundle)
-+#     FlexiBLAS*.zip (optional, single file, see ../flexiblas_bundle);
-+#       when present, R is built with USE_FLEXIBLAS = YES
++#     FlexiBLAS*.zip (optional, single file, name not including aarch64,
++#       see ../flexiblas_bundle); when present, R is built with
++#       USE_FLEXIBLAS = YES
  #
  #   for target aarch64:
  #     llvm19_ucrt3_full_aarch64*tar.zst
-@@ -153,11 +155,13 @@
+@@ -154,11 +157,13 @@
    TRIPLET=aarch64-w64-mingw32.static.posix
    TCFILE=`ls -1 llvm19_ucrt3_full_aarch64*tar.zst | head -1`
    TCLFILE=`ls -1 Tcl-aarch64*zip | head -1`
-+  FBFILE=
++  FBFILE=`ls -1 FlexiBLAS-aarch64*zip 2>/dev/null | head -1`
    TCTS=llvm19_ucrt3.ts 
  else
    TRIPLET=x86_64-w64-mingw32.static.posix
@@ -25,7 +26,7 @@ Index: build.sh
    TCTS=gcc14_ucrt3.ts
  fi
  
-@@ -260,6 +264,9 @@
+@@ -260,6 +265,9 @@
  svn diff > ../build/ucrt3.diff
  svn info --show-item revision > ../build/svn_revision
  unzip ../$TCLFILE
@@ -35,7 +36,7 @@ Index: build.sh
  
  # Not needed as we use Schannel - https://curl.se/docs/sslcerts.html
  cd etc
-@@ -280,6 +287,10 @@
+@@ -280,6 +288,10 @@
  ISDIR = ${MISDIR}
  EOF
  

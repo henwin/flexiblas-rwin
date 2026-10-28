@@ -37,8 +37,7 @@
 #
 # https://cran.r-project.org/bin/windows/Rtools/rtoolsXX/files/
 #
-# as flexiblas-REV-THISREV.zip and flexiblas-aarch64-REV-THISREV.zip.  There
-# is no aarch64 build yet.
+# as flexiblas-REV-THISREV.zip and flexiblas-aarch64-REV-THISREV.zip.
 
 DOCKER=`which docker`
 if [ "X$DOCKER" == X ]; then
