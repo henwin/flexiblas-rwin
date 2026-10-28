@@ -7,13 +7,13 @@
 ##   Rscript compare-optflags.R test RUN LIB PKG...   examples and tests of PKG in lib-LIB (LIB "default": the first library), into out-RUN
 ##   Rscript compare-optflags.R base RUN              R's tests (testInstalledBasic, recommended packages), into out-RUN
 ##   Rscript compare-optflags.R compare A,A2.. B,B2.. [PKG...]  the B runs against the A runs, on the lines each
-##                                                   set agrees on ("compare A A2 B" is "compare A,A2 B")
+##                                                   set agrees on
 ## The R running "test" and "base" is the one whose output is recorded; the
 ## directories are in $OPTFLAGS_WORK, or optflags-work.
 ## o3-packages.yml runs the Rblas.dll comparison. The package-flags comparison
 ## (r57974) was run on 32 packages with
 ##   build O2 PKG...; build O3 PKG...; test O2 O2 PKG...; test O2b O2 PKG...;
-##   test O3 O3 PKG...; compare O2 O2b O3
+##   test O3 O3 PKG...; compare O2,O2b O3
 ## and found only paths, timings and build dates differing.
 args <- commandArgs(TRUE)
 mode <- args[1]
@@ -154,11 +154,10 @@ if (mode == "compare") {
     ## reference agrees on it, every run of the alternative agrees on it, and
     ## the two disagree. Addresses, system.time() values and the test
     ## frameworks' own timings are blanked first.
-    ## "compare A A2 B" is "compare A,A2 B". The packages are those with
-    ## output from the first run of the reference unless given; a run that
-    ## lacks a package's output is reported as missing.
+    ## The packages are those with output from the first run of the
+    ## reference unless given; a run that lacks a package's output is
+    ## reported as missing.
     a <- args[-1]
-    if (length(a) == 3 && !grepl(",", a[1])) a <- c(paste(a[1:2], collapse = ","), a[3])
     ref <- strsplit(a[1], ",")[[1]]; alt <- strsplit(a[2], ",")[[1]]; groups <- a[-(1:2)]
     norm <- function(f) {
         if (!file.exists(f)) return(NULL)
