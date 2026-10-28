@@ -23,6 +23,11 @@ on:
         type: boolean
         default: false
 
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
 env:
   OPTFLAGS_WORK: ${{ github.workspace }}\optflags-work
 
@@ -92,9 +97,14 @@ jobs:
           run() {   # run package
             R=Rscript; [ "${1:0:2}" = O3 ] && R=/c/R-o3/bin/Rscript
             timeout 1800 $R tests/compare-optflags.R test $1 default $2 > /dev/null 2>&1 || {
+              st=$?
+              echo "$2 $1: exit status $st" | tee -a optflags.log
+              # timeout kills Rscript only; the Rterm it started and the R CMD
+              # BATCH processes under it live on with the output files open
+              [ $st != 124 ] || taskkill //F //T //IM Rterm.exe > /dev/null 2>&1 || true
               # a killed run leaves a truncated .Rout, which must not be compared
-              echo "$2 $1: exit status $?" | tee -a optflags.log
-              rm -rf "$OPTFLAGS_WORK/out-$1/$2"
+              rm -rf "$OPTFLAGS_WORK/out-$1/$2" || { sleep 10; rm -rf "$OPTFLAGS_WORK/out-$1/$2"; } ||
+                echo "$2 $1: output not removed" | tee -a optflags.log
             }
           }
           for p in $PKGS; do for r in O2 O2b O3; do run $r $p; done; done
@@ -121,14 +131,17 @@ jobs:
     if: always()
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v4
         with:
           pattern: log-*
           merge-multiple: false
 
       - name: Summarise
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # the logs come from Windows; a carriage return would end an annotation
           cat log-*/optflags.log | tr -d '\r' > all.log
           {
             echo "packages compared: $(grep -ac '^== ' all.log)"
@@ -139,23 +152,24 @@ jobs:
               awk '{s += $6; d += $8; f += $12; m += $14; u += $16} END {printf "output files: %d same, %d differ, %d failed in every run, %d missing in some run, %d unstable within a set of runs\n", s, d, f, m, u}'
             echo "packages with output files that differ with the -O3 Rblas.dll:"
             grep -a '^== ' all.log | awk '$8 > 0 {print "  " $2 ": " $8}'
+            # jobs that failed, and R errors in their logs
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" --paginate \
+              --jq '.jobs[] | select(.conclusion == "failure") | "failed job: " + .name'
           } > summary.txt
           cat summary.txt
-          # the differing lines, at most 25 lines per annotation
+          # the differing lines
           grep -aE '^(  \S+: |    O[23]: )' all.log > detail.txt || true
-          for f in summary.txt; do
-            echo "::notice title=CRAN packages with an -O3 Rblas.dll::$(sed -e 's/%/%25/g' $f | sed -e ':a;N;$!ba;s/\n/%0A/g')"
-          done
-          split -l 25 -d detail.txt part-
-          for p in part-*; do
-            echo "::notice title=Differences (${p#part-})::$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')"
-          done
           # the runs that failed or timed out (124), which run of which package
-          grep -a ': exit status ' all.log | sort > failed.txt || true
-          split -l 40 -d failed.txt failed-
-          for p in failed-*; do
-            echo "::notice title=Failed or timed out (${p#failed-})::$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')"
-          done
+          grep -a ': exit status |output not removed|^Error' all.log | sort > failed.txt || true
+
+      - uses: ./.github/actions/report
+        if: always()
+        with:
+          status: ${{ needs.packages.result }}
+          files: |
+            summary.txt
+            Differences: detail.txt
+            Failed or timed out: failed.txt
 
       - uses: actions/upload-artifact@v4
         with:
@@ -187,14 +201,17 @@ jobs:
           /c/R-o3/bin/Rscript tests/compare-optflags.R base O3 2>&1 | tee -a optflags.log
           Rscript tests/compare-optflags.R compare O2 O2b O3 2>&1 | tee -a optflags.log
 
-      - name: Publish the comparison as annotations
+      - name: Summarise
         if: always()
         shell: bash
         run: |
-          [ -f optflags.log ] || exit 0
-          grep -aE '^(O[23]b?: |test|== |total |  \S+: |    O[23]: )' optflags.log | tr -d '\r' > summary.log || true
-          split -l 25 -d summary.log part-
-          for p in part-*; do
-            t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
-            echo "::notice title=R's tests (${p#part-})::$t"
-          done
+          grep -aE '^(O[23]b?: |test|== |total |  \S+: |    O[23]: )' optflags.log > summary.log || true
+
+      - uses: ./.github/actions/report
+        if: always()
+        with:
+          key: ${{ github.workflow }} (R's tests and the recommended packages)
+          status: ${{ job.status }}
+          files: |
+            summary.log
+            optflags.log
