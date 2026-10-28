@@ -212,16 +212,23 @@ if (mode == "compare") {
         }
         same <- function(L) Reduce(`&`, lapply(L[-1], function(l) l == L[[1]]), rep(TRUE, n[1]))
         sR <- same(R); sA <- same(A)
+        ## bytes: substr() refuses strings in the "bytes" encoding
+        head100 <- function(x) rawToChar(head(charToRaw(x), 100))
         d <- which(sR & sA & R[[1]] != A[[1]])
         if (length(d)) {
             cat(sprintf("  %s: %d stable lines differ\n", f, length(d)))
-            ## bytes: substr() refuses strings in the "bytes" encoding
-            head100 <- function(x) rawToChar(head(charToRaw(x), 100))
             for (k in head(d, 3))
                 cat(sprintf("    %s: %s\n    %s: %s\n", ref[1], head100(R[[1]][k]), alt[1], head100(A[[1]][k])))
             return("differ")
         }
-        if (all(fr)) "failed" else if (all(sR & sA)) "same" else "unstable"
+        if (all(fr)) return("failed")
+        if (all(sR & sA)) return("same")
+        ## what varies between runs of a set, for the blanking above
+        u <- which(!(sR & sA)); L <- if (all(sR)) A else R; s <- if (all(sR)) alt else ref
+        cat(sprintf("  %s: %d unstable lines\n", f, length(u)))
+        for (k in head(u, 3))
+            cat(sprintf("    %s: %s\n    %s: %s\n", s[1], head100(L[[1]][k]), s[2], head100(L[[2]][k])))
+        "unstable"
     }
     kinds <- c("same", "differ", "failed", "missing", "unstable")
     if (!length(groups))

@@ -165,7 +165,7 @@ jobs:
           } > summary.txt
           cat summary.txt
           # the differing lines
-          grep -aE '^(  \S+: |    O[23]: )' all.log > detail.txt || true
+          grep -aE '^(  \S+: |    O[23]b?: )' all.log > detail.txt || true
           # the runs that failed or timed out (124), which run of which package
           grep -aE ': exit status |output not removed|^Error' all.log | sort > failed.txt || true
 
