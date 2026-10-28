@@ -1,0 +1,65 @@
+name: Report to the results issue
+description: >
+  Writes the result of this run as a comment on the results issue (#1),
+  one comment per key, replaced on every run: a heading with the status,
+  the run link, commit and time, then the files given, the first open and
+  the others collapsed. Job logs live in blob storage that some API clients
+  cannot reach; issue comments are served by the API itself. The calling
+  workflow needs permissions: issues: write.
+inputs:
+  key:
+    description: What the comment stands for; one comment per key
+    default: ${{ github.workflow }}
+  status:
+    description: The job's status, job.status
+    required: true
+  files:
+    description: >
+      Files to show, one per line, as "Label: path" or a path; the first is
+      shown open, the others collapsed; a missing or empty file is noted
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        KEY: ${{ inputs.key }}
+        STATUS: ${{ inputs.status }}
+        FILES: ${{ inputs.files }}
+      run: |
+        issue=1
+        # a comment holds 65536 characters, shared by the files
+        cap=$((60000 / $(grep -c . <<< "$FILES")))
+        {
+          echo "<!-- report: $KEY -->"
+          echo "### $KEY — $STATUS"
+          echo "[run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) · ${GITHUB_SHA:0:7} · $(date -u '+%Y-%m-%d %H:%M UTC')"
+          first=yes
+          while IFS= read -r line; do
+            line=$(echo "$line" | sed -e 's/^ *//; s/ *$//')
+            [ -n "$line" ] || continue
+            case $line in
+              *": "*) label=${line%%: *}; path=${line#*: } ;;
+              *) label=$(basename "$line"); path=$line ;;
+            esac
+            echo
+            if [ ! -s "$path" ]; then echo "_$label: no output_"; continue; fi
+            n=$(wc -l < "$path")
+            [ $first = yes ] || echo "<details><summary>$label ($n lines)</summary>"
+            echo; echo '```'
+            tr -d '\r' < "$path" | head -c $cap; echo
+            [ $(wc -c < "$path") -le $cap ] || echo "... (cut)"
+            echo '```'
+            [ $first = yes ] || echo "</details>"
+            first=no
+          done <<< "$FILES"
+        } > report.md
+        id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$issue/comments?per_page=100" --paginate \
+               --jq ".[] | select(.body | startswith(\"<!-- report: $KEY -->\")) | .id" | head -1)
+        if [ -n "$id" ]; then
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@report.md > /dev/null
+        else
+          gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$issue/comments" -F body=@report.md > /dev/null
+        fi
+        echo "reported as '$KEY'"

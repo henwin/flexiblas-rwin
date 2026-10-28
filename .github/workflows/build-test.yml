@@ -33,6 +33,10 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+  issues: write
+
 env:
   FLEXIBLAS_VERSION: 3.5.0
   RTOOLS_BUILD: 6768
@@ -70,15 +74,19 @@ jobs:
           set -o pipefail
           bash scripts/build-in-docker.sh 2>&1 | tee docker-build.log
 
-      - name: Publish build errors
-        if: failure()
+      - name: Summarise
+        if: always()
         run: |
           { grep -n -E 'error|Error|ERROR|No such|not found|failed|Failed' docker-build.log | tail -25; echo ...; tail -30 docker-build.log; } > tail.log
-          split -l 30 -d tail.log part-
-          for p in part-*; do
-            t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
-            echo "::error title=docker-build.log (${p#part-})::$t"
-          done
+          ls -la dist dist/*/bin/* > dist.log 2>&1 || true
+
+      - uses: ./.github/actions/report
+        if: always()
+        with:
+          status: ${{ job.status }}
+          files: |
+            The bundle: dist.log
+            Errors and the end of the build log: tail.log
 
       - uses: actions/upload-artifact@v7
         with:
@@ -117,15 +125,20 @@ jobs:
           set -o pipefail
           bash scripts/build-in-docker.sh aarch64 2>&1 | tee docker-build.log
 
-      - name: Publish build errors
-        if: failure()
+      - name: Summarise
+        if: always()
         run: |
           { grep -n -E 'error|Error|ERROR|No such|not found|failed|Failed' docker-build.log | tail -25; echo ...; tail -30 docker-build.log; } > tail.log
-          split -l 30 -d tail.log part-
-          for p in part-*; do
-            t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
-            echo "::error title=docker-build.log (${p#part-})::$t"
-          done
+          ls -la dist dist/*/bin/* > dist.log 2>&1 || true
+
+      - uses: ./.github/actions/report
+        if: always()
+        with:
+          key: ${{ github.workflow }} (aarch64)
+          status: ${{ job.status }}
+          files: |
+            The bundle: dist.log
+            Errors and the end of the build log: tail.log
 
       - uses: actions/upload-artifact@v7
         if: always()

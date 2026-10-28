@@ -7,6 +7,11 @@ name: OpenBLAS thread cases on Windows
 on:
   workflow_dispatch:
 
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
 jobs:
   cases:
     runs-on: windows-2025
@@ -61,10 +66,8 @@ jobs:
           objdump -p "$lib" | grep -E ' (openblas_set_num_threads|dgemm_)$'
           bash tests/omp-cases.sh "$(cygpath -w "$lib")" 2>&1 | tee omp-cases.log
 
-      - name: Publish as annotations
+      - uses: ./.github/actions/report
         if: always()
-        shell: bash
-        run: |
-          [ -f omp-cases.log ] || exit 0
-          t=$(sed -e 's/%/%25/g' omp-cases.log | sed -e ':a;N;$!ba;s/\n/%0A/g')
-          echo "::notice title=OpenBLAS thread cases on Windows::$t"
+        with:
+          status: ${{ job.status }}
+          files: omp-cases.log

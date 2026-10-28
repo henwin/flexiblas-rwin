@@ -8,6 +8,10 @@ name: BLAS and LAPACK flags, results and timings
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   compare:
     runs-on: windows-2025
@@ -83,13 +87,16 @@ jobs:
             echo "::error::a build with R's flags does not reproduce CRAN's results"; exit 1
           fi
 
-      - name: Publish as annotations
+      - name: Summarise
         if: always()
         shell: bash
         run: |
           { cat cpu.txt; grep -v '|' flags.log; echo; cat timings.txt; } > summary.log 2>/dev/null || true
-          split -l 20 -d summary.log part-
-          for p in part-*; do
-            t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
-            echo "::notice title=flags (${p#part-})::$t"
-          done
+
+      - uses: ./.github/actions/report
+        if: always()
+        with:
+          status: ${{ job.status }}
+          files: |
+            summary.log
+            flags.log

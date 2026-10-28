@@ -40,6 +40,7 @@ on:
 permissions:
   actions: read
   contents: read
+  issues: write
 
 env:
   RDEVWEB: https://svn.r-project.org/R-dev-web/trunk/WindowsBuilds/winutf8/ucrt3/r
@@ -247,11 +248,13 @@ jobs:
             done
           } > summary.log
           cat summary.log
-          split -l 30 -d summary.log part-
-          for p in part-*; do
-            t=$(sed -e 's/%/%25/g' "$p" | sed -e ':a;N;$!ba;s/\n/%0A/g')
-            echo "::notice title=build.sh (${p#part-})::$t"
-          done
+
+      - uses: ./.github/actions/report
+        if: always()
+        with:
+          key: ${{ github.workflow }} (${{ inputs.r }}${{ inputs.experiment != 'none' && format(', {0}', inputs.experiment) || '' }})
+          status: ${{ job.status }}
+          files: summary.log
 
   # The installer from the build job, tested as the old "Build and test"
   # tested CRAN's R with the forwarders copied in. CRAN's build of the same
@@ -450,45 +453,22 @@ jobs:
           Rscript -e "tinytest::test_package('flexiblas')" 2>&1 | Tee-Object -FilePath pkg-tests.log
           if (Select-String -Path pkg-tests.log -Pattern 'FAILED|Error|fails' -Quiet) { exit 1 }
 
-      # Job logs live in blob storage that some API clients cannot reach;
-      # annotations are served by the API itself.
-      - name: Publish logs as annotations (1)
+      - uses: ./.github/actions/report
         if: always()
-        shell: pwsh
-        run: |
-          foreach ($f in "startup.log", "tests.log", "tests-omp1.log", "tests-limit1.log", "reg-BLAS.log", "pkg-install.log", "pkg-tests.log") {
-            if (Test-Path $f) {
-              # Annotations are cut at about 4 KB, so publish in parts.
-              $lines = Get-Content $f
-              $part = 1; $buf = @()
-              foreach ($l in $lines + "<<end>>") {
-                if ($l -eq "<<end>>" -or (($buf -join "`n").Length + $l.Length) -gt 3500) {
-                  $t = ($buf -join "`n") -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
-                  Write-Host "::notice title=$f ($part)::$t"
-                  $part++; $buf = @()
-                }
-                if ($l -ne "<<end>>") { $buf += $l }
-              }
-            }
-          }
-
-      # GitHub keeps at most 10 annotations of each kind per step.
-      - name: Publish logs as annotations (2)
-        if: always()
-        shell: pwsh
-        run: |
-          foreach ($f in "profile-nonzero.log", "nan.log", "memory.log", "backends.log", "identical.log", "chol.log") {
-            if (Test-Path $f) {
-              # Annotations are cut at about 4 KB, so publish in parts.
-              $lines = Get-Content $f
-              $part = 1; $buf = @()
-              foreach ($l in $lines + "<<end>>") {
-                if ($l -eq "<<end>>" -or (($buf -join "`n").Length + $l.Length) -gt 3500) {
-                  $t = ($buf -join "`n") -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A'
-                  Write-Host "::notice title=$f ($part)::$t"
-                  $part++; $buf = @()
-                }
-                if ($l -ne "<<end>>") { $buf += $l }
-              }
-            }
-          }
+        with:
+          key: ${{ github.workflow }} (${{ inputs.r }}, test)
+          status: ${{ job.status }}
+          files: |
+            startup.log
+            tests.log
+            tests-omp1.log
+            tests-limit1.log
+            reg-BLAS.log
+            pkg-install.log
+            pkg-tests.log
+            profile-nonzero.log
+            nan.log
+            memory.log
+            backends.log
+            identical.log
+            chol.log
