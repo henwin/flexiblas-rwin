@@ -48,7 +48,9 @@ runs:
             n=$(wc -l < "$path")
             [ $first = yes ] || echo "<details><summary>$label ($n lines)</summary>"
             echo; echo '```'
-            tr -d '\r' < "$path" | head -c $cap; echo
+            # bytes that are not UTF-8 (test output in other encodings, or a
+            # character cut by the cap) would make the comment invalid JSON
+            tr -d '\r' < "$path" | head -c $cap | iconv -c -f UTF-8 -t UTF-8 2>/dev/null || true; echo
             [ $(wc -c < "$path") -le $cap ] || echo "... (cut)"
             echo '```'
             [ $first = yes ] || echo "</details>"

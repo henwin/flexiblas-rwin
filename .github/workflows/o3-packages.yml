@@ -28,6 +28,9 @@ on:
         type: choice
         options: [devel, release]
         default: devel
+      summarise:
+        description: Only summarise the package logs of this earlier run (its id), for a run whose summary job failed
+        default: ''
 
 permissions:
   actions: read
@@ -39,7 +42,7 @@ env:
 
 jobs:
   select:
-    if: inputs.packages != 'none'
+    if: inputs.packages != 'none' && inputs.summarise == ''
     runs-on: ubuntu-24.04
     outputs:
       groups: ${{ steps.split.outputs.groups }}
@@ -135,7 +138,7 @@ jobs:
 
   summary:
     needs: packages
-    if: always()
+    if: always() && (inputs.summarise != '' || needs.packages.result != 'skipped')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -144,6 +147,8 @@ jobs:
         with:
           pattern: log-*
           merge-multiple: false
+          run-id: ${{ inputs.summarise || github.run_id }}
+          github-token: ${{ github.token }}
 
       - name: Summarise
         env:
@@ -186,7 +191,7 @@ jobs:
             summary.txt
 
   base:
-    if: inputs.base
+    if: inputs.base && inputs.summarise == ''
     runs-on: windows-2025
     timeout-minutes: 300
     steps:
