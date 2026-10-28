@@ -46,14 +46,16 @@ if [ ${RTARGET} == "aarch64" ] ; then
   EOPTS=
   # the Fortran and OpenMP runtimes of LLVM, as R's FLIBS and -fopenmp
   FLIBS="FortranRuntime;FortranDecimal;c++;omp;pthread"
-  EXCLUDE=libFortranRuntime.a:libFortranDecimal.a:libFortran_main.a:libc++.a:libunwind.a:libomp.a:libwinpthread.a:libdl.a
+  # lld has no --exclude-libs; it leaves the runtime libraries out of the
+  # export table by itself
+  LDEXCLUDE=
 else
   TRIPLET=x86_64-w64-mingw32.static.posix
   CC=gcc
   BINDIR=bin/x64
   EOPTS="-mfpmath=sse -msse2 -mstackrealign"
   FLIBS="gfortran;quadmath;gomp;pthread"
-  EXCLUDE=libssp.a:libssp_nonshared.a:libgcc.a:libgcc_eh.a:libgfortran.a:libquadmath.a:libgomp.a:libwinpthread.a:libdl.a
+  LDEXCLUDE=-Wl,--exclude-libs,libssp.a:libssp_nonshared.a:libgcc.a:libgcc_eh.a:libgfortran.a:libquadmath.a:libgomp.a:libwinpthread.a:libdl.a
 fi
 TLIB=`dirname \`which ${TRIPLET}-${CC}\``/../${TRIPLET}/lib
 
@@ -122,7 +124,7 @@ ${TRIPLET}-cmake -S . -B build64 \
   "-DOPENBLAS_LIBRARY=-Wl,--whole-archive;$TLIB/libopenblas.a;-Wl,--no-whole-archive;$FLIBS" \
   -DOPENBLAS_LINKER_FLAGS=-fopenmp \
   -DZDOTC_MKL_EXITCODE=1 \
-  "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,--exclude-libs,$EXCLUDE" 2>&1 | tee configure64.out
+  "-DCMAKE_SHARED_LINKER_FLAGS=$LDEXCLUDE" 2>&1 | tee configure64.out
 make -C build64 -j 2>&1 | tee make64.out
 make -C build64 install 2>&1 | tee install64.out
 cp configure64.out make64.out install64.out $BHOME/build
@@ -144,3 +146,5 @@ cp FlexiBLAS.zip build
 find FlexiBLAS | md5sum
 du FlexiBLAS -ksk
 ${TRIPLET}-objdump -p FlexiBLAS/$BINDIR/libflexiblas.dll | grep 'DLL Name'
+# runtime symbols that should not be in the export table
+${TRIPLET}-objdump -p FlexiBLAS/$BINDIR/libflexiblas.dll | grep -c -E '\] *(omp_|GOMP_|__stack_chk|_gfortran_|_Fortran|dl(open|sym|close|error)$)' || true
