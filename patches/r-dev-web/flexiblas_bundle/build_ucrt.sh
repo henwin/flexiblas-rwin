@@ -41,6 +41,10 @@ fi
 if [ ${RTARGET} == "aarch64" ] ; then
   TRIPLET=aarch64-w64-mingw32.static.posix
   CC=clang
+  # the MXE objdump wrapper runs llvm-objdump, which the toolchain keeps
+  # with the other LLVM tools, off PATH
+  USRDIR=`dirname \`which ${TRIPLET}-clang\``/..
+  export PATH=`dirname \`find $USRDIR -name llvm-objdump | head -1\``:$PATH
   # R's bin directory and EOPTS on aarch64 (WIN= and USE_LLVM=1 in MkRules)
   BINDIR=bin
   EOPTS=
