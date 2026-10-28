@@ -77,7 +77,7 @@ jobs:
       - name: Summarise
         if: always()
         run: |
-          { grep -n -E 'error|Error|ERROR|No such|not found|failed|Failed' docker-build.log | tail -25; echo ...; tail -30 docker-build.log; } > tail.log
+          { grep -n -E 'error|Error|ERROR|No such|not found|failed|Failed' docker-build.log | grep -v liberror-perl | tail -25; echo ...; tail -30 docker-build.log; } > tail.log
           ls -la dist dist/*/bin/* > dist.log 2>&1 || true
 
       - uses: ./.github/actions/report
@@ -128,7 +128,7 @@ jobs:
       - name: Summarise
         if: always()
         run: |
-          { grep -n -E 'error|Error|ERROR|No such|not found|failed|Failed' docker-build.log | tail -25; echo ...; tail -30 docker-build.log; } > tail.log
+          { grep -n -E 'error|Error|ERROR|No such|not found|failed|Failed' docker-build.log | grep -v liberror-perl | tail -25; echo ...; tail -30 docker-build.log; } > tail.log
           ls -la dist dist/*/bin/* > dist.log 2>&1 || true
 
       - uses: ./.github/actions/report

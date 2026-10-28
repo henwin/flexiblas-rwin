@@ -8,7 +8,9 @@ WORK=${WORK:-/work}
 target=${1:-x86_64}
 case $target in
     x86_64)  export PATH=/usr/lib/mxe/usr/bin:$PATH; name=FlexiBLAS ;;
-    aarch64) export PATH=/usr/lib/mxe/usr_aarch64/bin:$PATH; name=FlexiBLAS-aarch64 ;;
+    aarch64) export PATH=/usr/lib/mxe/usr_aarch64/bin:$PATH; name=FlexiBLAS-aarch64
+             # the triplet-objdump wrapper runs llvm-objdump, which is not on PATH
+             export PATH=$(dirname "$(find /usr/lib/mxe/usr_aarch64 -name llvm-objdump -type f | head -1)"):$PATH ;;
     *) echo "unknown target $target" >&2; exit 2 ;;
 esac
 b=$(mktemp -d)

@@ -95,18 +95,18 @@ for (be in backends) { use(be); res[[be]] <- run() }
 ref <- if (file.exists("nan-ref.rds")) readRDS("nan-ref.rds") else res[[1]]
 refname <- if (file.exists("nan-ref.rds")) "R's own" else backends[1]
 
-cat("Signature: A = NA, N = NaN, I = Inf counts, # = position checksum.\n")
+cat("Signature: A = NA, N = NaN, I = Inf counts, # = MD5 of the NA/NaN/Inf pattern.\n")
 cat("Columns show 'same' when equal to", refname, "\n\n")
 w <- max(nchar(names(ref)))
-cat(formatC("", width = -w), " ", formatC(refname, width = -30),
-    paste(formatC(backends, width = -18), collapse = " "), "\n", sep = "")
+cat(formatC("", width = -w), " ", formatC(refname, width = -52),
+    paste(formatC(backends, width = -52), collapse = " "), "\n", sep = "")
 ndiff <- 0
 for (k in names(ref)) {
     cells <- vapply(backends, function(be)
         if (identical(res[[be]][[k]], ref[[k]])) "same" else res[[be]][[k]], "")
     ndiff <- ndiff + any(cells != "same")
-    cat(formatC(k, width = -w), " ", formatC(ref[[k]], width = -30),
-        paste(formatC(cells, width = -18), collapse = " "), "\n", sep = "")
+    cat(formatC(k, width = -w), " ", formatC(ref[[k]], width = -52),
+        paste(formatC(cells, width = -52), collapse = " "), "\n", sep = "")
 }
 cat(sprintf("\n%d of %d results differ from %s for at least one backend\n",
             ndiff, length(ref), refname))

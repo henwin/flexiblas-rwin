@@ -63,7 +63,8 @@ if (args[1] == "run") {
 
 if (args[1] == "compare") {
     l <- unlist(lapply(args[-1], readLines))
-    d <- do.call(rbind, strsplit(l, "|", fixed = TRUE))
+    ## six fields; strsplit() drops the empty ones at the end of an error line
+    d <- do.call(rbind, lapply(strsplit(l, "|", fixed = TRUE), function(x) c(x, rep("", 6 - length(x)))))
     info <- d[d[, 2] == "platform", , drop = FALSE]
     cat(sprintf("%-14s %s\n", info[, 1], apply(info[, 3:5, drop = FALSE], 1, paste, collapse = "; ")), sep = "")
     d <- d[d[, 2] != "platform", , drop = FALSE]
@@ -73,6 +74,6 @@ if (args[1] == "compare") {
     differ <- apply(t, 1, function(r) length(unique(r)) > 1)
     cat(sprintf("\n%d of %d results differ between platforms (NA/NaN/Inf counts and pattern hash):\n",
                 sum(differ), nrow(t)))
-    options(width = 200)
+    options(width = 400)
     print(noquote(t[differ, , drop = FALSE]))
 }
