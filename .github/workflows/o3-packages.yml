@@ -171,6 +171,8 @@ jobs:
           cat summary.txt
           # the differing lines
           grep -aE '^(  \S+: |    O[23]b?: )' all.log > detail.txt || true
+          # the stable differences alone, first, since the detail is cut at the comment's size
+          awk '/stable lines differ/ {p = 1; print; next} /^  [^ ]/ {p = 0} p' all.log > differ.txt || true
           # the runs that failed or timed out (124), which run of which package
           grep -aE ': exit status |output not removed|^Error' all.log | sort > failed.txt || true
 
@@ -180,6 +182,7 @@ jobs:
           status: ${{ needs.packages.result }}
           files: |
             summary.txt
+            Stable differences: differ.txt
             Differences: detail.txt
             Failed or timed out: failed.txt
 
