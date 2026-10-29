@@ -298,7 +298,7 @@ jobs:
         shell: pwsh
         run: |
           Rscript -e "sessionInfo()"
-          Rscript tests/test-nan.R ref
+          Rscript tests/test-nan.R propagate ref
           Rscript tests/test-identical.R ref
           Rscript tests/test-chol.R "R's own" 2>&1 | Tee-Object -FilePath chol.log
 
@@ -376,7 +376,7 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: |
-          Rscript tests/test-nan.R cmp 2>&1 | Tee-Object -FilePath nan.log
+          Rscript tests/test-nan.R propagate cmp 2>&1 | Tee-Object -FilePath nan.log
           exit $LASTEXITCODE
 
       - name: Check that LAPACK calls reach FlexiBLAS

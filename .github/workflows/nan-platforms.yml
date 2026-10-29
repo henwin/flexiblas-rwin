@@ -1,16 +1,16 @@
 name: NA, NaN and Inf outside Windows
 
 # Three comparisons of how NA, NaN and Inf come out, to put the Windows
-# results in context: FlexiBLAS's backends against each other on Fedora
-# and Accelerate against R's BLAS on macOS (tests/test-nan.R, with the
-# memory use of the OpenBLAS backends, tests/test-memory.R); and where NA
-# and NaN meet in one result (tests/test-nan-mixed.R), R's own BLAS, LAPACK
-# and arithmetic of CRAN's R (Posit's builds on Linux) on Windows, Linux
-# and macOS, x86-64 and arm64, compared with each other.
+# results in context, all with tests/test-nan.R: FlexiBLAS's backends
+# against each other on Fedora (with the memory use of the OpenBLAS
+# backends, tests/test-memory.R) and Accelerate against R's BLAS on macOS,
+# in propagate mode; and the pattern of NA and NaN in results of R's own
+# BLAS, LAPACK and arithmetic of CRAN's R (Posit's builds on Linux) on
+# Windows, Linux and macOS, x86-64 and arm64, compared between platforms.
 on:
   push:
     branches: [master]
-    paths: [tests/test-nan.R, tests/test-nan-mixed.R, tests/test-memory.R, .github/workflows/nan-platforms.yml]
+    paths: [tests/test-nan.R, tests/test-memory.R, .github/workflows/nan-platforms.yml]
   workflow_dispatch:
 
 permissions:
@@ -35,7 +35,7 @@ jobs:
           for f in /usr/lib64/libopenblas*.so.0; do echo "$f: $(strings "$f" | grep -m1 'MAX_THREADS')"; done
 
       - name: Compare backends
-        run: Rscript tests/test-nan.R cmp 2>&1 | tee nan.log
+        run: Rscript tests/test-nan.R propagate cmp 2>&1 | tee nan.log
 
       - name: Memory use
         run: |
@@ -65,7 +65,7 @@ jobs:
           r-version: release
 
       - name: Reference with R's own BLAS
-        run: Rscript tests/test-nan.R ref
+        run: Rscript tests/test-nan.R propagate ref
 
       - name: Switch libRblas to Accelerate (vecLib) and compare
         run: |
@@ -73,7 +73,7 @@ jobs:
           ls -l "$lib"/libRblas*
           ln -sf libRblas.vecLib.dylib "$lib/libRblas.dylib"
           Rscript -e 'sessionInfo()' | grep -i -A2 blas
-          Rscript tests/test-nan.R cmp 2>&1 | tee nan.log
+          Rscript tests/test-nan.R propagate cmp 2>&1 | tee nan.log
 
       - uses: ./.github/actions/report
         if: always()
@@ -83,7 +83,7 @@ jobs:
           files: nan.log
 
   platforms:
-    name: R's own BLAS, LAPACK and arithmetic per platform
+    name: The NA/NaN pattern of R's own BLAS, LAPACK and arithmetic per platform
     strategy:
       fail-fast: false
       matrix:
@@ -102,11 +102,11 @@ jobs:
           r-version: release
       - name: Record
         shell: bash
-        run: Rscript tests/test-nan-mixed.R run ${{ matrix.label }}
+        run: Rscript tests/test-nan.R pattern run ${{ matrix.label }}
       - uses: actions/upload-artifact@v7
         with:
-          name: nan-mixed-${{ matrix.label }}
-          path: nan-mixed-${{ matrix.label }}.txt
+          name: nan-pattern-${{ matrix.label }}
+          path: nan-pattern-${{ matrix.label }}.txt
 
   compare:
     needs: platforms
@@ -119,10 +119,10 @@ jobs:
           r-version: release
       - uses: actions/download-artifact@v8
         with:
-          pattern: nan-mixed-*
+          pattern: nan-pattern-*
           merge-multiple: true
       - name: Compare
-        run: Rscript tests/test-nan-mixed.R compare nan-mixed-*.txt 2>&1 | tee compare.log
+        run: Rscript tests/test-nan.R pattern compare nan-pattern-*.txt 2>&1 | tee compare.log
 
       - uses: ./.github/actions/report
         if: always()
