@@ -181,15 +181,14 @@ if (identical(mode, "propagate") && identical(what, "cmp")) {
     refname <- if (file.exists("nan-ref.rds")) "R's own" else backends[1]
 
     cat("\nSignature: A = NA, N = NaN, I = Inf counts, # = MD5 of the NA/NaN/Inf pattern.\n")
-    cat("Columns show 'same' when equal to", refname, "\n\n")
+    cat("A row with one 'same' has every backend equal to ", refname,
+        "; otherwise the columns are\n", paste(backends, collapse = ", "), ", 'same' when equal.\n\n", sep = "")
     w <- max(nchar(names(ref)))
-    cat(formatC("", width = -w), " ", formatC(refname, width = -52),
-        paste(formatC(backends, width = -52), collapse = " "), "\n", sep = "")
     ndiff <- 0
     for (k in names(ref)) {
         cells <- vapply(backends, function(be)
             if (identical(res[[be]][[k]], ref[[k]])) "same" else res[[be]][[k]], "")
-        ndiff <- ndiff + any(cells != "same")
+        if (all(cells == "same")) cells <- "same" else ndiff <- ndiff + 1
         cat(formatC(k, width = -w), " ", formatC(ref[[k]], width = -52),
             paste(formatC(cells, width = -52), collapse = " "), "\n", sep = "")
     }
