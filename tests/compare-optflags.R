@@ -167,10 +167,20 @@ if (mode == "compare") {
         ## byte-wise: outputs need not be valid in the session's encoding
         l <- gsub('0x[0-9a-fA-F]+|<[0-9A-F]{8,16}>|"[0-9a-f]{16}"', "ADDR", l, useBytes = TRUE)
         l <- gsub("C:([/\\\\]+)R-o3", "C:\\1R", l, useBytes = TRUE)   # the copy with the -O3 BLAS
+        l <- gsub("out-(O[23]b?|R2|CRANb?)([/\\\\])", "out-RUN\\2", l, useBytes = TRUE)   # this run's output directory
         ## timings the test frameworks print, which a faster BLAS changes
         ## systematically: tinytest's "12 tests OK 92ms" and "(1.3s)",
         ## testthat's "[ FAIL 0 | ... ]" summary line; and gc()'s table
         l <- gsub("([0-9]+ tests( OK| FAILED)?|All ok, [0-9]+ results) \\(?[0-9.]+m?s\\)?", "\\1 TIME", l, useBytes = TRUE)
+        ## timings packages print: a number with a unit of time, and the
+        ## numbers on a line that announces one; a bare number stays, since
+        ## nothing says it is a time (the 25 timing lines of run 40680758450
+        ## are the sample behind these)
+        l <- gsub("\\b[0-9]+(\\.[0-9]+)?(e[-+]?[0-9]+)? ?(s|sec|secs|seconds?|ms|min|mins|minutes?|h|hours?|CPU-s|elapsed-s)\\b",
+                  "TIME \\3", l, useBytes = TRUE, perl = TRUE)
+        t <- grepl("(?i)\\b(time elapsed|elapsed time|elapsed|CPU time|run time|time required|took|time_use|time =|time:|timing)",
+                   l, perl = TRUE, useBytes = TRUE)
+        l[t] <- gsub("\\b[0-9]+(\\.[0-9]+)?(e[-+]?[0-9]+)?\\b", "TIME", l[t], useBytes = TRUE, perl = TRUE)
         l <- l[!grepl("^(Ncells|Vcells) +[0-9]", l, useBytes = TRUE)]
         ## widths of columns follow their widest entry, a path or a timing
         gsub(" +", " ", trimws(l, "right"), useBytes = TRUE)
