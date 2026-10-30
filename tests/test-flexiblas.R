@@ -40,7 +40,7 @@ timing <- function(what, expr, label)
     cat(sprintf("  %-8s n = 3000, %s: elapsed %.3fs\n", what, label,
                 system.time(expr)[["elapsed"]]))
 
-for (be in "OPENBLAS") {
+for (be in grep("^OPENBLAS", flexiblas_list(), value = TRUE)) {
     cat("\n==", be, "==\n")
     id <- flexiblas_load_backend(be)
     flexiblas_switch(id)

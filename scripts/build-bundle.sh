@@ -16,6 +16,11 @@ cp "$WORK"/patches/r-dev-web/flexiblas_bundle/build_ucrt.sh "$b"
 # flexiblas.diff, which build_ucrt.sh applies as tcl_bundle applies tcl.diff
 cat "$WORK"/patches/flexiblas/*.patch > "$b/flexiblas.diff"
 cd "$b"
+# the pthreads OpenBLAS the bundle builds, kept in bundle-out by the hash of
+# the bundle script, as build-mxe.sh keeps the MXE build of OpenBLAS
+h=$(sha256sum "$WORK"/patches/r-dev-web/flexiblas_bundle/build_ucrt.sh | cut -c1-12)
+cache=$WORK/bundle-out/libopenblas-pthreads-$target-$h.a
+[ ! -f "$cache" ] || cp "$cache" libopenblas-pthreads.a
 # CMake takes CMAKE_EXPORT_COMPILE_COMMANDS from the environment, so the
 # flags of the reference BLAS and LAPACK can be shown without changing the
 # bundle script.
@@ -27,6 +32,9 @@ if [ -n "$cc" ]; then
     done
 else
     echo "no compile_commands.json (CMake older than 3.17?)"
+fi
+if [ -f libopenblas-pthreads.a ] && [ ! -f "$cache" ]; then
+    mkdir -p "$(dirname "$cache")"; cp libopenblas-pthreads.a "$cache"
 fi
 rm -rf "$WORK/dist/$name"
 mkdir -p "$WORK/dist"

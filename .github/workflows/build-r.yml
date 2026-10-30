@@ -194,7 +194,7 @@ jobs:
           /c/rbuild/build/R-${{ inputs.r }}-win.exe //VERYSILENT //SUPPRESSMSGBOXES //NORESTART //CURRENTUSER //DIR='C:\R-inst'
           if [ "${{ inputs.experiment }}" = none ]; then
             ls /c/R-inst/bin/x64/flexiblas /c/R-inst/etc
-            for b in NETLIB OPENBLAS; do
+            for b in NETLIB OPENBLAS OPENBLAS-PTHREADS; do
               FLEXIBLAS=$b /c/R-inst/bin/Rscript -e 'cat(extSoftVersion()[["BLAS"]], La_library(), sep = "\n")'
             done
           else
@@ -316,7 +316,7 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: |
-          foreach ($b in "NETLIB", "OPENBLAS") {
+          foreach ($b in "NETLIB", "OPENBLAS", "OPENBLAS-PTHREADS") {
             $env:FLEXIBLAS = $b
             Rscript tests/test-chol.R 2>&1 | Tee-Object -Append -FilePath chol.log
           }
@@ -427,12 +427,15 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: |
-          Rscript tests/test-memory.R 2>&1 | Tee-Object -FilePath memory.log
-          $env:OPENBLAS_NUM_THREADS = 1
-          Rscript tests/test-memory.R 2>&1 | Tee-Object -Append -FilePath memory.log
-          Remove-Item Env:OPENBLAS_NUM_THREADS
-          $env:OMP_NUM_THREADS = 1
-          Rscript tests/test-memory.R 2>&1 | Tee-Object -Append -FilePath memory.log
+          foreach ($b in "OPENBLAS", "OPENBLAS-PTHREADS") {
+            Rscript tests/test-memory.R $b 2>&1 | Tee-Object -Append -FilePath memory.log
+            $env:OPENBLAS_NUM_THREADS = 1
+            Rscript tests/test-memory.R $b 2>&1 | Tee-Object -Append -FilePath memory.log
+            Remove-Item Env:OPENBLAS_NUM_THREADS
+            $env:OMP_NUM_THREADS = 1
+            Rscript tests/test-memory.R $b 2>&1 | Tee-Object -Append -FilePath memory.log
+            Remove-Item Env:OMP_NUM_THREADS
+          }
 
       - name: R's BLAS regression tests
         if: always()

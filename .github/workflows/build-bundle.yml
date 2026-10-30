@@ -52,6 +52,14 @@ jobs:
           path: mxe-out
           key: mxe-${{ hashFiles('docker/Dockerfile', 'patches/rtools-mxe/**', 'patches/openblas/**', 'scripts/build-mxe.sh') }}
 
+      # The pthreads OpenBLAS the bundle builds, about as long, cached until
+      # the bundle script changes
+      - name: Cache the bundle's OpenBLAS
+        uses: actions/cache@v6
+        with:
+          path: bundle-out
+          key: bundle-${{ hashFiles('patches/r-dev-web/flexiblas_bundle/build_ucrt.sh') }}
+
       # Docker's layer cache in GitHub, so that the Rtools tarballs and R's
       # MXE tree are fetched only when the Dockerfile changes; the docker
       # build in build-in-docker.sh then finds every layer cached.

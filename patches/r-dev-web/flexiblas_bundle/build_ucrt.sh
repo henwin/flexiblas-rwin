@@ -13,7 +13,10 @@ set -e
 # The target is x86_64 by default. It can also be specified as aarch64.
 #
 # FlexiBLAS loads its backends at run time and is therefore built as DLLs.
-# The OPENBLAS backend contains the toolchain's static OpenBLAS.  The runtime
+# The OPENBLAS backend contains the toolchain's static OpenBLAS, which uses
+# OpenMP; the OPENBLAS-PTHREADS backend contains an OpenBLAS built here with
+# pthreads instead (x86_64 only for now), from the same sources with the
+# same settings as the toolchain's openblas.mk otherwise.  The runtime
 # libraries are linked in statically but not exported, since MinGW's
 # export-all would otherwise export libssp's __stack_chk_fail and libgomp.
 #
@@ -26,7 +29,7 @@ set -e
 # flexiblas.diff fixes finding the configuration and the vendor backends on
 # Windows, and finding an autotools-built dlfcn-win32.
 #
-# clean via: rm -rf build FlexiBLAS *zip *gz
+# clean via: rm -rf build FlexiBLAS *zip *gz *.a
 #
 # See build_in_docker.sh for the currently needed dependencies on Ubuntu.
 
@@ -53,6 +56,7 @@ if [ ${RTARGET} == "aarch64" ] ; then
   # lld has no --exclude-libs; it leaves the runtime libraries out of the
   # export table by itself
   LDEXCLUDE=
+  PTHREADS=no
 else
   TRIPLET=x86_64-w64-mingw32.static.posix
   CC=gcc
@@ -60,12 +64,40 @@ else
   EOPTS="-mfpmath=sse -msse2 -mstackrealign"
   FLIBS="gfortran;quadmath;gomp;pthread"
   LDEXCLUDE=-Wl,--exclude-libs,libssp.a:libssp_nonshared.a:libgcc.a:libgcc_eh.a:libgfortran.a:libquadmath.a:libgomp.a:libwinpthread.a:libdl.a
+  PTHREADS=yes
 fi
 TLIB=`dirname \`which ${TRIPLET}-${CC}\``/../${TRIPLET}/lib
 
 echo "Building for target $RTARGET."
 
 mkdir build
+
+# OpenBLAS with pthreads for the OPENBLAS-PTHREADS backend: the toolchain's
+# openblas.mk settings except USE_OPENMP, and NUM_THREADS fixed at 64 rather
+# than the processor count of the build machine.  The build takes an hour or
+# more, so a libopenblas-pthreads.a left from an earlier run is reused, like
+# the source tarballs.
+OBVER=0.3.34
+if [ ${PTHREADS} == "yes" ] ; then
+  if [ ! -r $BHOME/libopenblas-pthreads.a ] ; then
+    if [ ! -r OpenBLAS-$OBVER.tar.gz ] ; then
+      wget -O OpenBLAS-$OBVER.tar.gz https://github.com/OpenMathLib/OpenBLAS/releases/download/v$OBVER/OpenBLAS-$OBVER.tar.gz
+    fi
+    cd $BHOME/build
+    tar xfz $BHOME/OpenBLAS-$OBVER.tar.gz
+    cd OpenBLAS-$OBVER
+    make -j CC=${TRIPLET}-gcc FC=${TRIPLET}-gfortran HOSTCC=gcc CROSS=1 CROSS_SUFFIX=${TRIPLET}- \
+      BINARY=64 NO_SHARED=1 BUILD_RELAPACK=1 USE_THREAD=1 USE_OPENMP=0 NUM_THREADS=64 \
+      TARGET=CORE2 DYNAMIC_ARCH=1 libs netlib 2>&1 | tee $BHOME/build/openblas-pthreads.out | tail -5
+    cp libopenblas.a $BHOME/libopenblas-pthreads.a
+    cd $BHOME
+  fi
+  EXTRA="OPENBLAS;OPENBLAS-PTHREADS"
+  PTHOPTS=("-DOPENBLAS-PTHREADS_LIBRARY=-Wl,--whole-archive;$BHOME/libopenblas-pthreads.a;-Wl,--no-whole-archive;gfortran;quadmath;pthread" -DOPENBLAS-PTHREADS_LINKER_FLAGS=)
+else
+  EXTRA=OPENBLAS
+  PTHOPTS=()
+fi
 
 VER=3.5.0
 if [ ! -r flexiblas-$VER.tar.gz ] ; then
@@ -124,14 +156,16 @@ ${TRIPLET}-cmake -S . -B build64 \
   -DEXAMPLES=OFF \
   -DLTO=OFF \
   -DBLAS_AUTO_DETECT=OFF \
-  -DEXTRA=OPENBLAS \
+  "-DEXTRA=$EXTRA" \
   "-DOPENBLAS_LIBRARY=-Wl,--whole-archive;$TLIB/libopenblas.a;-Wl,--no-whole-archive;$FLIBS" \
   -DOPENBLAS_LINKER_FLAGS=-fopenmp \
+  "${PTHOPTS[@]}" \
   -DZDOTC_MKL_EXITCODE=1 \
   "-DCMAKE_SHARED_LINKER_FLAGS=$LDEXCLUDE" 2>&1 | tee configure64.out
 make -C build64 -j 2>&1 | tee make64.out
 make -C build64 install 2>&1 | tee install64.out
 cp configure64.out make64.out install64.out $BHOME/build
+# the libopenblas.a inside OPENBLAS-PTHREADS is not installed
 
 # pkg-config files, headers, documentation and import libraries are not
 # needed, except libflexiblas.dll.a: R's build reads from it the LAPACK
