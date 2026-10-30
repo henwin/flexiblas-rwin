@@ -28,7 +28,7 @@ jobs:
 
       - name: Install R with FlexiBLAS and its backends
         run: |
-          dnf install -y -q R-core R-flexiblas flexiblas-netlib binutils gcc gh \
+          dnf install -y -q R-core R-flexiblas flexiblas-netlib binutils gcc redhat-rpm-config gh \
               flexiblas-openblas-serial flexiblas-openblas-openmp flexiblas-openblas-threads
           flexiblas list
           # OpenBLAS's build configuration, including MAX_THREADS (NUM_THREADS)
