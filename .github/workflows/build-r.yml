@@ -437,6 +437,12 @@ jobs:
             Remove-Item Env:OMP_NUM_THREADS
           }
 
+      - name: BLAS called from OpenMP threads with a static libgomp
+        if: always()
+        timeout-minutes: 10
+        shell: pwsh
+        run: Rscript tests/test-omp-caller.R 2>&1 | Tee-Object -FilePath omp-caller.log
+
       - name: R's BLAS regression tests
         if: always()
         timeout-minutes: 10
@@ -472,6 +478,7 @@ jobs:
             profile-nonzero.log
             nan.log
             memory.log
+            omp-caller.log
             backends.log
             identical.log
             chol.log

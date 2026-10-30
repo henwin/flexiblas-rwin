@@ -10,7 +10,7 @@ name: NA, NaN and Inf outside Windows
 on:
   push:
     branches: [master]
-    paths: [tests/test-nan.R, tests/test-memory.R, .github/workflows/nan-platforms.yml]
+    paths: [tests/test-nan.R, tests/test-memory.R, tests/test-omp-caller.R, tests/omp-caller.c, .github/workflows/nan-platforms.yml]
   workflow_dispatch:
 
 permissions:
@@ -28,7 +28,7 @@ jobs:
 
       - name: Install R with FlexiBLAS and its backends
         run: |
-          dnf install -y -q R-core R-flexiblas flexiblas-netlib binutils gh \
+          dnf install -y -q R-core R-flexiblas flexiblas-netlib binutils gcc gh \
               flexiblas-openblas-serial flexiblas-openblas-openmp flexiblas-openblas-threads
           flexiblas list
           # OpenBLAS's build configuration, including MAX_THREADS (NUM_THREADS)
@@ -44,6 +44,9 @@ jobs:
             OPENBLAS_NUM_THREADS=1 Rscript tests/test-memory.R $b
           done 2>&1 | tee memory.log
 
+      - name: BLAS called from OpenMP threads, shared libgomp
+        run: Rscript tests/test-omp-caller.R 2>&1 | tee omp-caller.log
+
       - uses: ./.github/actions/report
         if: always()
         with:
@@ -51,6 +54,7 @@ jobs:
           status: ${{ job.status }}
           files: |
             nan.log
+            omp-caller.log
             memory.log
 
   backends-macos:
