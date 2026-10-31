@@ -181,19 +181,20 @@ if (identical(mode, "propagate") && identical(what, "cmp")) {
     refname <- if (file.exists("nan-ref.rds")) "R's own" else backends[1]
 
     cat("\nSignature: A = NA, N = NaN, I = Inf counts, # = MD5 of the NA/NaN/Inf pattern.\n")
-    cat("A row with one 'same' has every backend equal to ", refname,
-        "; otherwise the columns are\n", paste(backends, collapse = ", "), ", 'same' when equal.\n\n", sep = "")
+    cat("Results where some backend differs from ", refname, "; the columns are\n",
+        paste(backends, collapse = ", "), ", 'same' when equal.\n\n", sep = "")
     w <- max(nchar(names(ref)))
     ndiff <- 0
     for (k in names(ref)) {
         cells <- vapply(backends, function(be)
             if (identical(res[[be]][[k]], ref[[k]])) "same" else res[[be]][[k]], "")
-        if (all(cells == "same")) cells <- "same" else ndiff <- ndiff + 1
+        if (all(cells == "same")) next
+        ndiff <- ndiff + 1
         cat(formatC(k, width = -w), " ", formatC(ref[[k]], width = -52),
             paste(formatC(cells, width = -52), collapse = " "), "\n", sep = "")
     }
-    cat(sprintf("\n%d of %d results differ from %s for at least one backend\n",
-                ndiff, length(ref), refname))
+    cat(sprintf("%s%d of %d results differ from %s for at least one backend\n",
+                if (ndiff) "\n" else "", ndiff, length(ref), refname))
     if (length(threads)) {
         cat("\ndgemm NA n=385 [blas] by thread count:\n")
         for (l in threads) cat(l, "\n")
