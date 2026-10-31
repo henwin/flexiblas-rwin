@@ -365,7 +365,8 @@ jobs:
         shell: pwsh
         env:
           # Checks patches/openblas/0002-thread-limit.patch: without it, an
-          # explicit count above OMP_THREAD_LIMIT deadlocks.
+          # explicit count above OMP_THREAD_LIMIT deadlocks in the OpenMP
+          # build.  The pthreads build is outside the variable (see the test).
           OMP_THREAD_LIMIT: 1
         run: |
           Rscript tests/test-flexiblas.R 2>&1 | Tee-Object -FilePath tests-limit1.log
