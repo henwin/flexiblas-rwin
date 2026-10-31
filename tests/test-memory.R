@@ -1,4 +1,4 @@
-## Memory of the R process with an OpenBLAS backend (default OPENBLAS, or the
+## Memory of the R process with an OpenBLAS backend (OPENBLAS-OPENMP, or the
 ## name given as argument). OpenBLAS sets aside one buffer per thread when its
 ## thread server starts or the thread count grows, so memory is followed
 ## through startup, switching backend and a range of thread counts.
@@ -7,7 +7,7 @@
 ## counts what Windows would commit but is enforced only under strict
 ## overcommit.
 backend <- commandArgs(TRUE)[1]
-if (is.na(backend)) backend <- "OPENBLAS"
+if (is.na(backend)) backend <- "OPENBLAS-OPENMP"
 
 mem <- if (.Platform$OS.type == "windows") function(what) {
     ps <- system2("powershell", c("-NoProfile", "-Command", shQuote(sprintf(

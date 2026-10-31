@@ -1,7 +1,7 @@
 ## Run under FLEXIBLAS_HOOK=PROFILE. If R's LAPACK goes through FlexiBLAS,
 ## the profile records dpotrf and dgesv; if only R's reference LAPACK ran on
 ## top of FlexiBLAS's BLAS, it would record dsyrk, dgemm and dtrsm instead.
-flexiblas::flexiblas_switch(flexiblas::flexiblas_load_backend("OPENBLAS"))
+flexiblas::flexiblas_switch(flexiblas::flexiblas_load_backend("OPENBLAS-OPENMP"))
 set.seed(1)
 B <- matrix(rnorm(500^2), 500)
 S <- crossprod(B) + diag(500)

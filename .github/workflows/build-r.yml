@@ -17,7 +17,7 @@ on:
     inputs:
       backend:
         description: FlexiBLAS backend for the build and checks
-        default: OPENBLAS
+        default: OPENBLAS-OPENMP
       experiment:
         description: "Rblas -O3: R without FlexiBLAS, its own BLAS built with -O3 (patches/experiments/rblas-O3.diff); no test job"
         type: choice
@@ -194,7 +194,7 @@ jobs:
           /c/rbuild/build/R-${{ inputs.r }}-win.exe //VERYSILENT //SUPPRESSMSGBOXES //NORESTART //CURRENTUSER //DIR='C:\R-inst'
           if [ "${{ inputs.experiment }}" = none ]; then
             ls /c/R-inst/bin/x64/flexiblas /c/R-inst/etc
-            for b in NETLIB OPENBLAS OPENBLAS-PTHREADS; do
+            for b in NETLIB OPENBLAS-OPENMP OPENBLAS-THREADS; do
               FLEXIBLAS=$b /c/R-inst/bin/Rscript -e 'cat(extSoftVersion()[["BLAS"]], La_library(), sep = "\n")'
             done
           else
@@ -316,7 +316,7 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: |
-          foreach ($b in "NETLIB", "OPENBLAS", "OPENBLAS-PTHREADS") {
+          foreach ($b in "NETLIB", "OPENBLAS-OPENMP", "OPENBLAS-THREADS") {
             $env:FLEXIBLAS = $b
             Rscript tests/test-chol.R 2>&1 | Tee-Object -Append -FilePath chol.log
           }
@@ -413,10 +413,10 @@ jobs:
           fail=0
           check() { printf '%-45s %s\n' "$1" "$2"; [ "$2" = "$3" ] || { echo "  expected $3"; fail=1; }; }
           check "default" "$(cur)" NETLIB
-          check "FLEXIBLAS=OPENBLAS" "$(FLEXIBLAS=OPENBLAS cur)" OPENBLAS
+          check "FLEXIBLAS=OPENBLAS-OPENMP" "$(FLEXIBLAS=OPENBLAS-OPENMP cur)" OPENBLAS-OPENMP
           u="$(cygpath -u "$APPDATA")/flexiblasrc"
-          printf 'default = OPENBLAS\n' > "$u"
-          check "user config %APPDATA%\\flexiblasrc: default = OPENBLAS" "$(cur)" OPENBLAS
+          printf 'default = OPENBLAS-THREADS\n' > "$u"
+          check "user config %APPDATA%\\flexiblasrc: default = OPENBLAS-THREADS" "$(cur)" OPENBLAS-THREADS
           check "  overridden by FLEXIBLAS=NETLIB" "$(FLEXIBLAS=NETLIB cur)" NETLIB
           rm "$u"
           exit $fail
@@ -427,7 +427,7 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: |
-          foreach ($b in "OPENBLAS", "OPENBLAS-PTHREADS") {
+          foreach ($b in "OPENBLAS-OPENMP", "OPENBLAS-THREADS") {
             Rscript tests/test-memory.R $b 2>&1 | Tee-Object -Append -FilePath memory.log
             $env:OPENBLAS_NUM_THREADS = 1
             Rscript tests/test-memory.R $b 2>&1 | Tee-Object -Append -FilePath memory.log
@@ -462,7 +462,7 @@ jobs:
         shell: pwsh
         env:
           # They expect a threaded default backend.
-          FLEXIBLAS: OPENBLAS
+          FLEXIBLAS: OPENBLAS-OPENMP
         run: |
           Rscript -e "tinytest::test_package('flexiblas')" 2>&1 | Tee-Object -FilePath pkg-tests.log
           if (Select-String -Path pkg-tests.log -Pattern 'FAILED|Error|fails' -Quiet) { exit 1 }

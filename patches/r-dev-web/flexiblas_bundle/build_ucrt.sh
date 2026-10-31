@@ -13,15 +13,18 @@ set -e
 # The target is x86_64 by default. It can also be specified as aarch64.
 #
 # FlexiBLAS loads its backends at run time and is therefore built as DLLs.
-# The OPENBLAS backend contains the toolchain's static OpenBLAS, which uses
-# OpenMP; the OPENBLAS-PTHREADS backend contains an OpenBLAS built here with
-# pthreads instead (x86_64 only for now), from the same sources with the
-# same settings as the toolchain's openblas.mk otherwise.  The runtime
+# The default backend is NETLIB, the reference BLAS and LAPACK FlexiBLAS
+# builds, so results are those of R's own.  The OPENBLAS-OPENMP backend
+# contains the toolchain's static OpenBLAS, which uses OpenMP; the
+# OPENBLAS-THREADS backend contains an OpenBLAS built here with pthreads
+# instead (x86_64 only for now), from the same sources with the same
+# settings as the toolchain's openblas.mk otherwise.  The names are those
+# Fedora gives the two builds.  The runtime
 # libraries are linked in statically but not exported, since MinGW's
 # export-all would otherwise export libssp's __stack_chk_fail and libgomp.
 #
 # The bundle has R's layout: the DLLs in bin/x64 (bin on aarch64), the
-# OPENBLAS backend in bin/x64/flexiblas, and the configuration in etc, which
+# OpenBLAS backends in bin/x64/flexiblas, and the configuration in etc, which
 # FlexiBLAS finds relative to its DLLs (../../etc, set by
 # CMAKE_INSTALL_BINDIR).  R's Rblas.dll and Rlapack.dll forward to
 # libflexiblas.dll.
@@ -72,7 +75,7 @@ echo "Building for target $RTARGET."
 
 mkdir build
 
-# OpenBLAS with pthreads for the OPENBLAS-PTHREADS backend: the toolchain's
+# OpenBLAS with pthreads for the OPENBLAS-THREADS backend: the toolchain's
 # openblas.mk settings except USE_OPENMP, and NUM_THREADS fixed at 64 rather
 # than the processor count of the build machine.  The build takes an hour or
 # more, so a libopenblas-pthreads.a left from an earlier run is reused, like
@@ -92,10 +95,10 @@ if [ ${PTHREADS} == "yes" ] ; then
     cp libopenblas.a $BHOME/libopenblas-pthreads.a
     cd $BHOME
   fi
-  EXTRA="OPENBLAS;OPENBLAS-PTHREADS"
-  PTHOPTS=("-DOPENBLAS-PTHREADS_LIBRARY=-Wl,--whole-archive;$BHOME/libopenblas-pthreads.a;-Wl,--no-whole-archive;gfortran;quadmath;pthread" -DOPENBLAS-PTHREADS_LINKER_FLAGS=)
+  EXTRA="OPENBLAS-OPENMP;OPENBLAS-THREADS"
+  PTHOPTS=("-DOPENBLAS-THREADS_LIBRARY=-Wl,--whole-archive;$BHOME/libopenblas-pthreads.a;-Wl,--no-whole-archive;gfortran;quadmath;pthread" -DOPENBLAS-THREADS_LINKER_FLAGS=)
 else
-  EXTRA=OPENBLAS
+  EXTRA=OPENBLAS-OPENMP
   PTHOPTS=()
 fi
 
@@ -157,15 +160,15 @@ ${TRIPLET}-cmake -S . -B build64 \
   -DLTO=OFF \
   -DBLAS_AUTO_DETECT=OFF \
   "-DEXTRA=$EXTRA" \
-  "-DOPENBLAS_LIBRARY=-Wl,--whole-archive;$TLIB/libopenblas.a;-Wl,--no-whole-archive;$FLIBS" \
-  -DOPENBLAS_LINKER_FLAGS=-fopenmp \
+  "-DOPENBLAS-OPENMP_LIBRARY=-Wl,--whole-archive;$TLIB/libopenblas.a;-Wl,--no-whole-archive;$FLIBS" \
+  -DOPENBLAS-OPENMP_LINKER_FLAGS=-fopenmp \
   "${PTHOPTS[@]}" \
   -DZDOTC_MKL_EXITCODE=1 \
   "-DCMAKE_SHARED_LINKER_FLAGS=$LDEXCLUDE" 2>&1 | tee configure64.out
 make -C build64 -j 2>&1 | tee make64.out
 make -C build64 install 2>&1 | tee install64.out
 cp configure64.out make64.out install64.out $BHOME/build
-# the libopenblas.a inside OPENBLAS-PTHREADS is not installed
+# the libopenblas.a inside OPENBLAS-THREADS is not installed
 
 # pkg-config files, headers, documentation and import libraries are not
 # needed, except libflexiblas.dll.a: R's build reads from it the LAPACK

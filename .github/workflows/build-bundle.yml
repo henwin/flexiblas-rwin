@@ -151,7 +151,7 @@ jobs:
             docker-build.log
 
   # The thread-count cases behind patches/openblas/ (tests/omp-cases.sh)
-  # against the OpenBLAS backend of the bundle just built, with the test
+  # against the OPENBLAS-OPENMP backend of the bundle just built, with the test
   # programs built by Rtools45 as a package's code would be: static
   # libgomp, dlopen from dlfcn-win32.
   thread-cases:
@@ -172,14 +172,14 @@ jobs:
           r-version: devel
           rtools-version: '45'
 
-      - name: Run the cases against the OpenBLAS backend
+      - name: Run the cases against the OpenMP backend
         shell: C:\rtools45\usr\bin\bash.exe --login -o pipefail {0}
         env:
           CHERE_INVOKING: 1
         run: |
           # the backend may import from libflexiblas.dll, which the loader finds on PATH
           export PATH=/x86_64-w64-mingw32.static.posix/bin:$PWD/dist/FlexiBLAS/bin/x64:$PATH
-          lib=$(ls dist/FlexiBLAS/bin/x64/flexiblas/*openblas*.dll)
+          lib=$(ls dist/FlexiBLAS/bin/x64/flexiblas/*openblas-openmp*.dll)
           echo "backend: $lib"
           objdump -p "$lib" | grep -E ' (openblas_set_num_threads|dgemm_)$'
           bash tests/omp-cases.sh "$(cygpath -w "$lib")" 2>&1 | tee omp-cases.log

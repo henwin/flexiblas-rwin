@@ -29,7 +29,7 @@ Index: doc/manual/rw-FAQ.texi
 +R built with @I{FlexiBLAS} (@code{USE_FLEXIBLAS = YES} in
 +@file{src/gnuwin32/MkRules.local}) can switch the BLAS and LAPACK
 +at run time instead: set the environment variable @env{FLEXIBLAS},
-+for example to @code{OPENBLAS}, before starting R, or change the
++for example to @code{OPENBLAS-OPENMP}, before starting R, or change the
 +default in @file{R_HOME\etc\flexiblasrc}.
 +
  @c Versions of Dr Kazushige Goto's BLAS (see

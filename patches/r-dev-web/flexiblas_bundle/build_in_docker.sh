@@ -18,7 +18,7 @@
 # in the current directory, where REV is a revision number, e.g.  5168. 
 # These files are produced by ../toolchain_libs and existing builds can
 # be downloaded from https://www.r-project.org/nosvn/winutf8/ucrt3
-# FlexiBLAS's OPENBLAS backend is linked from the toolchain's OpenBLAS.
+# FlexiBLAS's OPENBLAS-OPENMP backend is linked from the toolchain's OpenBLAS.
 #
 # Target is the first (optional) argument, the default is x86_64.  It can be
 # specified also as aarch64 or "all" (to build both targets).
