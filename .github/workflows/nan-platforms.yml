@@ -45,7 +45,10 @@ jobs:
           done 2>&1 | tee memory.log
 
       - name: BLAS called from OpenMP threads, shared libgomp
-        run: Rscript tests/test-omp-caller.R 2>&1 | tee omp-caller.log
+        run: |
+          Rscript tests/test-omp-caller.R 2>&1 | tee omp-caller.log
+          Rscript tests/test-omp-caller.R 200 200 2>&1 | tee -a omp-caller.log
+          Rscript tests/test-omp-caller.R 64 1000 2>&1 | tee -a omp-caller.log
 
       - uses: ./.github/actions/report
         if: always()

@@ -441,7 +441,12 @@ jobs:
         if: always()
         timeout-minutes: 10
         shell: pwsh
-        run: Rscript tests/test-omp-caller.R 2>&1 | Tee-Object -FilePath omp-caller.log
+        # large calls, and many small ones, where a server that serialises
+        # callers would show
+        run: |
+          Rscript tests/test-omp-caller.R 2>&1 | Tee-Object -FilePath omp-caller.log
+          Rscript tests/test-omp-caller.R 200 200 2>&1 | Tee-Object -Append -FilePath omp-caller.log
+          Rscript tests/test-omp-caller.R 64 1000 2>&1 | Tee-Object -Append -FilePath omp-caller.log
 
       - name: R's BLAS regression tests
         if: always()
