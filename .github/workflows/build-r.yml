@@ -171,7 +171,7 @@ jobs:
           ls -la
 
       - name: Run build.sh --check
-        id: build
+        id: buildsh
         shell: C:\msys64\usr\bin\bash.exe --login {0}
         env:
           CHERE_INVOKING: 1
@@ -250,9 +250,9 @@ jobs:
             echo "toolchain $TOOLCHAIN, Tcl/Tk $TCLTK"
             echo
             printf '%-32s %s\n' "setup.ps1" "${{ steps.setup.outcome }}" \
-              "build.sh, installer" "${{ steps.build.outputs.installer || steps.build.outcome }}" \
-              "make check-devel" "${{ steps.build.outputs.checkdevel || 'not run' }}" \
-              "make check-all" "${{ steps.build.outputs.checkall || 'not run' }}" \
+              "build.sh, installer" "${{ steps.buildsh.outputs.installer || steps.buildsh.outcome }}" \
+              "make check-devel" "${{ steps.buildsh.outputs.checkdevel || 'not run' }}" \
+              "make check-all" "${{ steps.buildsh.outputs.checkall || 'not run' }}" \
               "installer installs, R reports" "${{ steps.install.outcome }}"
             for f in checkdevel.out checkall.out; do
               [ -f $b/build/$f ] && echo "$f: $(grep -c '^Status: OK' $b/build/$f) OK, $(grep -c '^Status: .*NOTE' $b/build/$f) with NOTEs, $(grep -c '^Status: .*WARNING' $b/build/$f) with WARNINGs, $(grep -c '^Status: .*ERROR' $b/build/$f) with ERRORs"
