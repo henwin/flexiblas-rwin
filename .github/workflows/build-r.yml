@@ -1,7 +1,7 @@
 name: R with the R-core scripts
 
-# Builds R-devel or R-patched and its installer with the R-core scripts
-# from R-dev-web
+# Builds R-devel, R-patched or R-release and its installer with the
+# R-core scripts from R-dev-web
 # (WindowsBuilds/winutf8/ucrt3/r): setup.ps1 installs Inno Setup, MiKTeX,
 # qpdf, Ghostscript and MSYS2, and build.sh --check unpacks the toolchain
 # tarball and the Tcl/Tk bundle, checks out R, applies the r_*.diff
@@ -10,6 +10,9 @@ name: R with the R-core scripts
 # build-bundle.yml, patches/r as further r_*.diff, and
 # patches/r-dev-web/0002 to build.sh, which uses the bundle when present,
 # and 0004, without which build.sh --patched checks out no branch.
+# build.sh builds trunk or the R-patched branch; for release, the branch
+# in the checkout line is replaced by the latest R-x-y-z tag of the
+# release series, since R-core builds release in another way.
 # The test job then installs the installer and runs tests/ against it.
 # Long, so it runs only on demand.
 on:
@@ -26,7 +29,7 @@ on:
       r:
         description: The R to build, and to test against CRAN's build of the same
         type: choice
-        options: [devel, patched]
+        options: [devel, patched, release]
         default: devel
       build:
         description: Build R; otherwise test the installer of the latest successful run
@@ -158,6 +161,12 @@ jobs:
           cd /c/rbuild
           patch -p0 < "$w/patches/r-dev-web/0002-build-flexiblas-bundle.patch"
           patch -p0 < "$w/patches/r-dev-web/0004-build-patched-branch-name.patch"
+          if [ "${{ inputs.r }}" = release ]; then
+            tag=$(svn ls https://svn.r-project.org/R/tags | grep -E '^R-[0-9]+-[0-9]+-[0-9]+/$' | sort -t- -k2,2n -k3,3n -k4,4n | tail -1 | tr -d /)
+            echo "release tag $tag"
+            sed -i "s#branches/\${BNAME} patched#tags/$tag patched#" build.sh
+            grep -n "tags/$tag" build.sh
+          fi
           ls -la
 
       - name: Run build.sh --check
@@ -167,7 +176,7 @@ jobs:
           FLEXIBLAS: ${{ inputs.backend }}
         working-directory: C:\rbuild
         run: |
-          ./build.sh ${{ inputs.check && '--check' || '' }} ${{ inputs.r == 'patched' && '--patched' || '' }} > build.log 2>&1
+          ./build.sh ${{ inputs.check && '--check' || '' }} ${{ inputs.r != 'devel' && '--patched' || '' }} > build.log 2>&1
           status=$?
           tail -30 build.log
           ls -la build
@@ -191,7 +200,8 @@ jobs:
           CHERE_INVOKING: 1
         run: |
           exec > >(tee /c/rbuild/install.log) 2>&1
-          /c/rbuild/build/R-${{ inputs.r }}-win.exe //VERYSILENT //SUPPRESSMSGBOXES //NORESTART //CURRENTUSER //DIR='C:\R-inst'
+          # build.sh names the release installer as the patched one
+          /c/rbuild/build/R-${{ inputs.r == 'devel' && 'devel' || 'patched' }}-win.exe //VERYSILENT //SUPPRESSMSGBOXES //NORESTART //CURRENTUSER //DIR='C:\R-inst'
           if [ "${{ inputs.experiment }}" = none ]; then
             ls /c/R-inst/bin/x64/flexiblas /c/R-inst/etc
             for b in NETLIB OPENBLAS-OPENMP OPENBLAS-THREADS; do
@@ -258,7 +268,8 @@ jobs:
 
   # The installer from the build job, tested as the old "Build and test"
   # tested CRAN's R with the forwarders copied in. CRAN's build of the same
-  # R (R-devel against R-devel, R-patched against R-patched), with
+  # R (R-devel against R-devel, R-patched against R-patched, R-release
+  # against R-release), with
   # R's own BLAS and LAPACK, gives the reference results.
   test:
     name: Test the installed R
@@ -290,7 +301,7 @@ jobs:
       - uses: r-lib/actions/setup-r@v2
         with:
           # "next" is R-patched
-          r-version: ${{ inputs.r == 'patched' && 'next' || 'devel' }}
+          r-version: ${{ inputs.r == 'patched' && 'next' || inputs.r }}
           rtools-version: '45'
 
       - name: Reference results with CRAN's build of the same R, with R's own BLAS and LAPACK
