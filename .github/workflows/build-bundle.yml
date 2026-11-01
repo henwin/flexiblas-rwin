@@ -83,11 +83,18 @@ jobs:
         run: |
           { grep -n -E 'error|Error|ERROR|No such|not found|failed|Failed' docker-build.log | grep -v liberror-perl | tail -25; echo ...; tail -30 docker-build.log; } > tail.log
           ls -la dist dist/*/bin/* > dist.log 2>&1 || true
+          # the bundle in a few lines: the zip, the backends, the OpenBLAS build
+          {
+            for z in dist/*.zip; do echo "$z: $(du -k "$z" | cut -f1) kB, $(du -sk "${z%.zip}" | cut -f1) kB installed"; done
+            echo "backends: $(ls dist/*/bin/*/flexiblas/ dist/*/bin/flexiblas/ 2>/dev/null | grep dll | tr '\n' ' ')"
+            echo "OpenBLAS in the pthreads backend: $(grep -h -m1 -o -E 'OpenBLAS-[0-9.]+' docker-build.log | head -1), files patched by flexiblas.diff and openblas-*.patch: $(grep -c "^patching file" docker-build.log)"
+          } > summary.log 2>&1 || true
 
       - uses: ./.github/actions/report
         if: always()
         with:
           status: ${{ job.status }}
+          summary: summary.log
           files: |
             The bundle: dist.log
             Errors and the end of the build log: tail.log
@@ -137,12 +144,19 @@ jobs:
         run: |
           { grep -n -E 'error|Error|ERROR|No such|not found|failed|Failed' docker-build.log | grep -v liberror-perl | tail -25; echo ...; tail -30 docker-build.log; } > tail.log
           ls -la dist dist/*/bin/* > dist.log 2>&1 || true
+          # the bundle in a few lines: the zip, the backends, the OpenBLAS build
+          {
+            for z in dist/*.zip; do echo "$z: $(du -k "$z" | cut -f1) kB, $(du -sk "${z%.zip}" | cut -f1) kB installed"; done
+            echo "backends: $(ls dist/*/bin/*/flexiblas/ dist/*/bin/flexiblas/ 2>/dev/null | grep dll | tr '\n' ' ')"
+            echo "OpenBLAS in the pthreads backend: $(grep -h -m1 -o -E 'OpenBLAS-[0-9.]+' docker-build.log | head -1), files patched by flexiblas.diff and openblas-*.patch: $(grep -c "^patching file" docker-build.log)"
+          } > summary.log 2>&1 || true
 
       - uses: ./.github/actions/report
         if: always()
         with:
           key: ${{ github.workflow }} (aarch64)
           status: ${{ job.status }}
+          summary: summary.log
           files: |
             The bundle: dist.log
             Errors and the end of the build log: tail.log

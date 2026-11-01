@@ -151,12 +151,16 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Summarise
+        id: summarise
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           cat log-*/optflags.log | tr -d '\r' > all.log
+          # the run the logs come from, when summarising an earlier one
+          run=${{ inputs.summarise || github.run_id }}
+          echo "status=$(gh api repos/$GITHUB_REPOSITORY/actions/runs/$run --jq '.conclusion // .status')" >> $GITHUB_OUTPUT
           {
-            echo "packages compared: $(grep -ac '^== ' all.log)"
+            echo "packages compared (run $run): $(grep -ac '^== ' all.log)"
             echo "not installed: $(grep -ac ' not installed$' all.log)"
             echo "test runs that crashed or timed out: $(grep -ac ': exit status ' all.log)"
             # the per-package lines: "== pkg N output files: a same, b differ in O3, c failed, d missing, e unstable"
@@ -179,9 +183,9 @@ jobs:
       - uses: ./.github/actions/report
         if: always()
         with:
-          status: ${{ needs.packages.result }}
+          status: ${{ steps.summarise.outputs.status || needs.packages.result }}
+          summary: summary.txt
           files: |
-            summary.txt
             Stable differences: differ.txt
             Differences: detail.txt
             Failed or timed out: failed.txt

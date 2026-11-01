@@ -116,6 +116,7 @@ jobs:
       # $ErrorActionPreference to Stop, which turns errors setup.ps1 lives
       # with into fatal ones.
       - name: Run setup.ps1
+        id: setup
         timeout-minutes: 15
         shell: pwsh
         run: |
@@ -170,6 +171,7 @@ jobs:
           ls -la
 
       - name: Run build.sh --check
+        id: build
         shell: C:\msys64\usr\bin\bash.exe --login {0}
         env:
           CHERE_INVOKING: 1
@@ -182,11 +184,14 @@ jobs:
           ls -la build
           # build.sh goes on after errors and pipes make through tee, so its
           # products decide: the installer, and checks without make errors
-          ls build/R-*-win.exe > /dev/null 2>&1 || { echo "::error::no installer"; status=1; }
+          r=ok; ls build/R-*-win.exe > /dev/null 2>&1 || { echo "::error::no installer"; status=1; r=missing; }
+          echo "installer=$r" >> $GITHUB_OUTPUT
           if [ "${{ inputs.check }}" = true ]; then
             for f in build/checkdevel.out build/checkall.out; do
-              if [ ! -f "$f" ]; then echo "::error::$f missing"; status=1
-              elif grep -n 'make.*\*\*\*' "$f"; then echo "::error::make errors in $f"; status=1; fi
+              r=ok
+              if [ ! -f "$f" ]; then echo "::error::$f missing"; status=1; r=missing
+              elif grep -n 'make.*\*\*\*' "$f"; then echo "::error::make errors in $f"; status=1; r=failed; fi
+              n=${f##*/}; echo "${n%.out}=$r" >> $GITHUB_OUTPUT
             done
           fi
           exit $status
@@ -194,6 +199,7 @@ jobs:
       # The installer, installed silently into a fresh directory: FlexiBLAS's
       # DLLs, backends and configuration must come with it.
       - name: Install R from the installer
+        id: install
         timeout-minutes: 15
         shell: C:\msys64\usr\bin\bash.exe --login -eo pipefail {0}
         env:
@@ -237,34 +243,51 @@ jobs:
           # bash -e, a loop ending in a false test would end the step)
           set +e
           b=/c/rbuild
+          # what was checked and how it came out
           {
-            echo "R-${{ inputs.r }}, backend: ${{ inputs.backend }}, experiment: ${{ inputs.experiment }}"
+            echo "R-${{ inputs.r }}$([ -f $b/build/svn_revision ] && echo " r$(cat $b/build/svn_revision)"), checks with FLEXIBLAS=${{ inputs.backend }}${{ inputs.experiment != 'none' && format(', experiment {0}', inputs.experiment) || '' }}"
             cat /c/bundle.txt 2>/dev/null
-            [ -f $b/build/svn_revision ] && echo "R revision $(cat $b/build/svn_revision), toolchain $TOOLCHAIN, Tcl/Tk $TCLTK"
-            [ -f $b/build.log ] && grep -m1 -o -E 'gfortran [^&;]* -c blas\.f' $b/build.log
-            if [ -f $b/setup.log ]; then
-              echo "setup.log (Inno Setup, errors):"
-              grep -v 'DEBUG:' $b/setup.log | sed -e 's/\x1b\[[0-9;]*m//g' | grep -v '^\s*$' | grep -i -E -A3 'inno|error|exception|denied' | head -40
-              ls -la /c/temp "/c/Program Files (x86)" 2>&1 | grep -i -E 'inno|\.exe' | head
-            fi
-            [ -f $b/build.log ] && { echo "build.log (errors and tail):"; grep -n -E 'Error|error:|\*\*\*|not available' $b/build.log | head -20; tail -15 $b/build.log; }
-            [ -f $b/install.log ] && { echo "install.log:"; cat $b/install.log; }
+            echo "toolchain $TOOLCHAIN, Tcl/Tk $TCLTK"
+            echo
+            printf '%-32s %s\n' "setup.ps1" "${{ steps.setup.outcome }}" \
+              "build.sh, installer" "${{ steps.build.outputs.installer || steps.build.outcome }}" \
+              "make check-devel" "${{ steps.build.outputs.checkdevel || 'not run' }}" \
+              "make check-all" "${{ steps.build.outputs.checkall || 'not run' }}" \
+              "installer installs, R reports" "${{ steps.install.outcome }}"
             for f in checkdevel.out checkall.out; do
-              [ -f $b/build/$f ] && { echo "$f (tail):"; tail -8 $b/build/$f; }
+              [ -f $b/build/$f ] && echo "$f: $(grep -c '^Status: OK' $b/build/$f) OK, $(grep -c '^Status: .*NOTE' $b/build/$f) with NOTEs, $(grep -c '^Status: .*WARNING' $b/build/$f) with WARNINGs, $(grep -c '^Status: .*ERROR' $b/build/$f) with ERRORs"
+            done
+          } > summary.log
+          # the errors themselves, and nothing that only looks like one
+          {
+            if [ -f $b/setup.log ]; then
+              echo "setup.log (errors):"
+              grep -v 'DEBUG:' $b/setup.log | sed -e 's/\x1b\[[0-9;]*m//g' | grep -i -E 'exit status|error|exception|denied' | grep -v -E '^gpg:' | head -20
+            fi
+            if [ -f $b/build.log ]; then
+              echo "build.log (errors):"
+              grep -n -E '^Error( in|:)|^ERROR|error: |\*\*\* \[|not available' $b/build.log | head -20
+              echo "build.log (tail):"; tail -15 $b/build.log
+            fi
+            for f in checkdevel.out checkall.out; do
+              [ -f $b/build/$f ] && { echo "$f (errors):"; grep -n -E '^Error( in|:)|^ERROR|\*\*\* \[|^Status: .*(ERROR|WARNING)' $b/build/$f | head -20; }
             done
             for f in $(find $b/trunk/tests $b/trunk/src/library $b/patched/tests $b/patched/src/library -name '*.Rout.fail' 2>/dev/null); do
               echo "== $f"
               tail -15 "$f"
             done
-          } > summary.log
-          cat summary.log
+          } > errors.log
+          cat summary.log errors.log
 
       - uses: ./.github/actions/report
         if: always()
         with:
           key: ${{ github.workflow }} (${{ inputs.r }}${{ inputs.experiment != 'none' && format(', {0}', inputs.experiment) || '' }})
           status: ${{ job.status }}
-          files: summary.log
+          summary: summary.log
+          files: |
+            Errors: errors.log
+            Installation: /c/rbuild/install.log
 
   # The installer from the build job, tested as the old "Build and test"
   # tested CRAN's R with the forwarders copied in. CRAN's build of the same
@@ -333,6 +356,7 @@ jobs:
           }
 
       - name: Install the flexiblas R package, patched for Windows
+        id: pkg
         timeout-minutes: 10
         shell: bash
         run: |
@@ -345,6 +369,7 @@ jobs:
           Rscript -e "stopifnot(requireNamespace('flexiblas'))"
 
       - name: Startup with verbose FlexiBLAS
+        id: startup
         timeout-minutes: 5
         shell: pwsh
         env:
@@ -352,6 +377,7 @@ jobs:
         run: Rscript -e "sessionInfo()" 2>&1 | Tee-Object -FilePath startup.log
 
       - name: Run tests
+        id: tests
         timeout-minutes: 15
         shell: pwsh
         run: |
@@ -359,6 +385,7 @@ jobs:
           exit $LASTEXITCODE
 
       - name: Run tests with OMP_NUM_THREADS=1
+        id: tests_omp1
         if: always()
         timeout-minutes: 8
         shell: pwsh
@@ -371,6 +398,7 @@ jobs:
           exit $LASTEXITCODE
 
       - name: Run tests with OMP_THREAD_LIMIT=1
+        id: tests_limit1
         if: always()
         timeout-minutes: 8
         shell: pwsh
@@ -392,6 +420,7 @@ jobs:
           exit $LASTEXITCODE
 
       - name: Check that LAPACK calls reach FlexiBLAS
+        id: profile
         if: always()
         timeout-minutes: 5
         shell: pwsh
@@ -408,6 +437,7 @@ jobs:
           if (($hits | Measure-Object).Count -lt 2) { exit 1 }
 
       - name: NETLIB gives bit for bit the results of R's own BLAS and LAPACK
+        id: identical
         if: always()
         timeout-minutes: 5
         shell: pwsh
@@ -416,6 +446,7 @@ jobs:
           exit $LASTEXITCODE
 
       - name: Backend selection by environment and user configuration
+        id: backends
         if: always()
         timeout-minutes: 5
         shell: bash
@@ -461,6 +492,7 @@ jobs:
           Rscript tests/test-omp-caller.R 64 1000 2>&1 | Tee-Object -Append -FilePath omp-caller.log
 
       - name: R's BLAS regression tests
+        id: regblas
         if: always()
         timeout-minutes: 10
         shell: pwsh
@@ -469,6 +501,7 @@ jobs:
           exit $LASTEXITCODE
 
       - name: The flexiblas package's own tests
+        id: pkgtests
         if: always()
         timeout-minutes: 10
         shell: pwsh
@@ -479,11 +512,46 @@ jobs:
           Rscript -e "tinytest::test_package('flexiblas')" 2>&1 | Tee-Object -FilePath pkg-tests.log
           if (Select-String -Path pkg-tests.log -Pattern 'FAILED|Error|fails' -Quiet) { exit 1 }
 
+      # What was checked and how it came out, then the one-line results of
+      # the measurements; the logs themselves are collapsed in the report.
+      - name: Summarise
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "$(Rscript -e 'cat(R.version.string)' 2>/dev/null), installer from run ${{ steps.prev.outputs.run_id || github.run_id }}, reference: CRAN's build of the same R"
+            echo
+            echo "Checks (the job fails if one fails):"
+            printf '  %-58s %s\n' \
+              "flexiblas package installs" "${{ steps.pkg.outcome }}" \
+              "test-flexiblas.R: backends, errors vs NETLIB, thread counts" "${{ steps.tests.outcome }}" \
+              "  the same with OMP_NUM_THREADS=1" "${{ steps.tests_omp1.outcome }}" \
+              "  the same with OMP_THREAD_LIMIT=1 (OpenMP build caps at 1)" "${{ steps.tests_limit1.outcome }}" \
+              "LAPACK calls reach the backend (profile hook)" "${{ steps.profile.outcome }}" \
+              "NETLIB bit for bit R's own (test-identical.R)" "${{ steps.identical.outcome }}" \
+              "backend selection: default, FLEXIBLAS, user flexiblasrc" "${{ steps.backends.outcome }}" \
+              "R's reg-BLAS.R" "${{ steps.regblas.outcome }}" \
+              "the package's tinytest suite" "${{ steps.pkgtests.outcome }}"
+            echo
+            echo "Measurements (reported, not checked):"
+            echo "  identical.log: $(grep -m1 'results differ' identical.log)"
+            echo "  nan.log: $(grep -m1 'results differ' nan.log)"
+            echo "  chol.log, NaN on the diagonal: $(grep -c 'NaN on the diagonal.*error:' chol.log) of $(grep -c 'NaN on the diagonal' chol.log) BLAS/LAPACK sets give an error"
+            echo "  memory.log, private bytes after loading the backend:"
+            grep -E '^backend:|loaded,' memory.log | paste - - | sed -E 's/^backend: (\S+) ; OPENBLAS_NUM_THREADS: (\S+) ; OMP_NUM_THREADS: (\S+) ; cores: [0-9]+\s+\S+ loaded, ([0-9]+) threads private +([0-9]+) MB.*/    \1 OPENBLAS_NUM_THREADS=\2 OMP_NUM_THREADS=\3: \4 threads, \5 MB/'
+            echo "  omp-caller.log: process thread counts with 4 OpenMP callers and 4 BLAS threads, n = 1000:"
+            awk '/^cores: 4  n: 1000/ {p = 1} /^cores: 4  n: 200/ {p = 0} p && $2 == 4 && $3 == 4 {printf "    %-18s %s threads, %s s\n", $1, $5, $4}' omp-caller.log
+            echo "  tests.log, B %*% B at n = 3000 (s):"
+            awk '/^== / {b = $2} /B %\*% B.*thread\(s\)/ {for (i = 1; i <= NF; i++) if ($(i + 1) == "thread(s):") n = $i; printf "    %-18s %s threads: %s\n", b, n, $NF}' tests.log
+          } > summary.log 2>&1
+          cat summary.log
+
       - uses: ./.github/actions/report
         if: always()
         with:
           key: ${{ github.workflow }} (${{ inputs.r }}, test)
           status: ${{ job.status }}
+          summary: summary.log
           files: |
             startup.log
             tests.log
