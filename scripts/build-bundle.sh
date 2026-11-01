@@ -7,18 +7,23 @@ set -euo pipefail
 WORK=${WORK:-/work}
 target=${1:-x86_64}
 case $target in
-    x86_64)  export PATH=/usr/lib/mxe/usr/bin:$PATH; name=FlexiBLAS ;;
-    aarch64) export PATH=/usr/lib/mxe/usr_aarch64/bin:$PATH; name=FlexiBLAS-aarch64 ;;
+    x86_64)  mxe=/opt/mxe; name=FlexiBLAS ;;
+    aarch64) mxe=/opt/mxe-aarch64; name=FlexiBLAS-aarch64 ;;
     *) echo "unknown target $target" >&2; exit 2 ;;
 esac
+export PATH=$mxe/usr/bin:$PATH
 b=$(mktemp -d)
 cp "$WORK"/patches/r-dev-web/flexiblas_bundle/build_ucrt.sh "$b"
 # flexiblas.diff, which build_ucrt.sh applies as tcl_bundle applies tcl.diff
 cat "$WORK"/patches/flexiblas/*.patch > "$b/flexiblas.diff"
+# the OpenBLAS patches as MXE has them after build-mxe.sh, R-core's and ours,
+# for the pthreads build of the bundle
+cp "$mxe"/src/openblas-*.patch "$b"
 cd "$b"
 # the pthreads OpenBLAS the bundle builds, kept in bundle-out by the hash of
-# the bundle script, as build-mxe.sh keeps the MXE build of OpenBLAS
-h=$(sha256sum "$WORK"/patches/r-dev-web/flexiblas_bundle/build_ucrt.sh | cut -c1-12)
+# the bundle script and the OpenBLAS patches, as build-mxe.sh keeps the MXE
+# build of OpenBLAS
+h=$(cat "$WORK"/patches/r-dev-web/flexiblas_bundle/build_ucrt.sh "$WORK"/patches/openblas/*.patch | sha256sum | cut -c1-12)
 cache=$WORK/bundle-out/libopenblas-pthreads-$target-$h.a
 [ ! -f "$cache" ] || cp "$cache" libopenblas-pthreads.a
 # CMake takes CMAKE_EXPORT_COMPILE_COMMANDS from the environment, so the

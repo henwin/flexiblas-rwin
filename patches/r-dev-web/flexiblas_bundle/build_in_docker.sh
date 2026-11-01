@@ -160,6 +160,10 @@ EOF
   docker stop $CID
   docker cp build_ucrt.sh $CID:/root
   docker cp flexiblas.diff $CID:/root
+  # the OpenBLAS patches of the toolchain, for the OPENBLAS-THREADS backend
+  for P in ../toolchain_libs/mxe/src/openblas-*.patch ; do
+    docker cp $P $CID:/root
+  done
   docker start $CID
 
   cat <<EOF | docker exec --interactive $CID bash -x
