@@ -8,17 +8,18 @@
 # This needs files
 #
 #   for target x86_64:
-#     gcc14_ucrt3_base_REV.tar.zst
+#     gcc14_ucrt3_full_REV.tar.zst
 #     gcc14_ucrt3_cross_REV.tar.zst
 #
 #   for target aarch64:
-#     llvm19_ucrt3_base_aarch64_REV.tar.zst
+#     llvm19_ucrt3_full_aarch64_REV.tar.zst
 #     llvm19_ucrt3_cross_aarch64_REV.tar.zst
 #     
 # in the current directory, where REV is a revision number, e.g.  5168. 
 # These files are produced by ../toolchain_libs and existing builds can
 # be downloaded from https://www.r-project.org/nosvn/winutf8/ucrt3
-# FlexiBLAS's OPENBLAS-OPENMP backend is linked from the toolchain's OpenBLAS.
+# The full toolchain is needed, not the base one, because FlexiBLAS's
+# OPENBLAS-OPENMP backend is linked from the toolchain's OpenBLAS.
 #
 # Target is the first (optional) argument, the default is x86_64.  It can be
 # specified also as aarch64 or "all" (to build both targets).
@@ -85,9 +86,9 @@ for TGT in ${RTARGETS} ; do
   TLREV=`echo $TCCFILE | sed -e 's/.*_\([0-9]\+\).tar.zst/\1/g'`
   
   if [ $TGT == x86_64 ] ; then
-    TCLFILE=`ls -1 gcc14_ucrt3_base_$TLREV.tar.zst | head -1`
+    TCLFILE=`ls -1 gcc14_ucrt3_full_$TLREV.tar.zst | head -1`
   else
-    TCLFILE=`ls -1 llvm19_ucrt3_base_aarch64_$TLREV.tar.zst | head -1`
+    TCLFILE=`ls -1 llvm19_ucrt3_full_aarch64_$TLREV.tar.zst | head -1`
   fi
 
   if [ ! -r $TCLFILE ] ; then
