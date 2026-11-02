@@ -178,6 +178,11 @@ ${TRIPLET}-cmake -S . -B build64 \
 make -C build64 -j 2>&1 | tee make64.out
 make -C build64 install 2>&1 | tee install64.out
 cp configure64.out make64.out install64.out $BHOME/build
+# FlexiBLAS leaves out a backend whose library does not link, with a
+# warning only; the bundle must have every backend asked for
+for B in ${EXTRA//;/ } ; do
+  ls $BINST/$BINDIR/flexiblas/libflexiblas_`echo $B | tr A-Z a-z`.dll
+done
 # the libopenblas.a inside OPENBLAS-THREADS is not installed
 
 # pkg-config files, headers, documentation and import libraries are not
