@@ -29,7 +29,15 @@ cache=$WORK/bundle-out/libopenblas-pthreads-$target-$h.a
 # CMake takes CMAKE_EXPORT_COMPILE_COMMANDS from the environment, so the
 # flags of the reference BLAS and LAPACK can be shown without changing the
 # bundle script.
-CMAKE_EXPORT_COMPILE_COMMANDS=ON bash -x ./build_ucrt.sh $target 2>&1 | tee build_ucrt.out | tail -40
+status=0
+CMAKE_EXPORT_COMPILE_COMMANDS=ON bash -x ./build_ucrt.sh $target 2>&1 | tee build_ucrt.out | tail -40 || status=$?
+# the whole output of the bundle build, for the workflow's report, and the
+# pthreads OpenBLAS for the cache, whether or not the bundle was finished
+mkdir -p "$WORK/dist"; cp build_ucrt.out "$WORK/dist/build_ucrt-$target.out"
+if [ -f libopenblas-pthreads.a ] && [ ! -f "$cache" ]; then
+    mkdir -p "$(dirname "$cache")"; cp libopenblas-pthreads.a "$cache"
+fi
+[ "$status" = 0 ] || exit "$status"
 cc=$(find . -name compile_commands.json | head -1)
 if [ -n "$cc" ]; then
     for f in dgemm dpotrf; do
@@ -37,9 +45,6 @@ if [ -n "$cc" ]; then
     done
 else
     echo "no compile_commands.json (CMake older than 3.17?)"
-fi
-if [ -f libopenblas-pthreads.a ] && [ ! -f "$cache" ]; then
-    mkdir -p "$(dirname "$cache")"; cp libopenblas-pthreads.a "$cache"
 fi
 rm -rf "$WORK/dist/$name"
 mkdir -p "$WORK/dist"

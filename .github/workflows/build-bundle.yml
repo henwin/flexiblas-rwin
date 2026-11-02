@@ -81,14 +81,15 @@ jobs:
       - name: Summarise
         if: always()
         run: |
-          { grep -n -E 'error|Error|ERROR|No such|not found|failed|Failed|Warning|WARNING' docker-build.log | grep -v -E 'liberror-perl|CheckLAPACKCompilerFlags|unused CMAKE_POLICY|toolchain file is deprecated|^[0-9]+:CMake Warning.*mxe-conf' | tail -25; echo ...; tail -30 docker-build.log; } > tail.log
+          log=$(ls dist/build_ucrt-*.out 2>/dev/null || echo docker-build.log)
+          { grep -n -E 'error|Error|ERROR|No such|not found|failed|Failed|Warning|WARNING' docker-build.log $log | grep -v -E 'liberror-perl|CheckLAPACKCompilerFlags|unused CMAKE_POLICY|toolchain file is deprecated|CMake Warning.*mxe-conf' | tail -25; echo ...; tail -30 $log; } > tail.log
           ls -la dist dist/*/bin/* > dist.log 2>&1 || true
           # the bundle in a few lines: the zip, the backends, the OpenBLAS build
           {
             for z in dist/*.zip; do echo "$z: $(du -k "$z" | cut -f1) kB, $(du -sk "${z%.zip}" | cut -f1) kB installed"; done
             echo "backends: $(ls dist/*/bin/*/flexiblas/ dist/*/bin/flexiblas/ 2>/dev/null | grep dll | tr '\n' ' ')"
             echo "OPENBLAS-THREADS built from OpenBLAS $(grep -m1 -o 'OBVER=[0-9.]*' patches/r-dev-web/flexiblas_bundle/build_ucrt.sh | cut -d= -f2)$(grep -q 'patching file' docker-build.log && echo ' in this run' || echo ', from the cache')"
-            grep -E '^-- (Build additional BLAS interface|-- Libs|Looking for Fortran DAXPY -)' docker-build.log | sed 's/^-- //'
+            grep -h -E '^-- (Build additional BLAS interface|-- Libs|Looking for Fortran DAXPY -)|does not contain a BLAS' $log | sed 's/^-- //'
           } > summary.log 2>&1 || true
 
       - uses: ./.github/actions/report
@@ -143,14 +144,15 @@ jobs:
       - name: Summarise
         if: always()
         run: |
-          { grep -n -E 'error|Error|ERROR|No such|not found|failed|Failed|Warning|WARNING' docker-build.log | grep -v -E 'liberror-perl|CheckLAPACKCompilerFlags|unused CMAKE_POLICY|toolchain file is deprecated|^[0-9]+:CMake Warning.*mxe-conf' | tail -25; echo ...; tail -30 docker-build.log; } > tail.log
+          log=$(ls dist/build_ucrt-*.out 2>/dev/null || echo docker-build.log)
+          { grep -n -E 'error|Error|ERROR|No such|not found|failed|Failed|Warning|WARNING' docker-build.log $log | grep -v -E 'liberror-perl|CheckLAPACKCompilerFlags|unused CMAKE_POLICY|toolchain file is deprecated|CMake Warning.*mxe-conf' | tail -25; echo ...; tail -30 $log; } > tail.log
           ls -la dist dist/*/bin/* > dist.log 2>&1 || true
           # the bundle in a few lines: the zip, the backends, the OpenBLAS build
           {
             for z in dist/*.zip; do echo "$z: $(du -k "$z" | cut -f1) kB, $(du -sk "${z%.zip}" | cut -f1) kB installed"; done
             echo "backends: $(ls dist/*/bin/*/flexiblas/ dist/*/bin/flexiblas/ 2>/dev/null | grep dll | tr '\n' ' ')"
             echo "OPENBLAS-THREADS built from OpenBLAS $(grep -m1 -o 'OBVER=[0-9.]*' patches/r-dev-web/flexiblas_bundle/build_ucrt.sh | cut -d= -f2)$(grep -q 'patching file' docker-build.log && echo ' in this run' || echo ', from the cache')"
-            grep -E '^-- (Build additional BLAS interface|-- Libs|Looking for Fortran DAXPY -)' docker-build.log | sed 's/^-- //'
+            grep -h -E '^-- (Build additional BLAS interface|-- Libs|Looking for Fortran DAXPY -)|does not contain a BLAS' $log | sed 's/^-- //'
           } > summary.log 2>&1 || true
 
       - uses: ./.github/actions/report
