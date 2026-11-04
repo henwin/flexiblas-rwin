@@ -91,10 +91,10 @@ mkdir build
 # OpenBLAS with pthreads for the OPENBLAS-THREADS backend: the sources,
 # patches and settings of the toolchain's openblas.mk except USE_OPENMP, and
 # NUM_THREADS fixed at 64 rather than the processor count of the build
-# machine.  The build takes an hour or more, so a libopenblas-pthreads.a
-# left from an earlier run is reused, like the source tarballs.
+# machine.  The build takes an hour or more, so the library left from an
+# earlier run for the target is reused, like the source tarballs.
 OBVER=0.3.34
-if [ ! -r $BHOME/libopenblas-pthreads.a ] ; then
+if [ ! -r $BHOME/libopenblas-pthreads-${RTARGET}.a ] ; then
   if [ ! -r OpenBLAS-$OBVER.tar.gz ] ; then
     wget -O OpenBLAS-$OBVER.tar.gz https://github.com/OpenMathLib/OpenBLAS/releases/download/v$OBVER/OpenBLAS-$OBVER.tar.gz
   fi
@@ -109,7 +109,7 @@ if [ ! -r $BHOME/libopenblas-pthreads.a ] ; then
     TARGET=${OBTARGET} DYNAMIC_ARCH=${OBDYNAMIC} \
     EXTRALIB="-l${OBLIBS//;/ -l}" \
     libs netlib 2>&1 | tee $BHOME/build/openblas-pthreads.out | tail -5
-  cp libopenblas.a $BHOME/libopenblas-pthreads.a
+  cp libopenblas.a $BHOME/libopenblas-pthreads-${RTARGET}.a
   cd $BHOME
 fi
 EXTRA="OPENBLAS-OPENMP;OPENBLAS-THREADS"
@@ -174,7 +174,7 @@ ${TRIPLET}-cmake -S . -B build64 \
   "-DEXTRA=$EXTRA" \
   "-DOPENBLAS-OPENMP_LIBRARY=-Wl,--whole-archive;$TLIB/libopenblas.a;-Wl,--no-whole-archive;$FLIBS" \
   -DOPENBLAS-OPENMP_LINKER_FLAGS=-fopenmp \
-  "-DOPENBLAS-THREADS_LIBRARY=-Wl,--whole-archive;$BHOME/libopenblas-pthreads.a;-Wl,--no-whole-archive;$OBLIBS" \
+  "-DOPENBLAS-THREADS_LIBRARY=-Wl,--whole-archive;$BHOME/libopenblas-pthreads-${RTARGET}.a;-Wl,--no-whole-archive;$OBLIBS" \
   -DOPENBLAS-THREADS_LINKER_FLAGS= \
   -DZDOTC_MKL_EXITCODE=1 \
   "-DCMAKE_SHARED_LINKER_FLAGS=$LDEXCLUDE" 2>&1 | tee configure64.out

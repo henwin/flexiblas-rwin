@@ -25,7 +25,7 @@ cd "$b"
 # build of OpenBLAS
 h=$(cat "$WORK"/patches/r-dev-web/flexiblas_bundle/build_ucrt.sh "$WORK"/patches/openblas/*.patch | sha256sum | cut -c1-12)
 cache=$WORK/bundle-out/libopenblas-pthreads-$target-$h.a
-[ ! -f "$cache" ] || cp "$cache" libopenblas-pthreads.a
+[ ! -f "$cache" ] || cp "$cache" libopenblas-pthreads-$target.a
 # CMake takes CMAKE_EXPORT_COMPILE_COMMANDS from the environment, so the
 # flags of the reference BLAS and LAPACK can be shown without changing the
 # bundle script.
@@ -34,8 +34,8 @@ CMAKE_EXPORT_COMPILE_COMMANDS=ON bash -x ./build_ucrt.sh $target 2>&1 | tee buil
 # the whole output of the bundle build, for the workflow's report, and the
 # pthreads OpenBLAS for the cache, whether or not the bundle was finished
 mkdir -p "$WORK/dist"; cp build_ucrt.out "$WORK/dist/build_ucrt-$target.out"
-if [ -f libopenblas-pthreads.a ] && [ ! -f "$cache" ]; then
-    mkdir -p "$(dirname "$cache")"; cp libopenblas-pthreads.a "$cache"
+if [ -f libopenblas-pthreads-$target.a ] && [ ! -f "$cache" ]; then
+    mkdir -p "$(dirname "$cache")"; cp libopenblas-pthreads-$target.a "$cache"
 fi
 [ "$status" = 0 ] || exit "$status"
 cc=$(find . -name compile_commands.json | head -1)
