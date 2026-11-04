@@ -26,11 +26,12 @@ set -e
 # The bundle has R's layout: the DLLs in bin/x64 (bin on aarch64), the
 # OpenBLAS backends in bin/x64/flexiblas, and the configuration in etc, which
 # FlexiBLAS finds relative to its DLLs (../../etc, set by
-# CMAKE_INSTALL_BINDIR).  R's Rblas.dll and Rlapack.dll forward to
-# libflexiblas.dll.
+# CMAKE_INSTALL_BINDIR).  R's Rblas.dll and Rlapack.dll pass their entry
+# points on to libflexiblas.dll.
 #
 # flexiblas.diff fixes finding the configuration and the vendor backends on
-# Windows, and finding an autotools-built dlfcn-win32.  openblas-*.patch are
+# Windows, finding an autotools-built dlfcn-win32, and the exports of the
+# LAPACK fallback when linked with lld.  openblas-*.patch are
 # the patches of ../toolchain_libs/mxe/src, applied in order as MXE does.
 #
 # clean via: rm -rf build FlexiBLAS *zip *gz *.a
@@ -189,7 +190,7 @@ done
 
 # pkg-config files, headers, documentation and import libraries are not
 # needed, except libflexiblas.dll.a: R's build reads from it the LAPACK
-# entry points FlexiBLAS has
+# entry points FlexiBLAS has and links Rblas.dll and Rlapack.dll with it
 cd $BINST
 rm -f `find . -name "*.a" ! -name libflexiblas.dll.a`
 rm -rf $BINDIR/pkgconfig include share
