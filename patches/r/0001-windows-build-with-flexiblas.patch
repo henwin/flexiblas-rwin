@@ -7,29 +7,21 @@ Index: src/extra/blas/Makefile.win
  	$(DLL) -s -shared $(DLLFLAGS) -o $@ $^ Rblas.def \
  	    -L../../../$(IMPDIR) -lR  $(shell $(PKG_CONFIG) --libs openblas)
 +else ifeq "$(USE_FLEXIBLAS)" "YES"
-+## Rblas.dll forwards its entry points to libflexiblas.dll, which comes with
-+## its backends and configuration from the FlexiBLAS bundle
++## Rblas.dll passes its entry points on to libflexiblas.dll, which comes
++## with its backends and configuration from the FlexiBLAS bundle: each is
++## the import thunk from libflexiblas.dll.a, exported.  Not as forwarded
++## exports, which lld does not take for code when linking against the DLL
++## itself, as R and packages do on aarch64.
 +FLEXIBLAS_PATH = ../../../FlexiBLAS
-+../../../$(BINDIR)/Rblas.dll: ../../gnuwin32/dllversion.o Rblas-flexiblas.def
++../../../$(BINDIR)/Rblas.dll: ../../gnuwin32/dllversion.o Rblas.def
 +	@$(ECHO) -------- Building $@ --------
 +	$(CP) -pR $(FLEXIBLAS_PATH)/$(BINDIR)/*.dll $(FLEXIBLAS_PATH)/$(BINDIR)/flexiblas \
 +	  ../../../$(BINDIR)
 +	$(CP) -pR $(FLEXIBLAS_PATH)/etc/flexiblasrc* ../../../etc
-+	$(DLL) -s -shared $(DLLFLAGS) -o $@ $^
-+
-+Rblas-flexiblas.def: Rblas.def
-+	$(SED) -e 's/^ \(.*\)/ \1 = libflexiblas.\1/' $< > $@
++	$(DLL) -s -shared $(DLLFLAGS) -o $@ $^ -L$(FLEXIBLAS_PATH)/$(BINDIR) -lflexiblas
  else
  ../../../$(BINDIR)/Rblas.dll: blas.o blas2.o cmplxblas.o cmplxblas2.o ../../gnuwin32/dllversion.o
  	@$(ECHO) -------- Building $@ --------
-@@ -24,5 +37,6 @@
- endif
- 
- distclean clean:
--	@$(RM) ../../../$(BINDIR)/Rblas.dll *~ blas.o cmplxblas.o
-+	@$(RM) ../../../$(BINDIR)/Rblas.dll *~ blas.o cmplxblas.o \
-+	  Rblas-flexiblas.def
- 
 Index: src/gnuwin32/Makefile
 ===================================================================
 --- src/gnuwin32/Makefile	(revision 90763)
@@ -93,17 +85,17 @@ Index: src/modules/lapack/Makefile.win
 ===================================================================
 --- src/modules/lapack/Makefile.win	(revision 90763)
 +++ src/modules/lapack/Makefile.win	(working copy)
-@@ -39,18 +39,44 @@
+@@ -39,18 +39,41 @@
  
  libRlapack.dll.a: Rlapack.def
  
 +## FlexiBLAS only when Rblas.dll uses it: ATLAS and OpenBLAS come first in
 +## ../../extra/blas/Makefile.win
 +ifeq "$(USE_ATLAS)$(USE_OPENBLAS)$(USE_FLEXIBLAS)" "NONOYES"
-+## Rlapack.dll forwards to libflexiblas.dll the entry points FlexiBLAS has:
-+## all but dlarscl2 and dlascl2, which LAPACK builds only with its
-+## extra-precise routines and nothing in R calls, and la_xisnan's module
-+## procedures, which are internal.
++## Rlapack.dll passes on to libflexiblas.dll, as Rblas.dll does, the entry
++## points FlexiBLAS has: all but dlarscl2 and dlascl2, which LAPACK builds
++## only with its extra-precise routines and nothing in R calls, and
++## la_xisnan's module procedures, which are internal.
 +FLEXIBLAS_PATH = ../../../FlexiBLAS
 +
 +flexiblas.syms: $(FLEXIBLAS_PATH)/$(BINDIR)/libflexiblas.dll.a
@@ -112,9 +104,6 @@ Index: src/modules/lapack/Makefile.win
 +Rlapack.def: $(LIBOBJECTS) flexiblas.syms
 +	@$(ECHO) EXPORTS > $@
 +	@$(NM) $(LIBOBJECTS) | $(SED) -n $(SYMPAT) | $(SORT) | uniq | grep -F -x -f flexiblas.syms >> $@
-+
-+Rlapack-flexiblas.def: Rlapack.def
-+	$(SED) -e 's/^ \(.*\)/ \1 = libflexiblas.\1/' $< > $@
 +else
  Rlapack.def: $(LIBOBJECTS)
  	@$(ECHO) EXPORTS > $@
@@ -125,8 +114,8 @@ Index: src/modules/lapack/Makefile.win
  $(MODULE).dll: $(OBJS)
  
 +ifeq "$(USE_ATLAS)$(USE_OPENBLAS)$(USE_FLEXIBLAS)" "NONOYES"
-+../../../$(BINDIR)/Rlapack.dll: Rlapackrc.o Rlapack-flexiblas.def
-+	$(DLL) -shared -s -o $@ $^
++../../../$(BINDIR)/Rlapack.dll: Rlapackrc.o Rlapack.def
++	$(DLL) -shared -s -o $@ $^ -L$(FLEXIBLAS_PATH)/$(BINDIR) -lflexiblas
 +else
  ../../../$(BINDIR)/Rlapack.dll: $(LIBOBJECTS) Rlapack.def
  	$(DLL) -shared -s -o $@ $^ -L../../../$(IMPDIR) -lR -lRblas $(FLIBS)
@@ -134,7 +123,7 @@ Index: src/modules/lapack/Makefile.win
  
  clean:
  	@$(RM) Makedeps *.d *.o $(MODULE).def $(MODULE).dll Rlapack.def \
-+	  Rlapack-flexiblas.def flexiblas.syms \
++	  flexiblas.syms \
  	  Rlapack.dll *.a *.mod
  
  
