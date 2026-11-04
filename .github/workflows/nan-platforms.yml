@@ -17,6 +17,12 @@ permissions:
   contents: read
   issues: write
 
+# bash -eo pipefail, so that a failing Rscript piped through tee fails the
+# step (the default shell in a container and on Linux has no pipefail)
+defaults:
+  run:
+    shell: bash
+
 jobs:
   backends-linux:
     name: Fedora, FlexiBLAS backends against each other
@@ -35,9 +41,12 @@ jobs:
           for f in /usr/lib64/libopenblas*.so.0; do echo "$f: $(strings "$f" | grep -m1 'MAX_THREADS')"; done
 
       - name: Compare backends
+        id: nan
         run: Rscript tests/test-nan.R propagate cmp 2>&1 | tee nan.log
 
       - name: Memory use
+        id: memory
+        if: always()
         run: |
           for b in OPENBLAS-OPENMP OPENBLAS-THREADS; do
             Rscript tests/test-memory.R $b
@@ -45,6 +54,8 @@ jobs:
           done 2>&1 | tee memory.log
 
       - name: BLAS called from OpenMP threads, shared libgomp
+        id: ompcaller
+        if: always()
         run: |
           Rscript tests/test-omp-caller.R 2>&1 | tee omp-caller.log
           Rscript tests/test-omp-caller.R 200 200 2>&1 | tee -a omp-caller.log
@@ -54,11 +65,32 @@ jobs:
           n=$(grep -c 'Detect OpenMP Loop' omp-caller.log); grep -v 'Detect OpenMP Loop' omp-caller.log > omp-caller-short.log
           echo "($n lines 'OpenBLAS Warning : Detect OpenMP Loop and this application may hang' removed)" >> omp-caller-short.log
 
+      # every step's outcome, then the one-line results, "not found" when a
+      # log lacks its line
+      - name: Summarise
+        if: always()
+        run: |
+          set +e
+          {
+            printf '%-48s %s\n' \
+              "test-nan.R propagate cmp" "${{ steps.nan.outcome }}" \
+              "test-memory.R per backend" "${{ steps.memory.outcome }}" \
+              "test-omp-caller.R" "${{ steps.ompcaller.outcome }}"
+            echo
+            grep -E '^(R version|BLAS:)' nan.log 2>/dev/null | head -2
+            echo "nan.log: $(grep -m1 'results differ' nan.log 2>/dev/null || echo 'not found in nan.log')"
+            echo "omp-caller.log, as many OpenMP callers as cores with as many BLAS threads, n = 1000 (shared libgomp):"
+            awk '/^cores:/ {c = $2; p = ($4 == 1000)} p && $2 == c && $3 == c {found = 1; printf "  %-18s %s threads, %s s\n", $1, $5, $4} END {if (!found) print "  not found in omp-caller.log"}' omp-caller-short.log 2>/dev/null || echo "  not found in omp-caller.log"
+            echo "memory.log, after loading the backend:"
+            grep -E 'loaded,' memory.log 2>/dev/null | sed 's/^/  /' || echo "  not found in memory.log"
+          } > brief.log
+
       - uses: ./.github/actions/report
         if: always()
         with:
           key: ${{ github.workflow }} (Fedora backends)
           status: ${{ job.status }}
+          summary: brief.log
           files: |
             nan.log
             omp-caller.log: omp-caller-short.log
@@ -76,9 +108,11 @@ jobs:
           r-version: release
 
       - name: Reference with R's own BLAS
+        id: ref
         run: Rscript tests/test-nan.R propagate ref
 
       - name: Switch libRblas to Accelerate (vecLib) and compare
+        id: cmp
         run: |
           lib=$(Rscript -e 'cat(R.home("lib"))')
           ls -l "$lib"/libRblas*
@@ -86,11 +120,25 @@ jobs:
           Rscript -e 'sessionInfo()' | grep -i -A2 blas
           Rscript tests/test-nan.R propagate cmp 2>&1 | tee nan.log
 
+      - name: Summarise
+        if: always()
+        run: |
+          set +e
+          {
+            printf '%-48s %s\n' \
+              "test-nan.R propagate ref, R's own BLAS" "${{ steps.ref.outcome }}" \
+              "test-nan.R propagate cmp, Accelerate" "${{ steps.cmp.outcome }}"
+            echo
+            grep -E '^(R version|BLAS:|LAPACK:)' nan.log 2>/dev/null | head -3
+            grep -m1 'results differ' nan.log 2>/dev/null || echo "not found in nan.log"
+          } > brief.log
+
       - uses: ./.github/actions/report
         if: always()
         with:
           key: ${{ github.workflow }} (macOS Accelerate)
           status: ${{ job.status }}
+          summary: brief.log
           files: nan.log
 
   platforms:
@@ -132,12 +180,33 @@ jobs:
         with:
           pattern: nan-pattern-*
           merge-multiple: true
+      # all five platforms, or the comparison says less than it seems to
       - name: Compare
-        run: Rscript tests/test-nan.R pattern compare nan-pattern-*.txt 2>&1 | tee compare.log
+        id: compare
+        run: |
+          n=$(ls nan-pattern-*.txt 2>/dev/null | wc -l)
+          echo "$n of 5 platforms recorded: $(ls nan-pattern-*.txt 2>/dev/null | sed 's/nan-pattern-//; s/[.]txt//' | tr '\n' ' ')" | tee compare.log
+          Rscript tests/test-nan.R pattern compare nan-pattern-*.txt 2>&1 | tee -a compare.log
+          [ "$n" -eq 5 ] || { echo "::error::$n of 5 platforms recorded"; exit 1; }
+
+      # the outcomes, the platforms, one line per operation, and the count;
+      # the cells are the detail
+      - name: Summarise
+        if: always()
+        run: |
+          set +e
+          {
+            printf '%-48s %s\n' \
+              "recording on the five platforms" "${{ needs.platforms.result }}" \
+              "comparison, all five present" "${{ steps.compare.outcome }}"
+            echo
+            grep -E '^[0-9] of 5 platforms|^[a-z0-9-]+ +[a-z0-9_]+-|^\S.* (differ|same) on |operations differ' compare.log 2>/dev/null || echo "not found in compare.log"
+          } > brief.log
 
       - uses: ./.github/actions/report
         if: always()
         with:
           key: ${{ github.workflow }} (platforms)
           status: ${{ job.status }}
+          summary: brief.log
           files: compare.log

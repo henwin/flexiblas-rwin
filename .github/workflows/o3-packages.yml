@@ -158,8 +158,16 @@ jobs:
           cat log-*/optflags.log | tr -d '\r' > all.log
           # the run the logs come from, when summarising an earlier one
           run=${{ inputs.summarise || github.run_id }}
-          echo "status=$(gh api repos/$GITHUB_REPOSITORY/actions/runs/$run --jq '.conclusion // .status')" >> $GITHUB_OUTPUT
+          # the status is that of the run's group jobs, which have finished
+          # also when the run summarised is this one
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/jobs?per_page=100" --paginate \
+            --jq '.jobs[] | select(.name | startswith("packages")) | .conclusion' > groups.txt
+          g=$(grep -c . groups.txt || true); ok=$(grep -cx success groups.txt || true)
+          if [ "$g" -gt 0 ] && [ "$ok" -eq "$g" ]; then st=success; else st=failure; fi
+          echo "status=$st" >> $GITHUB_OUTPUT
           {
+            echo "group jobs of run $run: $ok of $g succeeded"
+            echo "logs downloaded: $(ls -d log-*/ 2>/dev/null | wc -l) of $g"
             echo "packages compared (run $run): $(grep -ac '^== ' all.log)"
             echo "not installed: $(grep -ac ' not installed$' all.log)"
             echo "test runs that crashed or timed out: $(grep -ac ': exit status ' all.log)"
@@ -169,7 +177,7 @@ jobs:
             echo "packages with output files that differ with the -O3 Rblas.dll:"
             grep -a '^== ' all.log | awk '$8 > 0 {print "  " $2 ": " $8}'
             # jobs that failed, and R errors in their logs
-            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" --paginate \
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/jobs?per_page=100" --paginate \
               --jq '.jobs[] | select(.conclusion == "failure") | "failed job: " + .name'
           } > summary.txt
           cat summary.txt
@@ -213,12 +221,16 @@ jobs:
         uses: ./.github/actions/rblas-o3
 
       - name: The R tests and the recommended packages
+        id: base
         shell: bash
         run: |
           Rscript tests/compare-optflags.R base O2 2>&1 | tee -a optflags.log
           /c/R-o3/bin/Rscript tests/compare-optflags.R base O3 2>&1 | tee -a optflags.log
           # as for the packages: a second run each way only when they differ
-          if Rscript tests/compare-optflags.R compare O2 O3 2>&1 | tee -a optflags.log | grep -q '^== .* output files: .* [1-9][0-9]* differ'; then
+          # (through a file: grep -q ending a pipeline under pipefail can
+          # break tee and read as no difference)
+          Rscript tests/compare-optflags.R compare O2 O3 2>&1 | tee pass1.log >> optflags.log
+          if grep -q '^== .* output files: .* [1-9][0-9]* differ' pass1.log; then
             Rscript tests/compare-optflags.R base O2b 2>&1 | tee -a optflags.log
             /c/R-o3/bin/Rscript tests/compare-optflags.R base O3b 2>&1 | tee -a optflags.log
             Rscript tests/compare-optflags.R compare O2,O2b O3,O3b 2>&1 | tee -a optflags.log
@@ -228,13 +240,19 @@ jobs:
         if: always()
         shell: bash
         run: |
-          grep -aE '^(O[23]b?: |test|== |total |  \S+: |    O[23]: )' optflags.log > summary.log || true
+          set +e
+          grep -aE '^(O[23]b?: |test|== |total |  \S+: |    O[23]: )' optflags.log > summary.log
+          # the outcome, then the totals per group and comparison; the
+          # differing lines are the detail
+          { echo "runs and comparisons: ${{ steps.base.outcome }}"
+            grep -aE '^(test|== |total )' optflags.log 2>/dev/null || echo "not found in optflags.log"; } > brief.log
 
       - uses: ./.github/actions/report
         if: always()
         with:
           key: ${{ github.workflow }} (the R tests and the recommended packages)
           status: ${{ job.status }}
+          summary: brief.log
           files: |
-            summary.log
+            Differences in detail: summary.log
             optflags.log

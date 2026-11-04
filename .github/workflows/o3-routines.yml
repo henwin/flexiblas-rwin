@@ -35,7 +35,10 @@ jobs:
           $h = Rscript -e "cat(normalizePath(R.home()))"
           "R_HOME_DIR=$h" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
+      # blas-bitwise.sh fails when the build with R's flags is not CRAN's
+      # Rblas.dll, or on an error; differences under other flags are results
       - name: Build and compare
+        id: compare
         run: |
           export PATH=/x86_64-w64-mingw32.static.posix/bin:$PATH
           rhome=$(cygpath -u "$R_HOME_DIR")
@@ -47,8 +50,18 @@ jobs:
           cd work
           bash ../tests/blas-bitwise.sh ../src "$rhome" 2>&1 | tee ../blas-bitwise.log
 
+      # the outcome, then one line per flag set: how many of the 76 routines
+      # differ, and how many in more than which NaN
+      - name: Summarise
+        if: always()
+        shell: bash
+        run: |
+          { echo "build with R's flags reproduces CRAN's Rblas.dll, no errors: ${{ steps.compare.outcome }}"
+            grep -E '^== |of 76 routines' blas-bitwise.log || echo "not found in blas-bitwise.log"; } > brief.log
+
       - uses: ./.github/actions/report
         if: always()
         with:
           status: ${{ job.status }}
+          summary: brief.log
           files: blas-bitwise.log

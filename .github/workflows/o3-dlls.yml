@@ -38,6 +38,7 @@ jobs:
           "CPU: " + (Get-CimInstance Win32_Processor).Name | Tee-Object -FilePath cpu.txt
 
       - name: Build the DLLs
+        id: build
         run: |
           export PATH=/x86_64-w64-mingw32.static.posix/bin:$PATH
           rhome=$(cygpath -u "$R_HOME_DIR")
@@ -52,6 +53,7 @@ jobs:
           cd work && bash ../tests/flags-build.sh ../src "$rhome"
 
       - name: Compare results and timings
+        id: compare
         run: |
           rhome=$(cygpath -u "$R_HOME_DIR")
           bin=$rhome/bin/x64
@@ -91,12 +93,21 @@ jobs:
         if: always()
         shell: bash
         run: |
-          { cat cpu.txt; grep -v '|' flags.log; echo; cat timings.txt; } > summary.log 2>/dev/null || true
+          set +e
+          { cat cpu.txt; grep -v '|' flags.log; echo; cat timings.txt; } > summary.log 2>/dev/null
+          # the outcomes, then the verdict per build without the list of operations
+          { printf '%-62s %s\n' \
+              "DLLs built" "${{ steps.build.outcome }}" \
+              "11 builds compared, R's flags reproduce CRAN's results" "${{ steps.compare.outcome }}"
+            echo
+            cat cpu.txt 2>/dev/null
+            grep 'results differ' flags.log 2>/dev/null | sed 's/; operations:.*//' || echo "not found in flags.log"; } > brief.log
 
       - uses: ./.github/actions/report
         if: always()
         with:
           status: ${{ job.status }}
+          summary: brief.log
           files: |
-            summary.log
+            Results and timings: summary.log
             flags.log
