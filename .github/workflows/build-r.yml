@@ -39,6 +39,11 @@ on:
         description: Run make check-devel and check-all (build.sh --check)
         type: boolean
         default: true
+      target:
+        description: "x86_64 on windows-2025, or aarch64 natively on windows-11-arm (build.sh aarch64, the LLVM toolchain)"
+        type: choice
+        options: [x86_64, aarch64]
+        default: x86_64
 
 permissions:
   actions: read
@@ -47,15 +52,23 @@ permissions:
 
 env:
   RDEVWEB: https://svn.r-project.org/R-dev-web/trunk/WindowsBuilds/winutf8/ucrt3/r
-  # CRAN's toolchain tarball and Tcl/Tk bundle for Rtools45, under the
-  # names build.sh looks for
-  TOOLCHAIN: rtools45-toolchain-libs-full-6768.tar.zst
-  TCLTK: tcltk-6768-6663.zip
+  # CRAN's toolchain tarball and Tcl/Tk bundle for Rtools45 for the target,
+  # and the names build.sh looks for them under
+  TOOLCHAIN: ${{ inputs.target == 'aarch64' && 'rtools45-toolchain-libs-full-aarch64-6768.tar.zst' || 'rtools45-toolchain-libs-full-6768.tar.zst' }}
+  TCLTK: ${{ inputs.target == 'aarch64' && 'tcltk-aarch64-6768-6663.zip' || 'tcltk-6768-6663.zip' }}
+  TOOLCHAIN_AS: ${{ inputs.target == 'aarch64' && 'llvm19_ucrt3_full_aarch64_6768.tar.zst' || 'gcc14_ucrt3_full_6768.tar.zst' }}
+  TCLTK_AS: ${{ inputs.target == 'aarch64' && 'Tcl-aarch64-6768-6663.zip' || 'Tcl-6768-6663.zip' }}
+  # the bundle artifact of build-bundle.yml for the target, and R's bin
+  # directory (bin on aarch64, where R_ARCH is empty)
+  BUNDLE: ${{ inputs.target == 'aarch64' && 'flexiblas-rwin-aarch64' || 'flexiblas-rwin' }}
+  RBIN: ${{ inputs.target == 'aarch64' && 'bin' || 'bin/x64' }}
+  # artifact names carry the target
+  SUFFIX: ${{ inputs.target == 'aarch64' && '-aarch64' || '' }}
 
 jobs:
   build:
     if: inputs.build
-    runs-on: windows-2025
+    runs-on: ${{ inputs.target == 'aarch64' && 'windows-11-arm' || 'windows-2025' }}
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v7
@@ -83,7 +96,7 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          name: flexiblas-rwin
+          name: ${{ env.BUNDLE }}
           path: dist
           run-id: ${{ steps.build.outputs.run_id }}
           github-token: ${{ github.token }}
@@ -92,7 +105,8 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory C:\rbuild | Out-Null
-          foreach ($f in "setup.ps1", "build.sh", "r_001_ucrt3_package_patches_and_repo.diff", "r_002_rtools45.diff") {
+          # build.sh applies r_*.diff_aarch64 in place of its namesake on aarch64 only
+          foreach ($f in "setup.ps1", "build.sh", "r_001_ucrt3_package_patches_and_repo.diff", "r_001_ucrt3_package_patches_and_repo.diff_aarch64", "r_002_rtools45.diff") {
             Invoke-WebRequest "$env:RDEVWEB/$f" -OutFile "C:\rbuild\$f" -UseBasicParsing
           }
           Get-ChildItem C:\rbuild
@@ -139,8 +153,8 @@ jobs:
               Invoke-WebRequest "https://cran.r-project.org/bin/windows/Rtools/rtools45/files/$f" -OutFile "cache\$f" -UseBasicParsing
             }
           }
-          Copy-Item "cache\$env:TOOLCHAIN" C:\rbuild\gcc14_ucrt3_full_6768.tar.zst
-          Copy-Item "cache\$env:TCLTK" C:\rbuild\Tcl-6768-6663.zip
+          Copy-Item "cache\$env:TOOLCHAIN" "C:\rbuild\$env:TOOLCHAIN_AS"
+          Copy-Item "cache\$env:TCLTK" "C:\rbuild\$env:TCLTK_AS"
 
       - name: Add the FlexiBLAS bundle and the patches
         shell: C:\msys64\usr\bin\bash.exe --login -eo pipefail {0}
@@ -157,7 +171,8 @@ jobs:
             # R's own BLAS, built with -O3 instead of -O2 (r76787)
             cp "$w/patches/experiments/rblas-O3.diff" /c/rbuild/r_201_rblas-O3.diff
           else
-            cp "$(find "$w/dist" -name FlexiBLAS.zip | head -1)" /c/rbuild/FlexiBLAS.zip
+            # FlexiBLAS.zip or FlexiBLAS-aarch64.zip, the names build.sh looks for
+            z=$(find "$w/dist" -name 'FlexiBLAS*.zip' | head -1); cp "$z" "/c/rbuild/$(basename "$z")"
           fi
           cd /c/rbuild
           patch -p0 < "$w/patches/r-dev-web/0002-build-flexiblas-bundle.patch"
@@ -178,7 +193,7 @@ jobs:
           FLEXIBLAS: ${{ inputs.backend }}
         working-directory: C:\rbuild
         run: |
-          ./build.sh ${{ inputs.check && '--check' || '' }} ${{ inputs.r != 'devel' && '--patched' || '' }} > build.log 2>&1
+          ./build.sh ${{ inputs.target == 'aarch64' && 'aarch64' || '' }} ${{ inputs.check && '--check' || '' }} ${{ inputs.r != 'devel' && '--patched' || '' }} > build.log 2>&1
           status=$?
           tail -30 build.log
           ls -la build
@@ -209,7 +224,7 @@ jobs:
           # build.sh names the release installer as the patched one
           /c/rbuild/build/R-${{ inputs.r == 'devel' && 'devel' || 'patched' }}-win.exe //VERYSILENT //SUPPRESSMSGBOXES //NORESTART //CURRENTUSER //DIR='C:\R-inst'
           if [ "${{ inputs.experiment }}" = none ]; then
-            ls /c/R-inst/bin/x64/flexiblas /c/R-inst/etc
+            ls /c/R-inst/$RBIN/flexiblas /c/R-inst/etc
             for b in NETLIB OPENBLAS-OPENMP OPENBLAS-THREADS; do
               FLEXIBLAS=$b /c/R-inst/bin/Rscript -e 'cat(extSoftVersion()[["BLAS"]], La_library(), sep = "\n")'
             done
@@ -222,14 +237,14 @@ jobs:
       # installer has no FlexiBLAS and is never tested.
       - uses: actions/upload-artifact@v7
         with:
-          name: R-${{ inputs.r }}${{ inputs.experiment != 'none' && '-experiment' || '' }}-installer
+          name: R-${{ inputs.r }}${{ inputs.experiment != 'none' && '-experiment' || '' }}-installer${{ env.SUFFIX }}
           path: C:/rbuild/build/R-*-win.exe
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: R-${{ inputs.r }}${{ inputs.experiment != 'none' && '-experiment' || '' }}-logs
+          name: R-${{ inputs.r }}${{ inputs.experiment != 'none' && '-experiment' || '' }}-logs${{ env.SUFFIX }}
           path: |
             C:/rbuild/build/*.out
             C:/rbuild/*.log
@@ -245,7 +260,7 @@ jobs:
           b=/c/rbuild
           # what was checked and how it came out
           {
-            echo "R-${{ inputs.r }}$([ -f $b/build/svn_revision ] && echo " r$(cat $b/build/svn_revision)"), checks with FLEXIBLAS=${{ inputs.backend }}${{ inputs.experiment != 'none' && format(', experiment {0}', inputs.experiment) || '' }}"
+            echo "R-${{ inputs.r }}$([ -f $b/build/svn_revision ] && echo " r$(cat $b/build/svn_revision)") for ${{ inputs.target }}, checks with FLEXIBLAS=${{ inputs.backend }}${{ inputs.experiment != 'none' && format(', experiment {0}', inputs.experiment) || '' }}"
             cat /c/bundle.txt 2>/dev/null
             echo "toolchain $TOOLCHAIN, Tcl/Tk $TCLTK"
             echo
@@ -282,7 +297,7 @@ jobs:
       - uses: ./.github/actions/report
         if: always()
         with:
-          key: ${{ github.workflow }} (${{ inputs.r }}${{ inputs.experiment != 'none' && format(', {0}', inputs.experiment) || '' }})
+          key: ${{ github.workflow }} (${{ inputs.r }}${{ inputs.experiment != 'none' && format(', {0}', inputs.experiment) || '' }}${{ env.SUFFIX && format(', {0}', inputs.target) || '' }})
           status: ${{ job.status }}
           summary: summary.log
           files: |
@@ -299,7 +314,7 @@ jobs:
     needs: build
     if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped') && inputs.experiment == 'none'
     timeout-minutes: 45
-    runs-on: windows-2025
+    runs-on: ${{ inputs.target == 'aarch64' && 'windows-11-arm' || 'windows-2025' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -310,13 +325,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $id = gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts?name=R-${{ inputs.r }}-installer&per_page=20" --jq '[.artifacts[] | select(.expired | not)][0].workflow_run.id'
-          if (-not $id) { throw "no R-${{ inputs.r }}-installer; build one first" }
+          $id = gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts?name=R-${{ inputs.r }}-installer$env:SUFFIX&per_page=20" --jq '[.artifacts[] | select(.expired | not)][0].workflow_run.id'
+          if (-not $id) { throw "no R-${{ inputs.r }}-installer$env:SUFFIX; build one first" }
           "run_id=$id" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
 
       - uses: actions/download-artifact@v8
         with:
-          name: R-${{ inputs.r }}-installer
+          name: R-${{ inputs.r }}-installer${{ env.SUFFIX }}
           path: inst
           run-id: ${{ steps.prev.outputs.run_id || github.run_id }}
           github-token: ${{ github.token }}
@@ -327,11 +342,15 @@ jobs:
           r-version: ${{ inputs.r == 'patched' && 'next' || inputs.r }}
           rtools-version: '45'
 
+      # On aarch64 the runner image also has an emulated x86_64 R, and
+      # setup-r resolves devel to a community build: the reference must be
+      # the architecture under test.
       - name: Reference results with CRAN's build of the same R, with R's own BLAS and LAPACK
         timeout-minutes: 5
         shell: pwsh
         run: |
           Rscript -e "sessionInfo()"
+          Rscript -e "stopifnot(identical(R.version[['arch']], '${{ inputs.target == 'aarch64' && 'aarch64' || 'x86_64' }}'))"
           Rscript tests/test-nan.R propagate ref
           Rscript tests/test-identical.R ref
           Rscript tests/test-chol.R "R's own" 2>&1 | Tee-Object -FilePath chol.log
@@ -342,7 +361,7 @@ jobs:
         run: |
           $exe = (Get-ChildItem inst -Recurse -Filter "R-*-win.exe")[0].FullName
           & $exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /DIR=C:\R-inst | Out-Null
-          Get-ChildItem C:\R-inst\bin\x64\flexiblas, C:\R-inst\etc\flexiblasrc*
+          Get-ChildItem "C:\R-inst\$env:RBIN\flexiblas", C:\R-inst\etc\flexiblasrc*
           "C:\R-inst\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
 
       - name: chol() with non-finite input
@@ -549,7 +568,7 @@ jobs:
       - uses: ./.github/actions/report
         if: always()
         with:
-          key: ${{ github.workflow }} (${{ inputs.r }}, test)
+          key: ${{ github.workflow }} (${{ inputs.r }}, test${{ env.SUFFIX && format(', {0}', inputs.target) || '' }})
           status: ${{ job.status }}
           summary: summary.log
           files: |
