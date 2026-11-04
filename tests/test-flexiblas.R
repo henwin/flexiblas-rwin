@@ -13,6 +13,10 @@ failures <- character()
 check(isTRUE(flexiblas_avail()), "R's BLAS is FlexiBLAS")
 cat("FlexiBLAS", format(flexiblas_version()), "\n")
 cat("configured backends:", paste(flexiblas_list(), collapse = ", "), "\n")
+## the bundle's backends, all of them, so that a bundle short of one fails
+## here rather than passing on NETLIB alone
+for (be in c("NETLIB", "OPENBLAS-OPENMP", "OPENBLAS-THREADS"))
+    check(be %in% flexiblas_list(), sprintf("backend %s configured", be))
 cat("initial backend:", flexiblas_current_backend(), "\n")
 
 ## Workload touching BLAS level 3, LAPACK via Rlapack.dll and complex BLAS.
@@ -54,7 +58,9 @@ for (be in grep("^OPENBLAS", flexiblas_list(), value = TRUE)) {
 
     ## flexiblas_get_num_threads() asks the backend, so a count reset inside
     ## OpenBLAS during a product shows up here.
-    for (k in unique(c(1L, 2L, max(2L, parallel::detectCores())))) {
+    ## and twice the cores, a team larger than the machine; above the cap of
+    ## 64, which costs 128 MB of commit per thread, tests/omp-cases.sh
+    for (k in unique(c(1L, 2L, max(2L, parallel::detectCores()), 2L * parallel::detectCores()))) {
         flexiblas_set_num_threads(k)
         timing("B %*% B", B %*% B, sprintf("%d thread(s)", k))
         timing("chol(S)", chol(S), sprintf("%d thread(s)", k))

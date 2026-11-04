@@ -447,27 +447,36 @@ jobs:
         id: nan
         if: always()
         timeout-minutes: 5
-        shell: pwsh
+        # against R's own, saved by the reference step; without it test-nan.R
+        # would compare with the first backend
+        shell: bash
         run: |
-          Rscript tests/test-nan.R propagate cmp 2>&1 | Tee-Object -FilePath nan.log
-          exit $LASTEXITCODE
+          [ -f nan-ref.rds ] || { echo "::error::no nan-ref.rds from the reference step"; exit 1; }
+          Rscript tests/test-nan.R propagate cmp 2>&1 | tee nan.log
 
+      # chol() and solve() must reach the backend as dpotrf and dgesv, with
+      # no dgemm or dtrsm, which R's reference LAPACK on top of the FlexiBLAS
+      # BLAS would call, and the one dsyrk of crossprod()
       - name: Check that LAPACK calls reach FlexiBLAS
         id: profile
         if: always()
         timeout-minutes: 5
-        shell: pwsh
+        shell: bash
         env:
           FLEXIBLAS_HOOK: PROFILE
           FLEXIBLAS_PROFILE_FILE: ${{ github.workspace }}\profile.txt
         run: |
           Rscript tests/test-profile.R
-          if (-not (Test-Path profile.txt)) { Write-Host "no profile written"; exit 1 }
-          Get-Content profile.txt | Where-Object { $_ -notmatch '\s0\s+0(\.0+)?(e[+-]?0+)?\s*$' } |
-            Set-Content profile-nonzero.log
-          $hits = Select-String -Path profile.txt -Pattern '^\s*(dpotrf|dgesv)\s+[1-9]'
-          $hits | ForEach-Object { $_.Line }
-          if (($hits | Measure-Object).Count -lt 2) { exit 1 }
+          [ -f profile.txt ] || { echo "no profile written"; exit 1; }
+          awk '$1 == "#" || $2 != 0' profile.txt > profile-nonzero.log
+          cat profile-nonzero.log
+          calls() { awk -v f="$1" '$1 == f {n += $2} END {print n + 0}' profile.txt; }
+          fail=0
+          for e in dpotrf:1 dgesv:1 dsyrk:1 dgemm:0 dtrsm:0; do
+            n=$(calls ${e%:*}); echo "${e%:*}: $n calls, ${e#*:} expected"
+            [ "$n" = "${e#*:}" ] || fail=1
+          done
+          exit $fail
 
       - name: NETLIB gives bit for bit the results of R's own BLAS and LAPACK
         id: identical
@@ -524,14 +533,24 @@ jobs:
           Rscript tests/test-omp-caller.R 200 200 2>&1 | tee -a omp-caller.log
           Rscript tests/test-omp-caller.R 64 1000 2>&1 | tee -a omp-caller.log
 
-      - name: R's BLAS regression tests
+      - name: R's BLAS regression tests under each backend
         id: regblas
         if: always()
-        timeout-minutes: 10
-        shell: pwsh
+        timeout-minutes: 15
+        shell: bash
         run: |
-          Rscript C:\R-inst\tests\reg-BLAS.R 2>&1 | Tee-Object -FilePath reg-BLAS.log
-          exit $LASTEXITCODE
+          for b in NETLIB OPENBLAS-OPENMP OPENBLAS-THREADS; do
+            echo "== $b" | tee -a reg-BLAS.log
+            FLEXIBLAS=$b Rscript /c/R-inst/tests/reg-BLAS.R 2>&1 | tee -a reg-BLAS.log
+          done
+
+      # built with R CMD SHLIB and linked as a package is
+      - name: Invalid arguments reach R's xerbla under each backend
+        id: xerbla
+        if: always()
+        timeout-minutes: 5
+        shell: bash
+        run: Rscript tests/test-xerbla.R 2>&1 | tee xerbla.log
 
       - name: The flexiblas package's own tests
         id: pkgtests
@@ -569,10 +588,11 @@ jobs:
               "test-flexiblas.R: backends, errors vs NETLIB, thread counts" "${{ steps.tests.outcome }}" \
               "  the same with OMP_NUM_THREADS=1" "${{ steps.tests_omp1.outcome }}" \
               "  the same with OMP_THREAD_LIMIT=1 (OpenMP build caps at 1)" "${{ steps.tests_limit1.outcome }}" \
-              "LAPACK calls reach the backend (profile hook)" "${{ steps.profile.outcome }}" \
+              "LAPACK calls reach the backend, no dgemm/dtrsm (profile)" "${{ steps.profile.outcome }}" \
               "NETLIB bit for bit R's own (test-identical.R)" "${{ steps.identical.outcome }}" \
               "backend selection: default, FLEXIBLAS, user flexiblasrc" "${{ steps.backends.outcome }}" \
-              "R's reg-BLAS.R" "${{ steps.regblas.outcome }}" \
+              "R's reg-BLAS.R under each backend" "${{ steps.regblas.outcome }}" \
+              "invalid arguments give R's xerbla error, each backend" "${{ steps.xerbla.outcome }}" \
               "the package's tinytest suite" "${{ steps.pkgtests.outcome }}"
             echo
             echo "Measurements (the step fails only if a run crashes or hangs):"
@@ -607,6 +627,7 @@ jobs:
             tests-omp1.log
             tests-limit1.log
             reg-BLAS.log
+            xerbla.log
             pkg-install.log
             pkg-tests.log
             profile-nonzero.log

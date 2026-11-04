@@ -63,8 +63,17 @@ timings <- function() c(
 a10 <- matrix(rnorm(100), 10)
 b10 <- rnorm(10)
 
+## Which R and BLAS this is: ref must run without FlexiBLAS and cmp with it,
+## or a mix-up would compare one R with itself
+who <- c(R = paste(R.version.string, "r", R.version[["svn rev"]]), home = R.home(),
+         BLAS = extSoftVersion()[["BLAS"]])
+fb <- grepl("FlexiBLAS", who[["BLAS"]])
+if (identical(mode, "ref") == fb)
+    stop(sprintf("%s run with BLAS '%s'", mode, who[["BLAS"]]))
+
 if (identical(mode, "ref")) {
-    saveRDS(list(results = runall(), timings = timings()), "identical-ref.rds")
+    saveRDS(list(results = runall(), timings = timings(), who = who), "identical-ref.rds")
+    cat(sprintf("ref: %s\n", paste(names(who), who, sep = ": ", collapse = "; ")))
     cat("saved", nrow(cases), "cases of", length(run(3L, 1L)), "results and timings from R's own BLAS and LAPACK\n")
     quit(status = 0)
 }
@@ -73,6 +82,8 @@ saved <- readRDS("identical-ref.rds")
 ref <- saved$results
 res <- runall()
 cur <- if (requireNamespace("flexiblas", quietly = TRUE)) flexiblas::flexiblas_current_backend() else "?"
+cat(sprintf("ref: %s\ncmp: %s\n", paste(names(saved$who), saved$who, sep = ": ", collapse = "; "),
+            paste(names(who), who, sep = ": ", collapse = "; ")))
 cat("backend:", cur, "\n")
 num <- function(x) unlist(lapply(if (is.list(x)) x else list(x), function(y) as.complex(unlist(y))))
 diffs <- 0L
