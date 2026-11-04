@@ -353,17 +353,22 @@ jobs:
       # On aarch64 the runner image also has an emulated x86_64 R, and
       # setup-r resolves devel to a community build: the reference must be
       # the architecture under test.
+      # Steps with several commands run in bash (-e, pipefail), where the
+      # first failure is the step's; a pwsh step reports only its last
+      # command.
       - name: Reference results with CRAN's build of the same R, with R's own BLAS and LAPACK
+        id: ref
         timeout-minutes: 5
-        shell: pwsh
+        shell: bash
         run: |
           Rscript -e "sessionInfo()"
           Rscript -e "stopifnot(identical(R.version[['arch']], '${{ inputs.target == 'aarch64' && 'aarch64' || 'x86_64' }}'))"
           Rscript tests/test-nan.R propagate ref
           Rscript tests/test-identical.R ref
-          Rscript tests/test-chol.R "R's own" 2>&1 | Tee-Object -FilePath chol.log
+          Rscript tests/test-chol.R "R's own" 2>&1 | tee chol.log
 
       - name: Install R from the installer
+        id: install
         timeout-minutes: 10
         shell: pwsh
         run: |
@@ -373,14 +378,14 @@ jobs:
           "C:\R-inst\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
 
       - name: chol() with non-finite input
+        id: chol
         if: always()
         timeout-minutes: 5
-        shell: pwsh
+        shell: bash
         run: |
-          foreach ($b in "NETLIB", "OPENBLAS-OPENMP", "OPENBLAS-THREADS") {
-            $env:FLEXIBLAS = $b
-            Rscript tests/test-chol.R 2>&1 | Tee-Object -Append -FilePath chol.log
-          }
+          for b in NETLIB OPENBLAS-OPENMP OPENBLAS-THREADS; do
+            FLEXIBLAS=$b Rscript tests/test-chol.R 2>&1 | tee -a chol.log
+          done
 
       - name: Install the flexiblas R package, patched for Windows
         id: pkg
@@ -439,6 +444,7 @@ jobs:
           exit $LASTEXITCODE
 
       - name: NA/NaN/Inf propagation through FlexiBLAS backends
+        id: nan
         if: always()
         timeout-minutes: 5
         shell: pwsh
@@ -491,32 +497,32 @@ jobs:
           rm "$u"
           exit $fail
 
+      # A measurement, but a crash or a hang (the 64-thread product is the
+      # one place where a count above the core count reaches dgemm) fails
+      # the step and the job.
       - name: Memory use
+        id: memory
         if: always()
-        continue-on-error: true
         timeout-minutes: 5
-        shell: pwsh
+        shell: bash
         run: |
-          foreach ($b in "OPENBLAS-OPENMP", "OPENBLAS-THREADS") {
-            Rscript tests/test-memory.R $b 2>&1 | Tee-Object -Append -FilePath memory.log
-            $env:OPENBLAS_NUM_THREADS = 1
-            Rscript tests/test-memory.R $b 2>&1 | Tee-Object -Append -FilePath memory.log
-            Remove-Item Env:OPENBLAS_NUM_THREADS
-            $env:OMP_NUM_THREADS = 1
-            Rscript tests/test-memory.R $b 2>&1 | Tee-Object -Append -FilePath memory.log
-            Remove-Item Env:OMP_NUM_THREADS
-          }
+          for b in OPENBLAS-OPENMP OPENBLAS-THREADS; do
+            Rscript tests/test-memory.R $b 2>&1 | tee -a memory.log
+            OPENBLAS_NUM_THREADS=1 Rscript tests/test-memory.R $b 2>&1 | tee -a memory.log
+            OMP_NUM_THREADS=1 Rscript tests/test-memory.R $b 2>&1 | tee -a memory.log
+          done
 
       - name: BLAS called from OpenMP threads with a static libgomp
+        id: ompcaller
         if: always()
         timeout-minutes: 10
-        shell: pwsh
+        shell: bash
         # large calls, and many small ones, where a server that serialises
         # callers would show
         run: |
-          Rscript tests/test-omp-caller.R 2>&1 | Tee-Object -FilePath omp-caller.log
-          Rscript tests/test-omp-caller.R 200 200 2>&1 | Tee-Object -Append -FilePath omp-caller.log
-          Rscript tests/test-omp-caller.R 64 1000 2>&1 | Tee-Object -Append -FilePath omp-caller.log
+          Rscript tests/test-omp-caller.R 2>&1 | tee omp-caller.log
+          Rscript tests/test-omp-caller.R 200 200 2>&1 | tee -a omp-caller.log
+          Rscript tests/test-omp-caller.R 64 1000 2>&1 | tee -a omp-caller.log
 
       - name: R's BLAS regression tests
         id: regblas
@@ -531,26 +537,35 @@ jobs:
         id: pkgtests
         if: always()
         timeout-minutes: 10
-        shell: pwsh
+        shell: bash
         env:
           # They expect a threaded default backend.
           FLEXIBLAS: OPENBLAS-OPENMP
+        # test_package() stops, and Rscript exits 1, when a test fails
         run: |
-          Rscript -e "tinytest::test_package('flexiblas')" 2>&1 | Tee-Object -FilePath pkg-tests.log
-          if (Select-String -Path pkg-tests.log -Pattern 'FAILED|Error|fails' -Quiet) { exit 1 }
+          Rscript -e "tinytest::test_package('flexiblas')" 2>&1 | tee pkg-tests.log
 
-      # What was checked and how it came out, then the one-line results of
-      # the measurements; the logs themselves are collapsed in the report.
+      # Every step's outcome, checks and measurements alike (a verdict is a
+      # step outcome, never a pattern found in a log), then the one-line
+      # results of the measurements with what is expected next to them, and
+      # "not found" when a log lacks its line; the logs themselves are
+      # collapsed in the report.
       - name: Summarise
         if: always()
         shell: bash
         run: |
+          # a report, not a check: a missing line must not end the step
+          set +e
+          line() { grep -m1 "$2" "$1" 2>/dev/null || echo "not found in $1"; }
           {
             echo "$(Rscript -e 'cat(R.version.string)' 2>/dev/null), installer from run ${{ steps.prev.outputs.run_id || github.run_id }}, reference: CRAN's build of the same R"
             echo
             echo "Checks (the job fails if one fails):"
             printf '  %-58s %s\n' \
+              "reference results from CRAN's R" "${{ steps.ref.outcome }}" \
+              "installer installs" "${{ steps.install.outcome }}" \
               "flexiblas package installs" "${{ steps.pkg.outcome }}" \
+              "startup with FLEXIBLAS_VERBOSE=1" "${{ steps.startup.outcome }}" \
               "test-flexiblas.R: backends, errors vs NETLIB, thread counts" "${{ steps.tests.outcome }}" \
               "  the same with OMP_NUM_THREADS=1" "${{ steps.tests_omp1.outcome }}" \
               "  the same with OMP_THREAD_LIMIT=1 (OpenMP build caps at 1)" "${{ steps.tests_limit1.outcome }}" \
@@ -560,16 +575,23 @@ jobs:
               "R's reg-BLAS.R" "${{ steps.regblas.outcome }}" \
               "the package's tinytest suite" "${{ steps.pkgtests.outcome }}"
             echo
-            echo "Measurements (reported, not checked):"
-            echo "  identical.log: $(grep -m1 'results differ' identical.log)"
-            echo "  nan.log: $(grep -m1 'results differ' nan.log)"
-            echo "  chol.log, NaN on the diagonal: $(grep -c 'NaN on the diagonal.*error:' chol.log) of $(grep -c 'NaN on the diagonal' chol.log) BLAS/LAPACK sets give an error"
+            echo "Measurements (the step fails only if a run crashes or hangs):"
+            printf '  %-58s %s\n' \
+              "chol() with non-finite input, per backend" "${{ steps.chol.outcome }}" \
+              "NA/NaN/Inf propagation, backends vs R's own" "${{ steps.nan.outcome }}" \
+              "memory use per backend and thread setting" "${{ steps.memory.outcome }}" \
+              "dgemm from OpenMP threads with a static libgomp" "${{ steps.ompcaller.outcome }}"
+            echo
+            echo "  identical.log (0 expected): $(line identical.log 'results differ')"
+            echo "  nan.log (6 expected: dpotrf at six sizes for the two OpenBLAS backends): $(line nan.log 'results differ')"
+            n=$(grep -c 'NaN on the diagonal' chol.log 2>/dev/null)
+            echo "  chol.log, NaN on the diagonal: ${n:-no} BLAS/LAPACK sets, $(grep -c 'NaN on the diagonal.*error:' chol.log 2>/dev/null) give an error (2 of 4 expected: R's own and NETLIB test the pivot with disnan(), OpenBLAS's dpotrf does not)"
             echo "  memory.log, private bytes after loading the backend:"
-            grep -E '^backend:|loaded,' memory.log | paste - - | sed -E 's/^backend: (\S+) ; OPENBLAS_NUM_THREADS: (\S+) ; OMP_NUM_THREADS: (\S+) ; cores: [0-9]+\s+\S+ loaded, ([0-9]+) threads private +([0-9]+) MB.*/    \1 OPENBLAS_NUM_THREADS=\2 OMP_NUM_THREADS=\3: \4 threads, \5 MB/'
-            echo "  omp-caller.log: process thread counts with 4 OpenMP callers and 4 BLAS threads, n = 1000:"
-            awk '/^cores: 4  n: 1000/ {p = 1} /^cores: 4  n: 200/ {p = 0} p && $2 == 4 && $3 == 4 {printf "    %-18s %s threads, %s s\n", $1, $5, $4}' omp-caller.log
+            awk '/^backend:/ {b = $2; ob = $5; om = $8} /loaded,/ {found = 1; printf "    %-18s OPENBLAS_NUM_THREADS=%-7s OMP_NUM_THREADS=%-7s %s threads, %s MB\n", b, ob, om, $3, $6} END {if (!found) print "    not found in memory.log"}' memory.log 2>/dev/null || echo "    not found in memory.log"
+            echo "  omp-caller.log: process thread counts with as many OpenMP callers as cores and as many BLAS threads, n = 1000:"
+            awk '/^cores:/ {c = $2; p = ($4 == 1000)} p && $2 == c && $3 == c {found = 1; printf "    %-18s %s threads, %s s\n", $1, $5, $4} END {if (!found) print "    not found in omp-caller.log"}' omp-caller.log 2>/dev/null || echo "    not found in omp-caller.log"
             echo "  tests.log, B %*% B at n = 3000 (s):"
-            awk '/^== / {b = $2} /B %\*% B.*thread\(s\)/ {for (i = 1; i <= NF; i++) if ($(i + 1) == "thread(s):") n = $i; printf "    %-18s %s threads: %s\n", b, n, $NF}' tests.log
+            awk '/^== / {b = $2} /B %\*% B.*thread\(s\)/ {found = 1; for (i = 1; i <= NF; i++) if ($(i + 1) == "thread(s):") n = $i; printf "    %-18s %s threads: %s\n", b, n, $NF} END {if (!found) print "    not found in tests.log"}' tests.log 2>/dev/null || echo "    not found in tests.log"
           } > summary.log 2>&1
           cat summary.log
 
@@ -594,3 +616,20 @@ jobs:
             backends.log
             identical.log
             chol.log
+
+  # The test comment would otherwise keep the previous run's status when
+  # the build fails and the test job is skipped.
+  test-not-run:
+    name: Test not run
+    needs: [build, test]
+    if: always() && needs.test.result == 'skipped' && inputs.experiment == 'none'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: echo "not run; the build job ended with ${{ needs.build.result }}, so there was no installer to test" > summary.log
+      - uses: ./.github/actions/report
+        with:
+          key: ${{ github.workflow }} (${{ inputs.r }}, test${{ env.SUFFIX && format(', {0}', inputs.target) || '' }})
+          status: not run
+          summary: summary.log
+          files: summary.log

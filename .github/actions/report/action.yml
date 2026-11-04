@@ -36,8 +36,10 @@ runs:
         FILES: ${{ inputs.files }}
       run: |
         issue=1
-        # a comment holds 65536 characters, shared by the files
-        cap=$((60000 / $(grep -c . <<< "$FILES")))
+        # a comment holds 65536 characters: the summary up to 8000, the
+        # rest shared by the files, with room for the markup
+        sz=0; [ -s "$SUMMARY" ] && sz=$(wc -c < "$SUMMARY") && [ $sz -gt 8000 ] && sz=8000
+        cap=$(((60000 - sz) / $(grep -c . <<< "$FILES")))
         {
           echo "<!-- report: $KEY -->"
           echo "### $KEY — $STATUS"
@@ -46,7 +48,7 @@ runs:
           if [ -n "$SUMMARY" ]; then
             first=no
             echo; echo '```'
-            if [ -s "$SUMMARY" ]; then tr -d '\r' < "$SUMMARY" | head -c 8000; else echo "no summary"; fi
+            if [ -s "$SUMMARY" ]; then tr -d '\r' < "$SUMMARY" | head -c 8000; [ $(wc -c < "$SUMMARY") -le 8000 ] || echo "... (cut)"; else echo "no summary"; fi
             echo '```'
           fi
           while IFS= read -r line; do
@@ -72,9 +74,10 @@ runs:
         } > report.md
         id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$issue/comments?per_page=100" --paginate \
                --jq ".[] | select(.body | startswith(\"<!-- report: $KEY -->\")) | .id" | head -1)
+        # the report in the job log should posting fail
         if [ -n "$id" ]; then
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@report.md > /dev/null
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@report.md > /dev/null || { echo "posting failed; the report:"; cat report.md; exit 1; }
         else
-          gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$issue/comments" -F body=@report.md > /dev/null
+          gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$issue/comments" -F body=@report.md > /dev/null || { echo "posting failed; the report:"; cat report.md; exit 1; }
         fi
         echo "reported as '$KEY'"
