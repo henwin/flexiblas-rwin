@@ -108,7 +108,8 @@ for TGT in ${RTARGETS} ; do
     apt-get update
     echo "Europe/Prague" > /etc/timezone
     env DEBIAN_FRONTEND=noninteractive apt-get install -y tzdata
-    apt-get install -y wget make findutils patch zip zstd
+    # gcc: OpenBLAS compiles getarch with the host compiler
+    apt-get install -y wget make findutils patch zip zstd gcc
     mkdir -p /usr/lib/mxe/usr
     mkdir -p /usr/lib/mxe/usr_aarch64
     cd /root

@@ -1,7 +1,7 @@
-Index: build.sh
+Index: winutf8/ucrt3/r/build.sh
 ===================================================================
---- build.sh	(revision 6985)
-+++ build.sh	(working copy)
+--- winutf8/ucrt3/r/build.sh	(revision 6991)
++++ winutf8/ucrt3/r/build.sh	(working copy)
 @@ -220,6 +220,7 @@
    DIRNAME=trunk
  else

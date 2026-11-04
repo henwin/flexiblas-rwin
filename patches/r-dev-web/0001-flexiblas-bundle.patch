@@ -1,0 +1,161 @@
+Index: winutf8/ucrt3/r/build.sh
+===================================================================
+--- winutf8/ucrt3/r/build.sh	(revision 6991)
++++ winutf8/ucrt3/r/build.sh	(working copy)
+@@ -7,6 +7,9 @@
+ #   for target x86_64:   
+ #     gcc14_ucrt3_full*tar.zst (single file, see ../toolchain_libs)
+ #     Tcl*.zip (single file, name not including aarch64, see ../tcl_bundle)
++#     FlexiBLAS*.zip (optional, single file, name not including aarch64,
++#       see ../flexiblas_bundle); when present, R is built with
++#       USE_FLEXIBLAS = YES
+ #
+ #   for target aarch64:
+ #     llvm19_ucrt3_full_aarch64*tar.zst
+@@ -154,11 +157,13 @@
+   TRIPLET=aarch64-w64-mingw32.static.posix
+   TCFILE=`ls -1 llvm19_ucrt3_full_aarch64*tar.zst | head -1`
+   TCLFILE=`ls -1 Tcl-aarch64*zip | head -1`
++  FBFILE=`ls -1 FlexiBLAS-aarch64*zip 2>/dev/null | head -1`
+   TCTS=llvm19_ucrt3.ts 
+ else
+   TRIPLET=x86_64-w64-mingw32.static.posix
+   TCFILE=`ls -1 gcc14_ucrt3_full*tar.zst | head -1`
+   TCLFILE=`ls -1 Tcl*zip | grep -v aarch64 | head -1`
++  FBFILE=`ls -1 FlexiBLAS*zip 2>/dev/null | grep -v aarch64 | head -1`
+   TCTS=gcc14_ucrt3.ts
+ fi
+ 
+@@ -260,6 +265,9 @@
+ svn diff > ../build/ucrt3.diff
+ svn info --show-item revision > ../build/svn_revision
+ unzip ../$TCLFILE
++if [ "X$FBFILE" != X ] ; then
++  unzip ../$FBFILE
++fi
+ 
+ # Not needed as we use Schannel - https://curl.se/docs/sslcerts.html
+ cd etc
+@@ -280,6 +288,10 @@
+ ISDIR = ${MISDIR}
+ EOF
+ 
++if [ "X$FBFILE" != X ] ; then
++  echo "USE_FLEXIBLAS = YES" >> MkRules.local
++fi
++
+ if [ "X${QPDFDIR}" != X ] ; then
+   export R_QPDF="${QPDFDIR}/bin/qpdf"
+   cat <<EOF >> MkRules.local
+Index: winutf8/ucrt3/r/build_in_docker.sh
+===================================================================
+--- winutf8/ucrt3/r/build_in_docker.sh	(revision 6991)
++++ winutf8/ucrt3/r/build_in_docker.sh	(working copy)
+@@ -11,6 +11,8 @@
+ #   Tcl*.zip (single file, see ../tcl_bundle)
+ #
+ # These files may be present in the current directory:
++#   FlexiBLAS*.zip (single file, see ../flexiblas_bundle); when present,
++#     R is built with USE_FLEXIBLAS = YES
+ #   "installers" - directory with pre-downloaded installers of the needed
+ #     software - note that exact file names with versions are hard-coded in
+ #     the script setup.ps1
+@@ -118,6 +120,10 @@
+ docker cp $TCFILE $CID:\\r
+ BFILE=`ls -1 Tcl*.zip | head -1`
+ docker cp $BFILE $CID:\\r
++FBFILE=`ls -1 FlexiBLAS*.zip 2>/dev/null | head -1`
++if [ "X$FBFILE" != X ] ; then
++  docker cp $FBFILE $CID:\\r
++fi
+ BINFILE=`ls -1 r_binaries*.tar.zst | head -1`
+ if [ "X$BINFILE" != X ] && [ -r "$BINFILE" ] ; then
+   docker cp $BINFILE $CID:\\r
+Index: winutf8/ucrt3/howto.md
+===================================================================
+--- winutf8/ucrt3/howto.md	(revision 6991)
++++ winutf8/ucrt3/howto.md	(working copy)
+@@ -178,6 +178,11 @@
+ builds the Tcl/Tk bundle using the toolchain. It is to be run on a Linux
+ machine or on any machine that can run Linux containers.
+ 
++[flexiblas_bundle](https://svn.r-project.org/R-dev-web/trunk/WindowsBuilds/winutf8/ucrt3/flexiblas_bundle)
++builds the FlexiBLAS bundle the same way, from the toolchain and its
++OpenBLAS. It is optional: when the bundle is present, R is built with
++`USE_FLEXIBLAS = YES` and its BLAS and LAPACK can be switched at run time.
++
+ [rtools](https://svn.r-project.org/R-dev-web/trunk/WindowsBuilds/winutf8/ucrt3/rtools)
+ builds the Rtools installer from the toolchain and libraries provided above,
+ adding Msys2 as build tools. This and all other components built on
+Index: R-devel/howto.md
+===================================================================
+--- R-devel/howto.md	(revision 6991)
++++ R-devel/howto.md	(working copy)
+@@ -182,6 +182,20 @@
+ And a similar trick can be used to obtain other files that always exist but
+ have changing version names.
+ 
++To build R with FlexiBLAS, so that the BLAS and LAPACK can be switched at
++run time, also download the FlexiBLAS bundle from the same place, a file
++named such as `flexiblas-6536-6492.zip`, to the directory holding the R
++sources, and unpack it into them:
++
++```
++FBBUNDLE=flexiblas-6536-6492.zip
++wget https://cran.r-project.org/bin/windows/Rtools/rtools45/files/$FBBUNDLE
++unzip $FBBUNDLE -d trunk
++```
++
++The corresponding version of the bundle for ARM would be named
++`flexiblas-aarch64-6536-6492.zip`.
++
+ Set environment variables as follows (update the MiKTeX installation
+ directory in the commands below if needed, this one is "non-standard" from
+ an automated installation described later below):
+@@ -236,6 +250,12 @@
+ WIN =
+ ```
+ 
++To build with FlexiBLAS, add this line to `MkRules.local`:
++
++```
++USE_FLEXIBLAS = YES
++```
++
+ Build R and the recommended packages:
+ 
+ ```
+@@ -597,6 +617,20 @@
+ The corresponding version of the bundle for ARM would be named
+ `tcltk-6536-6492-aarch64.zip`.
+ 
++To build R with FlexiBLAS, so that the BLAS and LAPACK can be switched at
++run time, also download the FlexiBLAS bundle from the same place, a file
++named such as `flexiblas-6536-6492.zip`, to the directory holding the R
++sources, and unpack it into them:
++
++```
++FBBUNDLE=flexiblas-6536-6492.zip
++wget https://cran.r-project.org/bin/windows/Rtools/rtools45/files/$FBBUNDLE
++unzip $FBBUNDLE -d trunk
++```
++
++The corresponding version of the bundle for ARM would be named
++`flexiblas-aarch64-6536-6492.zip`.
++
+ Set environment variables. Note that when building R, one needs to have the
+ compiler toolchain on PATH, it is not added automatically in this case
+ (adjust below if the toolchain tarball was unpacked in a different
+@@ -639,6 +673,12 @@
+ WIN =
+ ```
+ 
++To build with FlexiBLAS, add this line to `MkRules.local`:
++
++```
++USE_FLEXIBLAS = YES
++```
++
+ Build R and recommended packages:
+ 
+ ```

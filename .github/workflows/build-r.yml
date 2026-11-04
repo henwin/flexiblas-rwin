@@ -7,9 +7,10 @@ name: R with the R-core scripts
 # tarball and the Tcl/Tk bundle, checks out R, applies the r_*.diff
 # patches, runs make distribution and then make check-devel and check-all.
 # Added here: the FlexiBLAS bundle from the latest successful run of
-# build-bundle.yml, patches/r as further r_*.diff, and
-# patches/r-dev-web/0002 to build.sh, which uses the bundle when present,
-# and 0004, without which build.sh --patched checks out no branch.
+# build-bundle.yml, patches/r as further r_*.diff, and patches/r-dev-web
+# applied to a mirror of WindowsBuilds: 0001, after which build.sh uses
+# the bundle when present, and 0002, without which build.sh --patched
+# checks out no branch.
 # build.sh builds trunk or the R-patched branch; for release, the branch
 # in the checkout line is replaced by the latest R-x-y-z tag of the
 # release series, since R-core builds release in another way.
@@ -51,7 +52,7 @@ permissions:
   issues: write
 
 env:
-  RDEVWEB: https://svn.r-project.org/R-dev-web/trunk/WindowsBuilds/winutf8/ucrt3/r
+  RDEVWEB: https://svn.r-project.org/R-dev-web/trunk/WindowsBuilds
   # CRAN's toolchain tarball and Tcl/Tk bundle for Rtools45 for the target,
   # and the names build.sh looks for them under
   TOOLCHAIN: ${{ inputs.target == 'aarch64' && 'rtools45-toolchain-libs-full-aarch64-6768.tar.zst' || 'rtools45-toolchain-libs-full-6768.tar.zst' }}
@@ -101,30 +102,39 @@ jobs:
           run-id: ${{ steps.build.outputs.run_id }}
           github-token: ${{ github.token }}
 
+      # The files patches/r-dev-web touches, in their places under
+      # WindowsBuilds, so that the patches apply as they would to R-dev-web
+      # (the howtos only to check that they still apply), and the ucrt3/r
+      # directory copied to C:\rbuild, where build.sh runs.
       - name: Fetch R-core's scripts and patches
         shell: pwsh
         run: |
-          New-Item -ItemType Directory C:\rbuild | Out-Null
           # build.sh applies r_*.diff_aarch64 in place of its namesake on aarch64 only
-          foreach ($f in "setup.ps1", "build.sh", "r_001_ucrt3_package_patches_and_repo.diff", "r_001_ucrt3_package_patches_and_repo.diff_aarch64", "r_002_rtools45.diff") {
-            Invoke-WebRequest "$env:RDEVWEB/$f" -OutFile "C:\rbuild\$f" -UseBasicParsing
+          foreach ($f in "winutf8/ucrt3/r/setup.ps1", "winutf8/ucrt3/r/build.sh", "winutf8/ucrt3/r/build_in_docker.sh", "winutf8/ucrt3/r/r_001_ucrt3_package_patches_and_repo.diff", "winutf8/ucrt3/r/r_001_ucrt3_package_patches_and_repo.diff_aarch64", "winutf8/ucrt3/r/r_002_rtools45.diff", "winutf8/ucrt3/howto.md", "R-devel/howto.md") {
+            New-Item -ItemType Directory -Force (Split-Path "C:\rdw\$f") | Out-Null
+            Invoke-WebRequest "$env:RDEVWEB/$f" -OutFile "C:\rdw\$f" -UseBasicParsing
           }
-          Get-ChildItem C:\rbuild
+          Get-ChildItem -Recurse -File C:\rdw
+
+      - name: Apply patches/r-dev-web
+        shell: bash
+        run: |
+          cd /c/rdw
+          for p in "$GITHUB_WORKSPACE"/patches/r-dev-web/*.patch; do
+            patch -p0 < "$p"
+          done
+          # jrsoftware.org/download.php, setup.ps1's source for Inno Setup,
+          # now redirects to the downloads page; the same 6.4.1 is on GitHub
+          sed -i 's#https://jrsoftware.org/download.php/is.exe?site=2#https://github.com/jrsoftware/issrc/releases/download/is-6_4_1/innosetup-6.4.1.exe#' winutf8/ucrt3/r/setup.ps1
+          grep -n 'innosetup-6.4.1.exe"' winutf8/ucrt3/r/setup.ps1
+          cp -r winutf8/ucrt3/r /c/rbuild
+          ls -la /c/rbuild
 
       # setup.ps1 installs MSYS2 and the packages build.sh needs only when
       # C:\msys64 does not exist, and the runner image has its own there.
       - name: Move the runner's MSYS2 aside
         shell: pwsh
         run: Rename-Item C:\msys64 C:\msys64-runner
-
-      # jrsoftware.org/download.php, setup.ps1's source for Inno Setup, now
-      # redirects to the downloads page, and the installers are on GitHub;
-      # patches/r-dev-web/0003 takes the same 6.4.1 from there.
-      - name: Patch setup.ps1 for the Inno Setup download
-        shell: bash
-        run: |
-          cd /c/rbuild
-          patch -p0 < "$GITHUB_WORKSPACE/patches/r-dev-web/0003-setup-inno-setup-from-github.patch"
 
       # In a process of its own, as when run by hand: the step's shell sets
       # $ErrorActionPreference to Stop, which turns errors setup.ps1 lives
@@ -175,8 +185,6 @@ jobs:
             z=$(find "$w/dist" -name 'FlexiBLAS*.zip' | head -1); cp "$z" "/c/rbuild/$(basename "$z")"
           fi
           cd /c/rbuild
-          patch -p0 < "$w/patches/r-dev-web/0002-build-flexiblas-bundle.patch"
-          patch -p0 < "$w/patches/r-dev-web/0004-build-patched-branch-name.patch"
           if [ "${{ inputs.r }}" = release ]; then
             tag=$(svn ls https://svn.r-project.org/R/tags | grep -E '^R-[0-9]+-[0-9]+-[0-9]+/$' | sort -t- -k2,2n -k3,3n -k4,4n | tail -1 | tr -d /)
             echo "release tag $tag"
