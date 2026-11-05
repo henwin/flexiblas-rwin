@@ -8,12 +8,12 @@ Index: src/gnuwin32/COPYRIGHTS.win
  
 +A build with USE_FLEXIBLAS = YES contains FlexiBLAS
 +(https://www.mpi-magdeburg.mpg.de/projects/flexiblas), distributed under
-+LGPL 3 or later, and its backends, built by the scripts in
++LGPL 3 or later, with the reference BLAS and LAPACK (BSD-style licence)
++and linked with dlfcn-win32 (MIT licence) from Rtools, and its backends,
++built by the scripts in
 +https://svn.r-project.org/R-dev-web/trunk/WindowsBuilds/winutf8/ucrt3/flexiblas_bundle
-+from the FlexiBLAS sources and the OpenBLAS in Rtools.  FlexiBLAS
-+includes the reference BLAS and LAPACK and dlfcn-win32 (MIT licence);
-+OpenBLAS is distributed under the BSD 3-clause licence and includes
-+ReLAPACK (MIT licence).
++from OpenBLAS (BSD 3-clause licence, with ReLAPACK under the MIT licence):
++the OpenBLAS in Rtools and one built from the same sources with pthreads.
 +
  Rbitmap.dll is built against static libraries for libpng, jpeg and
  libtiff: the Makefiles and configuration headers used are in the

@@ -91,7 +91,7 @@ Index: src/modules/lapack/Makefile.win
  
 +## FlexiBLAS only when Rblas.dll uses it: ATLAS and OpenBLAS come first in
 +## ../../extra/blas/Makefile.win
-+ifeq "$(USE_ATLAS)$(USE_OPENBLAS)$(USE_FLEXIBLAS)" "NONOYES"
++ifeq "$(filter YES,$(USE_ATLAS) $(USE_OPENBLAS))$(USE_FLEXIBLAS)" "YES"
 +## Rlapack.dll passes on to libflexiblas.dll, as Rblas.dll does, the entry
 +## points FlexiBLAS has: all but dlarscl2 and dlascl2, which LAPACK builds
 +## only with its extra-precise routines and nothing in R calls, and
@@ -113,7 +113,7 @@ Index: src/modules/lapack/Makefile.win
  
  $(MODULE).dll: $(OBJS)
  
-+ifeq "$(USE_ATLAS)$(USE_OPENBLAS)$(USE_FLEXIBLAS)" "NONOYES"
++ifeq "$(filter YES,$(USE_ATLAS) $(USE_OPENBLAS))$(USE_FLEXIBLAS)" "YES"
 +../../../$(BINDIR)/Rlapack.dll: Rlapackrc.o Rlapack.def
 +	$(DLL) -shared -s -o $@ $^ -L$(FLEXIBLAS_PATH)/$(BINDIR) -lflexiblas
 +else

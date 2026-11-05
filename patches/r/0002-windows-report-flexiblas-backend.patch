@@ -29,8 +29,8 @@ Index: src/main/flexiblas.c
      char *fcb_name = "flexiblas_current_backend";
      fcb_addr = dlsym(RTLD_DEFAULT, fcb_name);
 +#elif defined(Win32)
-+    /* built with USE_FLEXIBLAS, Rblas.dll and Rlapack.dll forward to
-+       libflexiblas.dll */
++    /* built with USE_FLEXIBLAS, Rblas.dll and Rlapack.dll pass their entry
++       points on to libflexiblas.dll */
 +    HMODULE fb = GetModuleHandle(TEXT("libflexiblas.dll"));
 +    if (fb)
 +	fcb_addr = (void *) GetProcAddress(fb, "flexiblas_current_backend");
