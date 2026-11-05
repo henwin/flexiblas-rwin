@@ -116,6 +116,8 @@ jobs:
             [ -f $z ] && echo "$z: $(du -k $z | cut -f1) kB, $(du -sk dist/$DIST | cut -f1) kB installed" || echo "$z: not found"
             echo "backends configured: $(ls dist/$DIST/etc/flexiblasrc.d 2>/dev/null | sed 's/\.conf$//' | tr '\n' ' ')(OPENBLAS-OPENMP OPENBLAS-THREADS expected)"
             echo "backend DLLs: $(ls dist/$DIST/bin/*/flexiblas/ dist/$DIST/bin/flexiblas/ 2>/dev/null | grep dll | tr '\n' ' ')"
+            echo "sha256 of the backend DLLs and libflexiblas.dll:"
+            sha256sum dist/$DIST/bin/*/flexiblas/*.dll dist/$DIST/bin/flexiblas/*.dll dist/$DIST/bin/*/libflexiblas.dll dist/$DIST/bin/libflexiblas.dll 2>/dev/null | sed 's#dist/[^ ]*/##; s/^/  /'
             echo "OPENBLAS-THREADS: $(cat dist/openblas-pthreads-${{ matrix.target }}.txt 2>/dev/null || echo 'not found')"
             grep -h -E '^-- (Build additional BLAS interface|-- Libs|Looking for Fortran DAXPY -)|does not contain a BLAS' $log 2>/dev/null | sed 's/^-- //' || echo "CMake's backend lines: not found in $log"
             grep -h ' imports: ' docker-build.log || echo "DLL imports: not found in docker-build.log"
@@ -154,7 +156,8 @@ jobs:
             triplet: x86_64-w64-mingw32.static.posix
             cc: gcc
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    # a case that hangs costs 128 s (tests/omp-cases.sh)
+    timeout-minutes: 60
     defaults:
       run:
         shell: ${{ matrix.rtools }}\usr\bin\bash.exe --login -eo pipefail {0}

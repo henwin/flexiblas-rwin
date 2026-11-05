@@ -5,9 +5,10 @@
 # default; clang on aarch64), against dlfcn-win32 from Rtools on Windows,
 # and prints one line per case: the OpenMP environment, the count set, and
 # ok with the count OpenBLAS reports after setting it, HANG when the run
-# is still going after 8 s (timeout's status 124, since the alarm in the
-# programs is not available on Windows), or FAIL with the exit status or
-# what came out.  Every omp-team case is one way for the OpenMP team to be
+# is still going after 8 s and again after 120 s (timeout's status 124,
+# since the alarm in the programs is not available on Windows), SLOW when
+# it finished only in the second run, or FAIL with the exit status or what
+# came out; the time of dgemm follows ok.  Every omp-team case is one way for the OpenMP team to be
 # smaller than the count; see the table in the notes.  The omp-nested case
 # calls dgemm from a parallel region and checks the results; what it shows
 # depends on whether the caller shares OpenBLAS's OpenMP runtime (see
@@ -35,7 +36,14 @@ case_line() {   # case_line LABEL REQ RESULT
 run() {   # run COMMAND...; sets out and r to the output and the verdict so far
     out=$(timeout 8 "$@" 2>&1)
     status=$?
-    if [ $status = 124 ]; then r=HANG
+    if [ $status = 124 ]; then
+        # a hang or only slow: run again with 120 s, and keep the case not
+        # ok either way
+        start=$SECONDS
+        out=$(timeout 120 "$@" 2>&1)
+        status=$?
+        if [ $status = 124 ]; then r="HANG, also with 120 s"
+        else r="SLOW, over 8 s, then $((SECONDS - start)) s with status $status: $out"; fi
     elif [ $status != 0 ]; then r="FAIL, exit status $status: $out"
     else r=; fi
 }
@@ -47,7 +55,7 @@ team() {   # team "ENV=..." REQ...; must report REQ, or 1 under a limit of 1, at
         run env $env ./omp-team "$lib" "$req"
         if [ -z "$r" ]; then
             got=$(echo "$out" | sed -n 's/^ok [0-9.]*s (reported [0-9]*, set [0-9]* -> \([0-9]*\),.*/\1/p')
-            if [ "$got" = "$exp" ]; then r="ok, reports $got"
+            if [ "$got" = "$exp" ]; then r="ok, reports $got, dgemm $(echo "$out" | sed -n 's/^ok \([0-9.]*s\).*/\1/p')"
             else r="FAIL, reports ${got:-nothing}, expected $exp: $out"; fi
         fi
         case_line "${env:-default}" "$req" "$r"
