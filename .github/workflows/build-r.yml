@@ -573,7 +573,9 @@ jobs:
         if: always()
         timeout-minutes: 5
         shell: bash
-        run: Rscript tests/test-xerbla.R 2>&1 | tee xerbla.log
+        run: |
+          Rscript tests/test-xerbla.R 2>&1 | tee xerbla.log
+          test -f xerbla.ok || { echo "::error::test-xerbla.R did not finish"; exit 1; }
 
       - name: The flexiblas package's own tests
         id: pkgtests
