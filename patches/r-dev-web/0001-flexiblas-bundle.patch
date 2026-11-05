@@ -91,28 +91,40 @@ Index: R-devel/howto.md
 ===================================================================
 --- R-devel/howto.md	(revision 6991)
 +++ R-devel/howto.md	(working copy)
-@@ -182,6 +182,20 @@
- And a similar trick can be used to obtain other files that always exist but
- have changing version names.
+@@ -155,22 +155,29 @@
  
-+To build R with FlexiBLAS, so that the BLAS and LAPACK can be switched at
-+run time, also download the FlexiBLAS bundle from the same place, a file
-+named such as `flexiblas-6536-6492.zip`, to the directory holding the R
-+sources, and unpack it into them:
-+
-+```
+ As a next step to install R from source, download and unpack the Tcl/Tk bundle
+ from [here](https://cran.r-project.org/bin/windows/Rtools/rtools45/files/), a file
+-named such as `tcltk-6536-6492.zip`, then download the R sources.
++named such as `tcltk-6536-6492.zip`, then download the R sources. To build R
++with FlexiBLAS, so that the BLAS and LAPACK can be switched at run time, also
++download and unpack the FlexiBLAS bundle from the same place, a file named such
++as `flexiblas-6536-6492.zip` (the lines with `FBBUNDLE` below), and see
++`USE_FLEXIBLAS` below.
+ 
+ ```
+ TCLBUNDLE=tcltk-6536-6492.zip
+ wget https://cran.r-project.org/bin/windows/Rtools/rtools45/files/$TCLBUNDLE
 +FBBUNDLE=flexiblas-6536-6492.zip
 +wget https://cran.r-project.org/bin/windows/Rtools/rtools45/files/$FBBUNDLE
-+unzip $FBBUNDLE -d trunk
-+```
-+
-+The corresponding version of the bundle for ARM would be named
-+`flexiblas-aarch64-6536-6492.zip`.
-+
- Set environment variables as follows (update the MiKTeX installation
- directory in the commands below if needed, this one is "non-standard" from
- an automated installation described later below):
-@@ -236,6 +250,12 @@
+ 
+ svn checkout https://svn.r-project.org/R/trunk
+ 
+ cd trunk
+ unzip ../$TCLBUNDLE
++unzip ../$FBBUNDLE
+ 
+ cd src/gnuwin32
+ ```
+ 
+-The corresponding version of the bundle for ARM would be named
+-`tcltk-aarch64-6536-6492.zip`.
++The corresponding versions of the bundles for ARM would be named
++`tcltk-aarch64-6536-6492.zip` and `flexiblas-aarch64-6536-6492.zip`.
+ 
+ To automatically download always the current/latest version of the Tcl
+ bundle, one can do e.g.  this:
+@@ -236,6 +243,12 @@
  WIN =
  ```
  
@@ -125,28 +137,40 @@ Index: R-devel/howto.md
  Build R and the recommended packages:
  
  ```
-@@ -597,6 +617,20 @@
- The corresponding version of the bundle for ARM would be named
- `tcltk-6536-6492-aarch64.zip`.
+@@ -578,24 +591,29 @@
  
-+To build R with FlexiBLAS, so that the BLAS and LAPACK can be switched at
-+run time, also download the FlexiBLAS bundle from the same place, a file
-+named such as `flexiblas-6536-6492.zip`, to the directory holding the R
-+sources, and unpack it into them:
-+
-+```
+ Download and unpack Tcl/Tk bundle from
+ [here](https://cran.r-project.org/bin/windows/Rtools/rtools45/files/), a file named such as
+-`tcltk-6536-6492.zip`.
++`tcltk-6536-6492.zip`, and to build R with FlexiBLAS also the FlexiBLAS bundle,
++a file named such as `flexiblas-6536-6492.zip` (the lines with `FBBUNDLE`
++below).
+ Do this in the Msys2 shell  (please note that
+ the numbers 6536 and 6492 need to be replaced by the current ones).
+ 
+ ```
+ TCLBUNDLE=tcltk-6536-6492.zip
+ wget https://cran.r-project.org/bin/windows/Rtools/rtools45/files/$TCLBUNDLE
 +FBBUNDLE=flexiblas-6536-6492.zip
 +wget https://cran.r-project.org/bin/windows/Rtools/rtools45/files/$FBBUNDLE
-+unzip $FBBUNDLE -d trunk
-+```
-+
-+The corresponding version of the bundle for ARM would be named
-+`flexiblas-aarch64-6536-6492.zip`.
-+
+ 
+ svn checkout https://svn.r-project.org/R/trunk
+ 
+ cd trunk
+ unzip ../$TCLBUNDLE
++unzip ../$FBBUNDLE
+ 
+ cd src/gnuwin32
+ ```
+ 
+-The corresponding version of the bundle for ARM would be named
+-`tcltk-6536-6492-aarch64.zip`.
++The corresponding versions of the bundles for ARM would be named
++`tcltk-6536-6492-aarch64.zip` and `flexiblas-aarch64-6536-6492.zip`.
+ 
  Set environment variables. Note that when building R, one needs to have the
  compiler toolchain on PATH, it is not added automatically in this case
- (adjust below if the toolchain tarball was unpacked in a different
-@@ -639,6 +673,12 @@
+@@ -639,6 +657,12 @@
  WIN =
  ```
  
