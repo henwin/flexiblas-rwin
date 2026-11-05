@@ -227,7 +227,7 @@ jobs:
             fi
             echo "every backend through libflexiblas.dll: ${{ steps.load.outcome }} (dgemm, dpotrf and the program's xerbla, each backend must say ok)"
             grep -h ': ' load.log 2>/dev/null || echo "  load.log not found"
-            echo "thread cases: ${{ steps.cases.outcome }} (each a way for the OpenMP team to be smaller than the count set; every case must be ok)"
+            echo "thread cases: ${{ steps.cases.outcome }} (team sizes against the count set, and dgemm from a parallel region; every case must be ok)"
             sed -n '/^cases:/,$p' omp-cases.log 2>/dev/null | grep . || echo "  tally not found in omp-cases.log"
           } > brief.log
           touch load.log omp-cases.log

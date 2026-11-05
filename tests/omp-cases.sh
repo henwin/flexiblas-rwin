@@ -7,8 +7,11 @@
 # ok with the count OpenBLAS reports after setting it, HANG when the run
 # is still going after 8 s (timeout's status 124, since the alarm in the
 # programs is not available on Windows), or FAIL with the exit status or
-# what came out.  Every case is one way for the OpenMP team to be smaller
-# than the count; see the table in the notes.  Each case carries the count
+# what came out.  Every omp-team case is one way for the OpenMP team to be
+# smaller than the count; see the table in the notes.  The omp-nested case
+# calls dgemm from a parallel region and checks the results; what it shows
+# depends on whether the caller shares OpenBLAS's OpenMP runtime (see
+# omp-nested.c).  Each omp-team case carries the count
 # OpenBLAS must report: the count set, 1 under OMP_THREAD_LIMIT=1, and the
 # compiled-in cap of 64 above it.  Prints the tally and the cases that are
 # not ok last, and exits 1 unless every case is ok.
@@ -17,7 +20,7 @@ dir=$(dirname "$0")
 cc=${CC:-gcc}
 set -e
 $cc -O2 -fopenmp -o omp-team "$dir/omp-team.c" -ldl
-$cc -O2 -fopenmp -o omp-nested "$dir/omp-nested.c" -ldl
+$cc -O2 -fopenmp -o omp-nested "$dir/omp-nested.c" -ldl -lm
 set +e
 echo "$($cc --version | head -1); $(nproc) processors"
 n=0
