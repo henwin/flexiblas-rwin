@@ -24,6 +24,7 @@ int main(int argc, char **argv)
     int (*get)(void) = dlsym(h, "openblas_get_num_threads");
     void (*dgemm)(const char *, const char *, int *, int *, int *, double *, double *, int *,
                   double *, int *, double *, double *, int *) = dlsym(h, "dgemm_");
+    if (!set || !get || !dgemm) { fprintf(stderr, "%s lacks an OpenBLAS function\n", argv[1]); return 2; }
     int req = atoi(argv[2]), n = 1500, before, after;
     double *a = malloc(sizeof *a * n * n), *b = malloc(sizeof *b * n * n), *c = malloc(sizeof *c * n * n);
     for (long i = 0; i < (long) n * n; i++) { a[i] = (i % 7) * 0.1; b[i] = (i % 5) * 0.2; c[i] = 0; }

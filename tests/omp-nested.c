@@ -10,11 +10,13 @@
 #include <stdlib.h>
 int main(int argc, char **argv)
 {
-    void *h = dlopen(argv[1], RTLD_NOW); if (!h) return 2;
+    void *h = dlopen(argv[1], RTLD_NOW);
+    if (!h) { fprintf(stderr, "%s\n", dlerror()); return 2; }
     void (*set)(int) = dlsym(h, "openblas_set_num_threads");
     int (*get)(void) = dlsym(h, "openblas_get_num_threads");
     void (*dgemm)(const char *, const char *, int *, int *, int *, double *, double *, int *,
                   double *, int *, double *, double *, int *) = dlsym(h, "dgemm_");
+    if (!set || !get || !dgemm) { fprintf(stderr, "%s lacks an OpenBLAS function\n", argv[1]); return 2; }
     int req = atoi(argv[2]), n = 800;
     double *a = malloc(sizeof *a * n * n), *b = malloc(sizeof *b * n * n), *c = malloc(sizeof *c * n * n * 2);
     for (long i = 0; i < (long) n * n; i++) { a[i] = (i % 7) * 0.1; b[i] = (i % 5) * 0.2; }

@@ -1,12 +1,15 @@
 name: FlexiBLAS bundle
 
-# Builds the FlexiBLAS bundle for x86_64 and aarch64 and runs the thread
-# cases against it. Runs when the bundle's inputs change (the same list as
-# the provenance check in build-r.yml), and by hand.
+# Builds the FlexiBLAS bundle and tests it on Windows: every backend loaded
+# through libflexiblas.dll, and the thread cases. Only x86_64 for now; aarch64
+# is paused (scripts and patches keep it) until x86_64 works end to end. Open
+# there: the OPENBLAS-OPENMP backend needs LLVM's libomp.dll, which installed
+# R does not ship, and CRAN has no R for windows-11-arm to compare against. Runs when the bundle's inputs change (the same list as the
+# provenance check in build-r.yml), and by hand.
 on:
   push:
     branches: [master]
-    paths:
+    paths: &inputs
       - docker/**
       - scripts/build-mxe.sh
       - scripts/build-bundle.sh
@@ -17,212 +20,224 @@ on:
       - patches/r-dev-web/flexiblas_bundle/**
       - .github/workflows/build-bundle.yml
   pull_request:
-    paths:
-      - docker/**
-      - scripts/build-mxe.sh
-      - scripts/build-bundle.sh
-      - scripts/build-in-docker.sh
-      - patches/rtools-mxe/**
-      - patches/openblas/**
-      - patches/flexiblas/**
-      - patches/r-dev-web/flexiblas_bundle/**
-      - .github/workflows/build-bundle.yml
+    paths: *inputs
   workflow_dispatch:
 
 permissions:
   contents: read
   issues: write
 
-env:
-  FLEXIBLAS_VERSION: 3.5.0
-  RTOOLS_BUILD: 6768
+defaults:
+  run:
+    shell: bash
 
 jobs:
   build:
-    name: Cross-build with Rtools45 toolchain
+    name: Build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64]
     runs-on: ubuntu-24.04
+    env:
+      # the artifact's name, which build-r.yml looks for
+      ARTIFACT: ${{ matrix.target == 'aarch64' && 'flexiblas-rwin-aarch64' || 'flexiblas-rwin' }}
+      DIST: ${{ matrix.target == 'aarch64' && 'FlexiBLAS-aarch64' || 'FlexiBLAS' }}
     steps:
       - uses: actions/checkout@v7
 
-      # The MXE build of OpenBLAS takes about 1.5 hours; its files are cached
-      # until the recipe, the Rtools patches or the build environment change.
-      - name: Cache MXE build
-        uses: actions/cache@v6
+      # The MXE build of OpenBLAS and the bundle's pthreads OpenBLAS take
+      # about 1.5 hours each. build-mxe.sh and build-bundle.sh keep them by
+      # the hash of what they are built from, which these keys follow (the
+      # Dockerfile pins R's MXE tree, whose OpenBLAS patches and version the
+      # bundle uses); saved also when a later step fails.
+      - name: Restore the MXE build
+        id: mxe
+        uses: actions/cache/restore@v6
         with:
           path: mxe-out
-          key: mxe-${{ hashFiles('docker/Dockerfile', 'patches/rtools-mxe/**', 'patches/openblas/**', 'scripts/build-mxe.sh') }}
-
-      # The pthreads OpenBLAS the bundle builds, about as long, cached until
-      # the bundle script changes
-      - name: Cache the bundle's OpenBLAS
-        uses: actions/cache@v6
+          key: mxe-${{ matrix.target }}-${{ hashFiles('docker/Dockerfile', 'patches/rtools-mxe/**', 'patches/openblas/**', 'scripts/build-mxe.sh') }}
+      - name: Restore the bundle's OpenBLAS
+        id: pthreads
+        uses: actions/cache/restore@v6
         with:
           path: bundle-out
-          key: bundle-${{ hashFiles('patches/r-dev-web/flexiblas_bundle/build_ucrt.sh', 'patches/openblas/**') }}
+          key: bundle-${{ matrix.target }}-${{ hashFiles('docker/Dockerfile', 'patches/rtools-mxe/**', 'patches/openblas/**', 'patches/r-dev-web/flexiblas_bundle/build_ucrt.sh', 'scripts/build-bundle.sh') }}
 
-      # Docker's layer cache in GitHub, so that the Rtools tarballs and R's
-      # MXE tree are fetched only when the Dockerfile changes; the docker
-      # build in build-in-docker.sh then finds every layer cached.
+      # Docker's layer cache in GitHub, one per target, so that the Rtools
+      # tarballs and R's MXE tree are fetched only when the Dockerfile changes.
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
+          build-args: WITH_AARCH64=${{ matrix.target == 'aarch64' && 'yes' || 'no' }}
           tags: flexiblas-rwin-mxe
           load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
 
       - name: Build in Docker
-        run: |
-          set -o pipefail
-          bash scripts/build-in-docker.sh 2>&1 | tee docker-build.log
+        id: build
+        run: bash scripts/build-in-docker.sh ${{ matrix.target }} 2>&1 | tee docker-build.log
 
-      - name: Summarise
-        if: always()
-        run: |
-          log=$(ls dist/build_ucrt-*.out 2>/dev/null || echo docker-build.log)
-          { grep -n -E 'error|Error|ERROR|No such|not found|failed|Failed|Warning|WARNING' docker-build.log $log | grep -v -E 'liberror-perl|CheckLAPACKCompilerFlags|unused CMAKE_POLICY|toolchain file is deprecated|CMake Warning.*mxe-conf' | tail -25; echo ...; tail -30 $log; } > tail.log
-          ls -la dist dist/*/bin/* > dist.log 2>&1 || true
-          # the bundle in a few lines: the zip, the backends, the OpenBLAS build
-          {
-            for z in dist/*.zip; do echo "$z: $(du -k "$z" | cut -f1) kB, $(du -sk "${z%.zip}" | cut -f1) kB installed"; done
-            echo "backends: $(ls dist/*/bin/*/flexiblas/ dist/*/bin/flexiblas/ 2>/dev/null | grep dll | tr '\n' ' ')"
-            echo "OPENBLAS-THREADS built from OpenBLAS $(grep -m1 -o 'OBVER=[0-9.]*' patches/r-dev-web/flexiblas_bundle/build_ucrt.sh | cut -d= -f2)$(grep -q 'patching file' docker-build.log && echo ' in this run' || echo ', from the cache')"
-            grep -h -E '^-- (Build additional BLAS interface|-- Libs|Looking for Fortran DAXPY -)|does not contain a BLAS' $log | sed 's/^-- //'
-          } > summary.log 2>&1 || true
-
-      - uses: ./.github/actions/report
-        if: always()
+      - name: Save the MXE build
+        if: always() && steps.mxe.outputs.cache-hit != 'true' && hashFiles('mxe-out/*') != ''
+        uses: actions/cache/save@v6
         with:
-          status: ${{ job.status }}
-          summary: summary.log
-          files: |
-            The bundle: dist.log
-            Errors and the end of the build log: tail.log
+          path: mxe-out
+          key: ${{ steps.mxe.outputs.cache-primary-key }}
+      - name: Save the bundle's OpenBLAS
+        if: always() && steps.pthreads.outputs.cache-hit != 'true' && hashFiles('bundle-out/*') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: bundle-out
+          key: ${{ steps.pthreads.outputs.cache-primary-key }}
 
       - uses: actions/upload-artifact@v7
+        id: upload
         with:
-          name: flexiblas-rwin
+          name: ${{ env.ARTIFACT }}
           path: dist/
           if-no-files-found: error
 
-  # The same for aarch64, with the LLVM toolchain in a second MXE tree.
-  build-aarch64:
-    name: Cross-build for aarch64 with the LLVM toolchain
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Cache MXE build
-        uses: actions/cache@v6
-        with:
-          path: mxe-out
-          key: mxe-aarch64-${{ hashFiles('docker/Dockerfile', 'patches/rtools-mxe/**', 'patches/openblas/**', 'scripts/build-mxe.sh') }}
-      - name: Cache the bundle's OpenBLAS
-        uses: actions/cache@v6
-        with:
-          path: bundle-out
-          key: bundle-aarch64-${{ hashFiles('patches/r-dev-web/flexiblas_bundle/build_ucrt.sh', 'patches/openblas/**') }}
-
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/Dockerfile
-          build-args: WITH_AARCH64=yes
-          tags: flexiblas-rwin-mxe
-          load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build in Docker
-        run: |
-          set -o pipefail
-          bash scripts/build-in-docker.sh aarch64 2>&1 | tee docker-build.log
-
+      # The bundle in a few lines, each saying "not found" when what it reads
+      # is missing; the backends against the configuration files
       - name: Summarise
         if: always()
         run: |
-          log=$(ls dist/build_ucrt-*.out 2>/dev/null || echo docker-build.log)
-          { grep -n -E 'error|Error|ERROR|No such|not found|failed|Failed|Warning|WARNING' docker-build.log $log | grep -v -E 'liberror-perl|CheckLAPACKCompilerFlags|unused CMAKE_POLICY|toolchain file is deprecated|CMake Warning.*mxe-conf' | tail -25; echo ...; tail -30 $log; } > tail.log
-          ls -la dist dist/*/bin/* > dist.log 2>&1 || true
-          # the bundle in a few lines: the zip, the backends, the OpenBLAS build
+          set +e
+          log=dist/build_ucrt-${{ matrix.target }}.out
+          tail -60 docker-build.log > tail.log
+          ls -la dist dist/*/bin/* > dist.log 2>&1
           {
-            for z in dist/*.zip; do echo "$z: $(du -k "$z" | cut -f1) kB, $(du -sk "${z%.zip}" | cut -f1) kB installed"; done
-            echo "backends: $(ls dist/*/bin/*/flexiblas/ dist/*/bin/flexiblas/ 2>/dev/null | grep dll | tr '\n' ' ')"
-            echo "OPENBLAS-THREADS built from OpenBLAS $(grep -m1 -o 'OBVER=[0-9.]*' patches/r-dev-web/flexiblas_bundle/build_ucrt.sh | cut -d= -f2)$(grep -q 'patching file' docker-build.log && echo ' in this run' || echo ', from the cache')"
-            grep -h -E '^-- (Build additional BLAS interface|-- Libs|Looking for Fortran DAXPY -)|does not contain a BLAS' $log | sed 's/^-- //'
-          } > summary.log 2>&1 || true
+            echo "build ${{ steps.build.outcome }}, upload ${{ steps.upload.outcome }}"
+            z=dist/$DIST.zip
+            [ -f $z ] && echo "$z: $(du -k $z | cut -f1) kB, $(du -sk dist/$DIST | cut -f1) kB installed" || echo "$z: not found"
+            echo "backends configured: $(ls dist/$DIST/etc/flexiblasrc.d 2>/dev/null | sed 's/\.conf$//' | tr '\n' ' ')(OPENBLAS-OPENMP OPENBLAS-THREADS expected)"
+            echo "backend DLLs: $(ls dist/$DIST/bin/*/flexiblas/ dist/$DIST/bin/flexiblas/ 2>/dev/null | grep dll | tr '\n' ' ')"
+            echo "OPENBLAS-THREADS: $(cat dist/openblas-pthreads-${{ matrix.target }}.txt 2>/dev/null || echo 'not found')"
+            grep -h -E '^-- (Build additional BLAS interface|-- Libs|Looking for Fortran DAXPY -)|does not contain a BLAS' $log 2>/dev/null | sed 's/^-- //' || echo "CMake's backend lines: not found in $log"
+            grep -h ' imports: ' docker-build.log || echo "DLL imports: not found in docker-build.log"
+          } > summary.log
 
       - uses: ./.github/actions/report
         if: always()
         with:
-          key: ${{ github.workflow }} (aarch64)
+          key: ${{ github.workflow }}${{ matrix.target == 'aarch64' && ' (aarch64)' || '' }}
           status: ${{ job.status }}
           summary: summary.log
           files: |
             The bundle: dist.log
-            Errors and the end of the build log: tail.log
+            The end of the build log: tail.log
 
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: flexiblas-rwin-aarch64
-          path: |
-            dist/
-            docker-build.log
-
-  # The thread-count cases behind patches/openblas/ (tests/omp-cases.sh)
-  # against the OPENBLAS-OPENMP backend of the bundle just built, with the test
-  # programs built by Rtools45 as a package's code would be: static
-  # libgomp, dlopen from dlfcn-win32.
-  thread-cases:
-    name: Thread cases against the bundle on Windows
+  # On Windows, with the programs built by Rtools45 as a package's code
+  # would be: every backend loaded through libflexiblas.dll
+  # (tests/load-backends.c), and the thread-count cases behind
+  # patches/openblas/ against the OPENBLAS-OPENMP backend
+  # (tests/omp-cases.sh): static libgomp on x86_64, LLVM's shared libomp
+  # on aarch64 (paused).
+  test:
+    name: Test on Windows (${{ matrix.target }})
     needs: build
-    runs-on: windows-2025
+    if: always() && needs.build.result != 'cancelled'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64
+            runner: windows-2025
+            artifact: flexiblas-rwin
+            dist: FlexiBLAS
+            bin: bin/x64
+            rtools: C:\rtools45
+            triplet: x86_64-w64-mingw32.static.posix
+            cc: gcc
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    defaults:
+      run:
+        shell: ${{ matrix.rtools }}\usr\bin\bash.exe --login -eo pipefail {0}
+    env:
+      CHERE_INVOKING: 1
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v8
+      # Without a bundle from this run there is nothing to test; the report
+      # says so instead of keeping an earlier run's status.
+      - name: Download the bundle
+        id: bundle
+        uses: actions/download-artifact@v8
+        continue-on-error: ${{ needs.build.result != 'success' }}
         with:
-          name: flexiblas-rwin
+          name: ${{ matrix.artifact }}
           path: dist
 
+      # Rtools only; the R version given decides nothing else
       - uses: r-lib/actions/setup-r@v2
+        if: steps.bundle.outcome == 'success'
         with:
-          r-version: devel
+          r-version: release
+          install-r: false
           rtools-version: '45'
 
-      # omp-cases.sh exits 1 unless every case ran with the count it must,
-      # and that status is the step's
-      - name: Run the cases against the OpenMP backend
-        id: cases
-        shell: C:\rtools45\usr\bin\bash.exe --login -eo pipefail {0}
-        env:
-          CHERE_INVOKING: 1
+      # NETLIB and every backend DLL of the bundle, through libflexiblas,
+      # run with only the bundle and Windows on PATH, as in an installed R
+      # without Rtools; load-backends writes its file only when everything
+      # held, and every backend is run before the verdict
+      - name: Every backend through libflexiblas.dll
+        id: load
+        if: steps.bundle.outcome == 'success'
         run: |
-          # the backend may import from libflexiblas.dll, which the loader finds on PATH
-          export PATH=/x86_64-w64-mingw32.static.posix/bin:$PWD/dist/FlexiBLAS/bin/x64:$PATH
-          lib=$(ls dist/FlexiBLAS/bin/x64/flexiblas/*openblas-openmp*.dll)
-          echo "backend: $lib"
-          objdump -p "$lib" | grep -E ' (openblas_set_num_threads|dgemm_)$'
-          bash tests/omp-cases.sh "$(cygpath -w "$lib")" 2>&1 | tee omp-cases.log
+          d=$PWD/dist/${{ matrix.dist }}/${{ matrix.bin }}
+          PATH=/${{ matrix.triplet }}/bin:$PATH ${{ matrix.cc }} -O2 -o load-backends tests/load-backends.c -L$d -lflexiblas
+          fail=0
+          for b in NETLIB $(ls $d/flexiblas | sed -n 's/^libflexiblas_\(.*\)\.dll$/\1/p' | tr a-z A-Z); do
+            PATH=$d:/c/Windows/System32 FLEXIBLAS=$b ./load-backends $b load-$b.ok 2>&1 | tee -a load.log || true
+            [ -f load-$b.ok ] || { echo "$b: load-backends did not finish" | tee -a load.log; fail=1; }
+          done
+          exit $fail
 
-      # the verdict is the step's outcome; the lines are what the script said
+      # omp-cases.sh exits 1 unless every case is ok, and that status is
+      # the step's; run also when a backend failed to load
+      - name: Thread cases against the OpenMP backend
+        id: cases
+        if: ${{ !cancelled() && steps.bundle.outcome == 'success' }}
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          d=$PWD/dist/${{ matrix.dist }}/${{ matrix.bin }}
+          # the backend imports from libflexiblas.dll (and libomp.dll on
+          # aarch64), which the loader finds on PATH
+          export PATH=/${{ matrix.triplet }}/bin:$d:$PATH
+          bash tests/omp-cases.sh "$(cygpath -w $d/flexiblas/libflexiblas_openblas-openmp.dll)" 2>&1 | tee omp-cases.log
+
       - name: Summarise
         if: always()
         shell: bash
         run: |
-          { echo "thread cases: ${{ steps.cases.outcome }} (each case a way for the OpenMP team to be smaller than the count set; every case must be ok)"
-            grep '^cases:' omp-cases.log || echo "cases: tally not found in omp-cases.log"
-            grep ' set ' omp-cases.log | grep -v ' ok' | sed 's/^/not ok: /'; } > brief.log || true
+          set +e
+          {
+            if [ "${{ steps.bundle.outcome }}" != success ]; then
+              if [ "${{ needs.build.result }}" = success ]; then
+                echo "failed; the build succeeded but its bundle could not be downloaded"
+              else
+                echo "not run; the build of this run ended with ${{ needs.build.result }}, so there was no bundle to test"
+              fi
+            fi
+            echo "every backend through libflexiblas.dll: ${{ steps.load.outcome }} (dgemm, dpotrf and the program's xerbla, each backend must say ok)"
+            grep -h ': ' load.log 2>/dev/null || echo "  load.log not found"
+            echo "thread cases: ${{ steps.cases.outcome }} (each a way for the OpenMP team to be smaller than the count set; every case must be ok)"
+            sed -n '/^cases:/,$p' omp-cases.log 2>/dev/null | grep . || echo "  tally not found in omp-cases.log"
+          } > brief.log
+          touch load.log omp-cases.log
 
       - uses: ./.github/actions/report
         if: always()
         with:
-          key: ${{ github.workflow }} (thread cases)
-          status: ${{ job.status }}
+          key: ${{ github.workflow }} (Windows ${{ matrix.target }})
+          status: ${{ (steps.bundle.outcome == 'success' || needs.build.result == 'success') && job.status || 'not run' }}
           summary: brief.log
-          files: omp-cases.log
+          files: |
+            load.log
+            omp-cases.log

@@ -32,10 +32,15 @@ cache=$WORK/bundle-out/libopenblas-pthreads-$target-$h.a
 status=0
 CMAKE_EXPORT_COMPILE_COMMANDS=ON bash -x ./build_ucrt.sh $target 2>&1 | tee build_ucrt.out | tail -40 || status=$?
 # the whole output of the bundle build, for the workflow's report, and the
-# pthreads OpenBLAS for the cache, whether or not the bundle was finished
-mkdir -p "$WORK/dist"; cp build_ucrt.out "$WORK/dist/build_ucrt-$target.out"
-if [ -f libopenblas-pthreads-$target.a ] && [ ! -f "$cache" ]; then
+# pthreads OpenBLAS for the cache, whether or not the bundle was finished,
+# with where it came from
+mkdir -p "$WORK/dist"
+cp build_ucrt.out "$WORK/dist/build_ucrt-$target.out"
+if [ -f "$cache" ]; then
+    echo "from the cache" > "$WORK/dist/openblas-pthreads-$target.txt"
+elif [ -f libopenblas-pthreads-$target.a ]; then
     mkdir -p "$(dirname "$cache")"; cp libopenblas-pthreads-$target.a "$cache"
+    echo "built in this run" > "$WORK/dist/openblas-pthreads-$target.txt"
 fi
 [ "$status" = 0 ] || exit "$status"
 cc=$(find . -name compile_commands.json | head -1)
