@@ -206,7 +206,17 @@ jobs:
           tail -30 build.log
           ls -la build
           # build.sh goes on after errors and pipes make through tee, so its
-          # products decide: the installer, and checks without make errors
+          # products decide: patches/r all in the tree (each reverses
+          # cleanly, which fails also for a missing file; build.sh does not
+          # check patch's status), the installer, and checks without make
+          # errors
+          d=$(ls -d trunk patched 2>/dev/null | head -1)
+          if [ -z "$d" ]; then r="not run, no R tree"; status=1
+          else
+            bad=$(cd $d && for p in ../r_1[0-9][0-9]_*.diff; do patch --binary --dry-run -R -s -f -p0 < $p > /dev/null 2>&1 || echo ${p#../}; done)
+            r=ok; [ -z "$bad" ] || { r="not applied: $(echo $bad)"; echo "::error::$r"; status=1; }
+          fi
+          echo "patches=$r" >> $GITHUB_OUTPUT
           r=ok; ls build/R-*-win.exe > /dev/null 2>&1 || { echo "::error::no installer"; status=1; r=missing; }
           echo "installer=$r" >> $GITHUB_OUTPUT
           if [ "${{ inputs.check }}" = true ]; then
@@ -273,6 +283,7 @@ jobs:
             echo "toolchain $TOOLCHAIN, Tcl/Tk $TCLTK"
             echo
             printf '%-32s %s\n' "setup.ps1" "${{ steps.setup.outcome }}" \
+              "build.sh, patches/r applied" "${{ steps.buildsh.outputs.patches || steps.buildsh.outcome }}" \
               "build.sh, installer" "${{ steps.buildsh.outputs.installer || steps.buildsh.outcome }}" \
               "make check-devel" "${{ steps.buildsh.outputs.checkdevel || 'not run' }}" \
               "make check-all" "${{ steps.buildsh.outputs.checkall || 'not run' }}" \
@@ -363,6 +374,7 @@ jobs:
         run: |
           Rscript -e "sessionInfo()"
           Rscript -e "stopifnot(identical(R.version[['arch']], '${{ inputs.target == 'aarch64' && 'aarch64' || 'x86_64' }}'))"
+          Rscript -e "cat(R.home('bin'))" > ref-bin.txt
           Rscript tests/test-nan.R propagate ref
           Rscript tests/test-identical.R ref
           Rscript tests/test-chol.R "R's own" 2>&1 | tee chol.log
@@ -376,6 +388,17 @@ jobs:
           & $exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /DIR=C:\R-inst | Out-Null
           Get-ChildItem "C:\R-inst\$env:RBIN\flexiblas", C:\R-inst\etc\flexiblasrc*
           "C:\R-inst\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+      # Rblas.dll and Rlapack.dll export what CRAN's do, less the LAPACK
+      # names FlexiBLAS lacks (tests/compare-exports.sh)
+      - name: Exports of Rblas.dll and Rlapack.dll against CRAN's R
+        id: exports
+        if: always() && steps.install.outcome == 'success'
+        shell: bash
+        run: |
+          bash tests/compare-exports.sh \
+            ${{ inputs.target == 'aarch64' && '/c/rtools45-aarch64/aarch64-w64-mingw32.static.posix/bin/llvm-objdump.exe' || '/c/rtools45/x86_64-w64-mingw32.static.posix/bin/objdump.exe' }} \
+            "$(cygpath -u "$(cat ref-bin.txt)")" /c/R-inst/$RBIN 2>&1 | tee exports.log
 
       - name: chol() with non-finite input
         id: chol
@@ -583,6 +606,7 @@ jobs:
             printf '  %-58s %s\n' \
               "reference results from CRAN's R" "${{ steps.ref.outcome }}" \
               "installer installs" "${{ steps.install.outcome }}" \
+              "Rblas/Rlapack export as CRAN's, less FlexiBLAS gaps" "${{ steps.exports.outcome }}" \
               "flexiblas package installs" "${{ steps.pkg.outcome }}" \
               "startup with FLEXIBLAS_VERBOSE=1" "${{ steps.startup.outcome }}" \
               "test-flexiblas.R: backends, errors vs NETLIB, thread counts" "${{ steps.tests.outcome }}" \
@@ -636,6 +660,7 @@ jobs:
             omp-caller.log
             backends.log
             identical.log
+            exports.log
             chol.log
 
   # The test comment would otherwise keep the previous run's status when
