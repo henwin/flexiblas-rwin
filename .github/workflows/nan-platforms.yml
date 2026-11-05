@@ -62,7 +62,7 @@ jobs:
           Rscript tests/test-omp-caller.R 64 1000 2>&1 | tee -a omp-caller.log
           # the pthreads server prints a warning per call from a parallel
           # region; count them rather than show them
-          n=$(grep -c 'Detect OpenMP Loop' omp-caller.log); grep -v 'Detect OpenMP Loop' omp-caller.log > omp-caller-short.log
+          n=$(grep -c 'Detect OpenMP Loop' omp-caller.log || true); grep -v 'Detect OpenMP Loop' omp-caller.log > omp-caller-short.log || true
           echo "($n lines 'OpenBLAS Warning : Detect OpenMP Loop and this application may hang' removed)" >> omp-caller-short.log
 
       # every step's outcome, then the one-line results, "not found" when a
