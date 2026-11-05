@@ -1,0 +1,95 @@
+diff --git a/src/fallback_blas/CMakeLists.txt b/src/fallback_blas/CMakeLists.txt
+index 8983bc2b..27ad30f9 100644
+--- a/src/fallback_blas/CMakeLists.txt
++++ b/src/fallback_blas/CMakeLists.txt
+@@ -76,12 +76,22 @@ if ( SYS_BLAS_LIBRARY )
+     endif()
+     target_link_libraries(flexiblas_netlib PUBLIC flexiblas_netlib_import PRIVATE ${LIBM})
+ else()
++    set(OBJECTS $<TARGET_OBJECTS:flexiblas_netlib_objs>)
++    if (MINGW)
++        # A DLL calls the XERBLA it is linked with, so the reference one
++        # would stop the program; take FlexiBLAS's, which calls the one the
++        # program supplies, as on ELF platforms by symbol interposition.
++        set(OBJECTS $<FILTER:${OBJECTS},EXCLUDE,/xerbla[_ary]*[.]f[.]>)
++    endif()
+     if (FLEXIBLAS_CBLAS)
+-        add_library(flexiblas_netlib SHARED ${SRC} $<TARGET_OBJECTS:flexiblas_netlib_objs> $<TARGET_OBJECTS:cblas_obj>)
+-    else()
+-        add_library(flexiblas_netlib SHARED ${SRC} $<TARGET_OBJECTS:flexiblas_netlib_objs> )
++        set(OBJECTS ${OBJECTS} $<TARGET_OBJECTS:cblas_obj>)
++    endif()
++    add_library(flexiblas_netlib SHARED ${SRC} ${OBJECTS})
++    target_link_libraries(flexiblas_netlib PRIVATE ${LIBM} $<$<BOOL:${MINGW}>:flexiblas>)
++    if (MINGW)
++        include(${PROJECT_SOURCE_DIR}/cmake/def-from-objects.cmake)
++        flexiblas_def_from_objects(flexiblas_netlib)
+     endif()
+-    target_link_libraries(flexiblas_netlib PRIVATE ${LIBM})
+ endif()
+ 
+ 
+diff --git a/src/fallback_lapack/CMakeLists.txt b/src/fallback_lapack/CMakeLists.txt
+index 8a46c44a..5542ba59 100644
+--- a/src/fallback_lapack/CMakeLists.txt
++++ b/src/fallback_lapack/CMakeLists.txt
+@@ -95,7 +95,13 @@ if ( SYS_LAPACK_LIBRARY )
+     add_library(flexiblas_fallback_lapack SHARED ${SRC})
+     target_link_libraries(flexiblas_fallback_lapack PUBLIC flexiblas_lapack_import PRIVATE ${LIBM} $<$<BOOL:WIN32>:flexiblas>)
+ else()
+-    add_library(flexiblas_fallback_lapack SHARED ${SRC} $<TARGET_OBJECTS:flexiblas_fallback_lapack_objs> $<$<TARGET_EXISTS:mod_files>:$<TARGET_OBJECTS:mod_files>>)
++    set(OBJECTS $<TARGET_OBJECTS:flexiblas_fallback_lapack_objs>)
++    if (MINGW)
++        # FlexiBLAS's XERBLA, not the reference one, as for NETLIB
++        set(OBJECTS $<FILTER:${OBJECTS},EXCLUDE,/xerbla[_ary]*[.]f[.]>)
++    endif()
++    list(APPEND OBJECTS $<$<TARGET_EXISTS:mod_files>:$<TARGET_OBJECTS:mod_files>>)
++    add_library(flexiblas_fallback_lapack SHARED ${SRC} ${OBJECTS})
+     if (MINGW)
+         include(${PROJECT_SOURCE_DIR}/cmake/def-from-objects.cmake)
+         flexiblas_def_from_objects(flexiblas_fallback_lapack)
+diff --git a/src/xerbla.c b/src/xerbla.c
+index e1e72663..e266c09d 100644
+--- a/src/xerbla.c
++++ b/src/xerbla.c
+@@ -100,6 +100,13 @@ void XERBLA(char *SNAME, Int *Info, flexiblas_fortran_charlen_t len) {
+ #endif
+ 
+ 
++/* The XERBLA handler OpenBLAS calls, see openblas_set_xerbla() */
++static void flexiblas_openblas_xerbla(const char *name, const Int *info, size_t len)
++{
++    Int i = *info;
++    flexiblas_internal_xerbla((char *) name, &i, (flexiblas_fortran_charlen_t) len);
++}
++
+ int __flexiblas_setup_xerbla(flexiblas_backend_t *backend)
+ {
+     /* Check if the user supplied a XERBLA function  */
+@@ -116,7 +123,9 @@ int __flexiblas_setup_xerbla(flexiblas_backend_t *backend)
+                 (unsigned long)((void*)xerbla_symbol2),
+                 (unsigned long)((void*)internal));
+ 
+-        if (internal == xerbla_symbol2) {
++        /* Where xerbla_ is not an alias of the internal one, as on Windows,
++           finding FlexiBLAS's own is not finding the user's. */
++        if (internal == xerbla_symbol2 || xerbla_symbol2 == (void *) xerbla_) {
+             user_xerbla = 0;
+         } else {
+             user_xerbla = 1;
+@@ -128,6 +137,15 @@ int __flexiblas_setup_xerbla(flexiblas_backend_t *backend)
+         } else {
+             DPRINTF(1,"Use XERBLA supplied by the user.\n");
+             backend->xerbla = xerbla_symbol2;
++            /* OpenBLAS calls its own XERBLA where symbol interposition does
++               not reach it, as on Windows; since 0.3.34 it can be replaced. */
++            {
++                void *(*set_handler)(void *) = (void *(*)(void *)) __flexiblas_dlsym(backend->library_handle, "openblas_set_xerbla");
++                if (set_handler != NULL) {
++                    DPRINTF(1,"Pass the XERBLA supplied by the user to OpenBLAS.\n");
++                    set_handler((void *) flexiblas_openblas_xerbla);
++                }
++            }
+         }
+     }
+     return 0;

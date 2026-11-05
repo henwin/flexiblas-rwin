@@ -1,6 +1,8 @@
 #! /bin/bash
 
 set -e
+# a failing step piped through tee fails the script
+set -o pipefail
 
 # build_ucrt.sh [target]
 #
@@ -30,8 +32,8 @@ set -e
 # points on to libflexiblas.dll.
 #
 # flexiblas.diff fixes finding the configuration and the vendor backends on
-# Windows, finding an autotools-built dlfcn-win32, and the exports of the
-# LAPACK fallback when linked with lld.  openblas-*.patch are
+# Windows, finding an autotools-built dlfcn-win32, the exports of its DLLs
+# when linked with lld, and the backends calling the XERBLA of the program.  openblas-*.patch are
 # the patches of ../toolchain_libs/mxe/src, applied in order as MXE does.
 #
 # clean via: rm -rf build FlexiBLAS *zip *gz *.a
@@ -49,19 +51,14 @@ fi
 if [ ${RTARGET} == "aarch64" ] ; then
   TRIPLET=aarch64-w64-mingw32.static.posix
   CC=clang
-  # the MXE objdump wrapper runs llvm-objdump, which the toolchain keeps
-  # with the other LLVM tools, off PATH; appended, since that directory
-  # has a second copy of the compilers, from which the library directory
-  # below would not be found
-  USRDIR=`dirname \`which ${TRIPLET}-clang\``/..
-  export PATH=$PATH:`dirname \`find $USRDIR -name llvm-objdump | head -1\``
   # R's bin directory and EOPTS on aarch64 (WIN= and USE_LLVM=1 in MkRules)
   BINDIR=bin
   EOPTS=
   # the Fortran and OpenMP runtimes of LLVM, as R's FLIBS and -fopenmp
   FLIBS="FortranRuntime;FortranDecimal;c++;omp;pthread"
-  # lld has no --exclude-libs; it leaves the runtime libraries out of the
-  # export table by itself
+  # lld has no --exclude-libs; it leaves the compiler runtimes out of the
+  # export table by itself, though not libdl.a, whose four functions are
+  # exported without harm
   LDEXCLUDE=
   # the OpenBLAS settings of openblas.mk for this target
   OBFC=flang
@@ -91,9 +88,10 @@ mkdir build
 # OpenBLAS with pthreads for the OPENBLAS-THREADS backend: the sources,
 # patches and settings of the toolchain's openblas.mk except USE_OPENMP, and
 # NUM_THREADS fixed at 64 rather than the processor count of the build
-# machine.  The build takes an hour or more, so the library left from an
-# earlier run for the target is reused, like the source tarballs.
-OBVER=0.3.34
+# machine, and the version of the toolchain's OpenBLAS.  The build takes an
+# hour or more, so a library put here beforehand for the target is used
+# instead; build_in_docker.sh removes it.
+OBVER=`${TRIPLET}-pkg-config --modversion openblas`
 if [ ! -r $BHOME/libopenblas-pthreads-${RTARGET}.a ] ; then
   if [ ! -r OpenBLAS-$OBVER.tar.gz ] ; then
     wget -O OpenBLAS-$OBVER.tar.gz https://github.com/OpenMathLib/OpenBLAS/releases/download/v$OBVER/OpenBLAS-$OBVER.tar.gz
@@ -204,6 +202,3 @@ cp FlexiBLAS.zip build
 # Sanity check
 find FlexiBLAS | md5sum
 du FlexiBLAS -ksk
-${TRIPLET}-objdump -p FlexiBLAS/$BINDIR/libflexiblas.dll | grep 'DLL Name'
-# runtime symbols that should not be in the export table
-${TRIPLET}-objdump -p FlexiBLAS/$BINDIR/libflexiblas.dll | grep -c -E '\] *(omp_|GOMP_|__stack_chk|_gfortran_|_Fortran|dl(open|sym|close|error)$)' || true

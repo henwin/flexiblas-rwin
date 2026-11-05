@@ -21,9 +21,9 @@ cat "$WORK"/patches/flexiblas/*.patch > "$b/flexiblas.diff"
 cp "$mxe"/src/openblas-*.patch "$b"
 cd "$b"
 # the pthreads OpenBLAS the bundle builds, kept in bundle-out by the hash of
-# the bundle script and the OpenBLAS patches, as build-mxe.sh keeps the MXE
-# build of OpenBLAS
-h=$(cat "$WORK"/patches/r-dev-web/flexiblas_bundle/build_ucrt.sh "$WORK"/patches/openblas/*.patch | sha256sum | cut -c1-12)
+# what it is built from: the bundle script, the OpenBLAS patches copied
+# above and the version of the toolchain's OpenBLAS
+h=$( { cat build_ucrt.sh openblas-*.patch; $target-w64-mingw32.static.posix-pkg-config --modversion openblas; } | sha256sum | cut -c1-12)
 cache=$WORK/bundle-out/libopenblas-pthreads-$target-$h.a
 [ ! -f "$cache" ] || cp "$cache" libopenblas-pthreads-$target.a
 # CMake takes CMAKE_EXPORT_COMPILE_COMMANDS from the environment, so the
@@ -46,6 +46,20 @@ if [ -n "$cc" ]; then
 else
     echo "no compile_commands.json (CMake older than 3.17?)"
 fi
+# what the DLLs import, and no compiler runtime in an export table: it is
+# linked in statically and must stay private, or a program linking two of
+# the DLLs gets duplicate definitions (llvm-objdump is off PATH in the
+# LLVM toolchain; GNU and LLVM objdump list exports differently)
+objdump=$(ls "$mxe"/usr/x86_64-pc-linux-gnu/bin/llvm-objdump 2>/dev/null || echo "$mxe/usr/bin/$target-w64-mingw32.static.posix-objdump")
+for d in $(find FlexiBLAS -name '*.dll'); do
+    echo "$d imports: $("$objdump" -p "$d" | awk '/DLL Name:/ {printf "%s ", $3}')"
+    "$objdump" -p "$d" | awk '/\[Ordinal\/Name Pointer\] Table|^Export Table/ {e = 1; next} e && /^$/ {e = 0}
+        e && (/^ +[0-9]+ +0x/ || /^[ \t]*\[ *[0-9]+\]/) {print $NF}' > exports.txt
+    [ -s exports.txt ] || { echo "$d: no exports read" >&2; exit 1; }
+    if grep -E '^(omp_|GOMP_|__stack_chk|_gfortran_|_Fortran)' exports.txt; then
+        echo "$d exports the compiler runtime symbols above" >&2; exit 1
+    fi
+done
 rm -rf "$WORK/dist/$name"
 mkdir -p "$WORK/dist"
 cp FlexiBLAS.zip "$WORK/dist/$name.zip"

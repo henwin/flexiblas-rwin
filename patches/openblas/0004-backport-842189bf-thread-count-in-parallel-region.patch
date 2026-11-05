@@ -1,0 +1,25 @@
+From 842189bf3f4fe62624bdb6d0186699dd4689f891 Mon Sep 17 00:00:00 2001
+From: Martin Kroeker <martin@ruby.chemie.uni-freiburg.de>
+Date: Tue, 28 Jul 2026 14:27:26 +0200
+Subject: [PATCH] Prevent accidental increase of the thread count inside a
+ parallel region
+
+---
+ common_thread.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/common_thread.h b/common_thread.h
+index e9b76a88..67f97835 100644
+--- a/common_thread.h
++++ b/common_thread.h
+@@ -148,6 +148,7 @@ static __inline int num_cpu_avail(int level) {
+      `omp_get_max_threads()` below (which is to get a default
+      in case the user hasn't made an explicit choice). */
+   if (blas_is_num_threads_set_explicitly) {
++	  if (omp_in_parallel()) return 1;
+     return blas_cpu_number;
+   }
+ 
+-- 
+2.43.0
+

@@ -170,7 +170,7 @@ EOF
 
   cat <<EOF | docker exec --interactive $CID bash -x
     cd /root
-    rm -rf build FlexiBLAS FlexiBLAS.zip *.out
+    rm -rf build FlexiBLAS FlexiBLAS.zip *.out libopenblas-pthreads-*.a
     # note the escape to use PATH in the container
     export PATH=$USRDIR/bin:\$PATH
     bash -x ./build_ucrt.sh $TGT 2>&1 | tee build_ucrt.out

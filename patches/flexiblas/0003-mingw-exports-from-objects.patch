@@ -1,0 +1,76 @@
+diff --git a/cmake/def-from-objects.cmake b/cmake/def-from-objects.cmake
+new file mode 100644
+index 00000000..76e29558
+--- /dev/null
++++ b/cmake/def-from-objects.cmake
+@@ -0,0 +1,55 @@
++# A module-definition (.def) file that exports every external symbol the
++# objects of a DLL define.  MinGW links export all
++# symbols without one, but lld leaves out a symbol that an import library on
++# the link line also provides, and a DLL of FlexiBLAS linked against
++# libflexiblas would lose the BLAS and LAPACK names it exists to export.
++#
++# Included, it defines flexiblas_def_from_objects(TARGET), which gives
++# TARGET such a file; as a script it writes the file:
++#   cmake -DNM=<nm> -DOBJECTS_FILE=<file> -DDEF=<file> -P def-from-objects.cmake
++if (NOT CMAKE_SCRIPT_MODE_FILE)
++    set(FLEXIBLAS_DEF_FROM_OBJECTS ${CMAKE_CURRENT_LIST_FILE})
++    # The objects are the target's own and those of the object libraries
++    # among its sources; the file is written just before the link.
++    function(flexiblas_def_from_objects TARGET)
++        set(_list ${CMAKE_CURRENT_BINARY_DIR}/${TARGET}_objects.txt)
++        set(_def ${CMAKE_CURRENT_BINARY_DIR}/${TARGET}.def)
++        get_target_property(_sources ${TARGET} SOURCES)
++        list(FILTER _sources INCLUDE REGEX "TARGET_OBJECTS")
++        file(GENERATE OUTPUT ${_list} CONTENT "$<JOIN:$<TARGET_OBJECTS:${TARGET}>;${_sources},\n>\n")
++        if (NOT EXISTS ${_def})
++            file(WRITE ${_def} "EXPORTS\n")
++        endif()
++        target_sources(${TARGET} PRIVATE ${_def})
++        add_custom_command(TARGET ${TARGET} PRE_LINK
++            COMMAND ${CMAKE_COMMAND} -DNM=${CMAKE_NM} -DOBJECTS_FILE=${_list} -DDEF=${_def} -P ${FLEXIBLAS_DEF_FROM_OBJECTS}
++            VERBATIM)
++    endfunction()
++    return()
++endif()
++
++# nm reads the objects from a response file, which keeps the command line
++# short whatever their number.
++file(STRINGS ${OBJECTS_FILE} _objects)
++list(TRANSFORM _objects PREPEND "\"")
++list(TRANSFORM _objects APPEND "\"")
++string(REPLACE ";" "\n" _objects "${_objects}")
++file(WRITE ${DEF}.rsp "${_objects}\n")
++execute_process(COMMAND ${NM} -g --defined-only @${DEF}.rsp
++                OUTPUT_VARIABLE _nm RESULT_VARIABLE _status)
++if (NOT _status EQUAL 0)
++    message(FATAL_ERROR "${NM} failed on the objects in ${OBJECTS_FILE}")
++endif()
++string(REGEX MATCHALL "[^\n]* [BCDRT] [^\n]*" _lines "${_nm}")
++set(_symbols)
++foreach (_line ${_lines})
++    string(REGEX REPLACE "^.* [BCDRT] " "" _symbol "${_line}")
++    # the compiler's .refptr. and .weak. symbols are not for export
++    if (NOT _symbol MATCHES "^[.]")
++        list(APPEND _symbols ${_symbol})
++    endif()
++endforeach()
++list(REMOVE_DUPLICATES _symbols)
++list(SORT _symbols)
++string(REPLACE ";" "\n " _symbols "${_symbols}")
++file(WRITE ${DEF} "EXPORTS\n ${_symbols}\n")
+diff --git a/src/fallback_lapack/CMakeLists.txt b/src/fallback_lapack/CMakeLists.txt
+index 34aee1a0..8a46c44a 100644
+--- a/src/fallback_lapack/CMakeLists.txt
++++ b/src/fallback_lapack/CMakeLists.txt
+@@ -96,6 +96,10 @@ if ( SYS_LAPACK_LIBRARY )
+     target_link_libraries(flexiblas_fallback_lapack PUBLIC flexiblas_lapack_import PRIVATE ${LIBM} $<$<BOOL:WIN32>:flexiblas>)
+ else()
+     add_library(flexiblas_fallback_lapack SHARED ${SRC} $<TARGET_OBJECTS:flexiblas_fallback_lapack_objs> $<$<TARGET_EXISTS:mod_files>:$<TARGET_OBJECTS:mod_files>>)
++    if (MINGW)
++        include(${PROJECT_SOURCE_DIR}/cmake/def-from-objects.cmake)
++        flexiblas_def_from_objects(flexiblas_fallback_lapack)
++    endif()
+     target_link_libraries(flexiblas_fallback_lapack PRIVATE ${LIBM} $<$<BOOL:WIN32>:flexiblas>)
+ endif()
+ 
