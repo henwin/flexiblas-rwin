@@ -4,15 +4,16 @@
 # builds omp-team.c and omp-nested.c beside it with $CC -fopenmp (gcc by
 # default; clang on aarch64), against dlfcn-win32 from Rtools on Windows,
 # and prints one line per case: the OpenMP environment, the count set, and
-# ok with the count OpenBLAS reports after setting it, HANG when the run
-# is still going after 8 s and again after 120 s (timeout's status 124,
-# since the alarm in the programs is not available on Windows), SLOW when
-# it finished only in the second run, or FAIL with the exit status or what
-# came out; the time of dgemm follows ok.  Every omp-team case is one way for the OpenMP team to be
-# smaller than the count; see the table in the notes.  The omp-nested case
-# calls dgemm from a parallel region and checks the results; what it shows
-# depends on whether the caller shares OpenBLAS's OpenMP runtime (see
-# omp-nested.c).  Each omp-team case carries the count
+# ok with the count OpenBLAS reports after setting it and the time of
+# dgemm, HANG when the run is still going after 60 s (timeout's status
+# 124, since the alarm in the programs is not available on Windows), or
+# FAIL with the exit status or what came out.  A hang never finishes, and
+# 64 threads on 4 cores take from 2 to over 9 s by runner, so the limit is
+# far above the slowest finish.  Every omp-team case is one way for the
+# OpenMP team to be smaller than the count; see the table in the notes.
+# The omp-nested case calls dgemm from a parallel region and checks the
+# results; what it shows depends on whether the caller shares OpenBLAS's
+# OpenMP runtime (see omp-nested.c).  Each omp-team case carries the count
 # OpenBLAS must report: the count set, 1 under OMP_THREAD_LIMIT=1, and the
 # compiled-in cap of 64 above it.  Prints the tally and the cases that are
 # not ok last, and exits 1 unless every case is ok.
@@ -34,16 +35,9 @@ case_line() {   # case_line LABEL REQ RESULT
     case "$3" in ok*) ok=$((ok + 1)) ;; *) bad="$bad$line"$'\n' ;; esac
 }
 run() {   # run COMMAND...; sets out and r to the output and the verdict so far
-    out=$(timeout 8 "$@" 2>&1)
+    out=$(timeout 60 "$@" 2>&1)
     status=$?
-    if [ $status = 124 ]; then
-        # a hang or only slow: run again with 120 s, and keep the case not
-        # ok either way
-        start=$SECONDS
-        out=$(timeout 120 "$@" 2>&1)
-        status=$?
-        if [ $status = 124 ]; then r="HANG, also with 120 s"
-        else r="SLOW, over 8 s, then $((SECONDS - start)) s with status $status: $out"; fi
+    if [ $status = 124 ]; then r=HANG
     elif [ $status != 0 ]; then r="FAIL, exit status $status: $out"
     else r=; fi
 }

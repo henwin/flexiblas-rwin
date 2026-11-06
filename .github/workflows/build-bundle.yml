@@ -156,7 +156,7 @@ jobs:
             triplet: x86_64-w64-mingw32.static.posix
             cc: gcc
     runs-on: ${{ matrix.runner }}
-    # a case that hangs costs 128 s (tests/omp-cases.sh)
+    # a case that hangs costs 60 s (tests/omp-cases.sh)
     timeout-minutes: 60
     defaults:
       run:
