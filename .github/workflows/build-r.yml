@@ -53,12 +53,9 @@ permissions:
 
 env:
   RDEVWEB: https://svn.r-project.org/R-dev-web/trunk/WindowsBuilds
-  # CRAN's toolchain tarball and Tcl/Tk bundle for Rtools45 for the target,
-  # and the names build.sh looks for them under
-  TOOLCHAIN: ${{ inputs.target == 'aarch64' && 'rtools45-toolchain-libs-full-aarch64-6768.tar.zst' || 'rtools45-toolchain-libs-full-6768.tar.zst' }}
-  TCLTK: ${{ inputs.target == 'aarch64' && 'tcltk-aarch64-6768-6663.zip' || 'tcltk-6768-6663.zip' }}
-  TOOLCHAIN_AS: ${{ inputs.target == 'aarch64' && 'llvm19_ucrt3_full_aarch64_6768.tar.zst' || 'gcc14_ucrt3_full_6768.tar.zst' }}
-  TCLTK_AS: ${{ inputs.target == 'aarch64' && 'Tcl-aarch64-6768-6663.zip' || 'Tcl-6768-6663.zip' }}
+  # the Tcl/Tk bundle revision; the MXE revision is the one the bundle is
+  # built with, MXE_REV in docker/Dockerfile (step "Toolchain names")
+  TCLREV: 6663
   # the bundle artifact of build-bundle.yml for the target, and R's bin
   # directory (bin on aarch64, where R_ARCH is empty)
   BUNDLE: ${{ inputs.target == 'aarch64' && 'flexiblas-rwin-aarch64' || 'flexiblas-rwin' }}
@@ -76,8 +73,29 @@ jobs:
         with:
           fetch-depth: 0
 
+      # CRAN's toolchain tarball and Tcl/Tk bundle for Rtools45 for the
+      # target, of the MXE revision the bundle is built with, and the names
+      # build.sh looks for them under
+      - name: Toolchain names
+        shell: bash
+        run: |
+          rev=$(sed -n 's/^ARG MXE_REV=\([0-9][0-9]*\).*/\1/p' docker/Dockerfile)
+          [ -n "$rev" ] || { echo "::error::no MXE_REV in docker/Dockerfile"; exit 1; }
+          if [ "${{ inputs.target }}" = aarch64 ]; then
+            echo "TOOLCHAIN=rtools45-toolchain-libs-full-aarch64-$rev.tar.zst" >> $GITHUB_ENV
+            echo "TCLTK=tcltk-aarch64-$rev-$TCLREV.zip" >> $GITHUB_ENV
+            echo "TOOLCHAIN_AS=llvm19_ucrt3_full_aarch64_$rev.tar.zst" >> $GITHUB_ENV
+            echo "TCLTK_AS=Tcl-aarch64-$rev-$TCLREV.zip" >> $GITHUB_ENV
+          else
+            echo "TOOLCHAIN=rtools45-toolchain-libs-full-$rev.tar.zst" >> $GITHUB_ENV
+            echo "TCLTK=tcltk-$rev-$TCLREV.zip" >> $GITHUB_ENV
+            echo "TOOLCHAIN_AS=gcc14_ucrt3_full_$rev.tar.zst" >> $GITHUB_ENV
+            echo "TCLTK_AS=Tcl-$rev-$TCLREV.zip" >> $GITHUB_ENV
+          fi
+
       # The bundle from the latest successful build-bundle.yml run on master,
-      # which must include the last change to the bundle's sources.
+      # which must include the last change to the bundle's sources, the
+      # paths that start build-bundle.yml.
       - name: Find the bundle
         id: build
         shell: pwsh
@@ -86,7 +104,13 @@ jobs:
         run: |
           $run = gh run list -R $env:GITHUB_REPOSITORY -w build-bundle.yml -b master -s success -L 1 --json databaseId,headSha | ConvertFrom-Json
           $id = $run[0].databaseId; $sha = $run[0].headSha
-          $last = git log -1 --format=%H -- docker scripts/build-mxe.sh scripts/build-bundle.sh scripts/build-in-docker.sh patches/rtools-mxe patches/openblas patches/flexiblas patches/r-dev-web/flexiblas_bundle
+          $in = $false; $paths = @()
+          foreach ($l in Get-Content .github/workflows/build-bundle.yml) {
+            if ($l -match 'paths: &inputs') { $in = $true; continue }
+            if ($in) { if ($l -match '^\s+- (\S+)$') { $paths += ($matches[1] -replace '/\*\*$', '') } else { break } }
+          }
+          if ($paths.Count -eq 0) { Write-Output "::error::no paths in build-bundle.yml"; exit 1 }
+          $last = git log -1 --format=%H -- @paths
           git merge-base --is-ancestor $last $sha
           if ($LASTEXITCODE -ne 0) {
             Write-Output "::error title=Bundle::run $id (commit $sha) predates $last, the last change to the bundle's sources"
@@ -112,7 +136,9 @@ jobs:
           # build.sh applies r_*.diff_aarch64 in place of its namesake on aarch64 only
           foreach ($f in "winutf8/ucrt3/r/setup.ps1", "winutf8/ucrt3/r/build.sh", "winutf8/ucrt3/r/build_in_docker.sh", "winutf8/ucrt3/r/r_001_ucrt3_package_patches_and_repo.diff", "winutf8/ucrt3/r/r_001_ucrt3_package_patches_and_repo.diff_aarch64", "winutf8/ucrt3/r/r_002_rtools45.diff", "winutf8/ucrt3/howto.md", "R-devel/howto.md") {
             New-Item -ItemType Directory -Force (Split-Path "C:\rdw\$f") | Out-Null
-            Invoke-WebRequest "$env:RDEVWEB/$f" -OutFile "C:\rdw\$f" -UseBasicParsing
+            $r = Invoke-WebRequest "$env:RDEVWEB/$f" -OutFile "C:\rdw\$f" -UseBasicParsing -PassThru
+            # the ETag of svn names the revision the file last changed in
+            "R-dev-web $f r$(([string]$r.Headers.ETag).Trim('"').Split('/')[0])" | Out-File -Append -Encoding utf8 C:\bundle.txt
           }
           Get-ChildItem -Recurse -File C:\rdw
 
@@ -418,6 +444,7 @@ jobs:
           exec > >(tee pkg-install.log) 2>&1
           set -x
           git -c core.autocrlf=false clone -q --depth 1 https://github.com/Enchufa2/r-flexiblas.git
+          echo "r-flexiblas $(git -C r-flexiblas rev-parse HEAD)" | tee r-flexiblas.txt
           git -C r-flexiblas apply -v ../patches/r-flexiblas/0001-windows.patch
           Rscript -e "install.packages('tinytest', repos = 'https://cloud.r-project.org')"
           R CMD INSTALL --install-tests r-flexiblas
@@ -603,6 +630,7 @@ jobs:
           line() { grep -m1 "$2" "$1" 2>/dev/null || echo "not found in $1"; }
           {
             echo "$(Rscript -e 'cat(R.version.string)' 2>/dev/null), installer from run ${{ steps.prev.outputs.run_id || github.run_id }}, reference: CRAN's build of the same R"
+            cat r-flexiblas.txt 2>/dev/null
             echo
             echo "Checks (the job fails if one fails):"
             printf '  %-58s %s\n' \
