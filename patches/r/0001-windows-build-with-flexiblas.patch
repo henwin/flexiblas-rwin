@@ -85,7 +85,7 @@ Index: src/modules/lapack/Makefile.win
 ===================================================================
 --- src/modules/lapack/Makefile.win	(revision 90763)
 +++ src/modules/lapack/Makefile.win	(working copy)
-@@ -39,18 +39,41 @@
+@@ -39,18 +39,42 @@
  
  libRlapack.dll.a: Rlapack.def
  
@@ -93,9 +93,10 @@ Index: src/modules/lapack/Makefile.win
 +## ../../extra/blas/Makefile.win
 +ifeq "$(filter YES,$(USE_ATLAS) $(USE_OPENBLAS))$(USE_FLEXIBLAS)" "YES"
 +## Rlapack.dll passes on to libflexiblas.dll, as Rblas.dll does, the entry
-+## points FlexiBLAS has: all but dlarscl2 and dlascl2, which LAPACK builds
-+## only with its extra-precise routines and nothing in R calls, and
-+## la_xisnan's module procedures, which are internal.
++## points FlexiBLAS has: all but la_xisnan's module procedures, which are
++## internal, and dlarscl2 and dlascl2, which nothing in R calls and which
++## LAPACK builds only with its extra-precise routines; external LAPACKs
++## lack them too.
 +FLEXIBLAS_PATH = ../../../FlexiBLAS
 +
 +flexiblas.syms: $(FLEXIBLAS_PATH)/$(BINDIR)/libflexiblas.dll.a
