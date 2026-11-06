@@ -317,6 +317,14 @@ jobs:
             for f in checkdevel.out checkall.out; do
               [ -f $b/build/$f ] && echo "$f: $(grep -c '^Status: OK' $b/build/$f) OK, $(grep -c '^Status: .*NOTE' $b/build/$f) with NOTEs, $(grep -c '^Status: .*WARNING' $b/build/$f) with WARNINGs, $(grep -c '^Status: .*ERROR' $b/build/$f) with ERRORs"
             done
+            # what the NOTEs of the recommended packages say (check-devel
+            # checks no package): each checking line that ended in NOTE, and
+            # how often, then the first lines under it
+            if [ -f $b/build/checkall.out ]; then
+              echo "checkall.out, checks with a NOTE:"
+              grep -E '^\* checking .* NOTE[[:space:]]*$' $b/build/checkall.out | sort | uniq -c | sed 's/^/  /'
+            fi
+            [ -f $b/build/checkall.out ] && grep -A3 -E '^\* checking .* NOTE[[:space:]]*$' $b/build/checkall.out | head -40 | sed 's/^/  /'
           } > summary.log
           # the errors themselves, and nothing that only looks like one
           {
