@@ -366,7 +366,7 @@ jobs:
     name: Test the installed R
     needs: build
     if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped') && inputs.experiment == 'none'
-    timeout-minutes: 45
+    timeout-minutes: 120
     runs-on: ${{ inputs.target == 'aarch64' && 'windows-11-arm' || 'windows-2025' }}
     steps:
       - uses: actions/checkout@v7
@@ -612,6 +612,31 @@ jobs:
           Rscript tests/test-xerbla.R 2>&1 | tee xerbla.log
           test -f xerbla.ok || { echo "::error::test-xerbla.R did not finish"; exit 1; }
 
+      # R CMD check --as-cran of packages that call the BLAS and LAPACK
+      # (Matrix, MASS and four from CRAN with no dependencies beyond R and
+      # the recommended packages) and one that does not (lattice), under
+      # both Rs: the built R must add no NOTE, WARNING or ERROR
+      - name: Package checks against CRAN's R
+        id: pkgcheck
+        if: always() && steps.install.outcome == 'success'
+        timeout-minutes: 60
+        shell: bash
+        run: |
+          bash tests/check-packages.sh "$(cygpath -u "$(cat ref-bin.txt)")" /c/R-inst/$RBIN \
+            Matrix MASS lattice geigen kernlab fastICA gss 2>&1 | tee check-packages.log
+
+      - name: Upload the package check logs
+        if: always() && steps.pkgcheck.outcome != 'skipped'
+        uses: actions/upload-artifact@v7
+        with:
+          name: package-checks
+          path: |
+            chk-*/*.out
+            chk-*/*.Rcheck/00check.log
+            chk-*/*.Rcheck/00install.out
+            chk-*/*.Rcheck/*-Ex.Rout
+          if-no-files-found: ignore
+
       - name: The flexiblas package's own tests
         id: pkgtests
         if: always()
@@ -655,6 +680,7 @@ jobs:
               "backend selection: default, FLEXIBLAS, user flexiblasrc" "${{ steps.backends.outcome }}" \
               "R's reg-BLAS.R under each backend" "${{ steps.regblas.outcome }}" \
               "invalid arguments give R's xerbla error, each backend" "${{ steps.xerbla.outcome }}" \
+              "R CMD check of 7 packages adds nothing to CRAN's R" "${{ steps.pkgcheck.outcome }}" \
               "the package's tinytest suite" "${{ steps.pkgtests.outcome }}"
             echo
             echo "Measurements (the step fails only if a run crashes or hangs):"
@@ -690,6 +716,7 @@ jobs:
             tests-limit1.log
             reg-BLAS.log
             xerbla.log
+            check-packages.log
             pkg-install.log
             pkg-tests.log
             profile-nonzero.log
