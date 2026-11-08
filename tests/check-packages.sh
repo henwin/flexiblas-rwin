@@ -47,12 +47,19 @@ for r in ref our; do echo "$r:"; sed 's/^/  /' items-$r.txt; done
 new=$(comm -13 items-ref.txt items-our.txt)
 echo "only in the built R: ${new:-none}"
 [ -z "$new" ] || status=1
-echo "example output, lines that differ (timings left out):"
+norm() {   # example output without what differs between any two runs:
+           # the R version line, timings and the lines of system.time(),
+           # and addresses
+    tr -d '\r' | sed -e '/^R Under development\|^R version/d' \
+        -e '/Time\|elapsed\|user\|system/d' \
+        -e '/^ *[0-9.]\+ \+[0-9.]\+ \+[0-9.]\+ *$/d' \
+        -e 's/0x[0-9a-f]\+/0x/g'
+}
+echo "example output, lines that differ (version, timings and addresses left out):"
 for p in "$@"; do
     a=chk-ref/$p.Rcheck/$p-Ex.Rout b=chk-our/$p.Rcheck/$p-Ex.Rout
     if [ -f $a ] && [ -f $b ]; then
-        diff <(tr -d '\r' < $a | grep -v -E 'Time|elapsed|user|system') \
-             <(tr -d '\r' < $b | grep -v -E 'Time|elapsed|user|system') > ex-$p.diff
+        diff <(norm < $a) <(norm < $b) > ex-$p.diff
         echo "  $p: $(grep -c '^[<>]' ex-$p.diff)"
         head -20 ex-$p.diff | sed 's/^/    /'
     else
