@@ -48,11 +48,12 @@ new=$(comm -13 items-ref.txt items-our.txt)
 echo "only in the built R: ${new:-none}"
 [ -z "$new" ] || status=1
 norm() {   # example output without what differs between any two runs:
-           # the R version line, timings and the lines of system.time(),
-           # and addresses
+           # the R version line, the time at the end, the output of
+           # system.time() and proc.time() (the header and the line after
+           # it, so other lines of three numbers stay), and addresses
     tr -d '\r' | sed -e '/^R Under development\|^R version/d' \
-        -e '/Time\|elapsed\|user\|system/d' \
-        -e '/^ *[0-9.]\+ \+[0-9.]\+ \+[0-9.]\+ *$/d' \
+        -e '/^Time elapsed:/d' \
+        -e '/^ *user \+system \+elapsed *$/{N;d}' \
         -e 's/0x[0-9a-f]\+/0x/g'
 }
 echo "example output, lines that differ (version, timings and addresses left out):"
