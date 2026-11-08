@@ -51,9 +51,10 @@ echo "example output, lines that differ (timings left out):"
 for p in "$@"; do
     a=chk-ref/$p.Rcheck/$p-Ex.Rout b=chk-our/$p.Rcheck/$p-Ex.Rout
     if [ -f $a ] && [ -f $b ]; then
-        n=$(diff <(tr -d '\r' < $a | grep -v -E 'Time|elapsed|user|system') \
-                 <(tr -d '\r' < $b | grep -v -E 'Time|elapsed|user|system') | grep -c '^[<>]')
-        echo "  $p: $n"
+        diff <(tr -d '\r' < $a | grep -v -E 'Time|elapsed|user|system') \
+             <(tr -d '\r' < $b | grep -v -E 'Time|elapsed|user|system') > ex-$p.diff
+        echo "  $p: $(grep -c '^[<>]' ex-$p.diff)"
+        head -20 ex-$p.diff | sed 's/^/    /'
     else
         echo "  $p: no example output to compare"
     fi
