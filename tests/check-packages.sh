@@ -55,7 +55,7 @@ echo "items only in the built R: ${new:-none}"
 # printed in full.  Reported, not decided, until the noise is settled from
 # these.
 rdiff() {   # rdiff FROM TO FOREX
-    "$bin/Rscript" -e 'a <- commandArgs(TRUE); invisible(tools::Rdiff(a[1], a[2], forEx = as.logical(a[3])))' "$1" "$2" "$3"
+    "$bin/Rscript" -e 'a <- commandArgs(TRUE); invisible(tools::Rdiff(a[1], a[2], useDiff = TRUE, forEx = as.logical(a[3])))' "$1" "$2" "$3"
 }
 echo "output of examples and tests, tools::Rdiff:"
 for p in "$@"; do
