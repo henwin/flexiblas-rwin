@@ -339,6 +339,8 @@ jobs:
             fi
             for f in checkdevel.out checkall.out; do
               [ -f $b/build/$f ] && { echo "$f (errors):"; grep -n -E '^Error( in|:)|^ERROR|\*\*\* \[|^Status: .*(ERROR|WARNING)' $b/build/$f | head -20; }
+              # the lines before the first error, to see which test it was
+              [ -f $b/build/$f ] && { n=$(grep -n -m1 -E '^Error( in|:)|^ERROR' $b/build/$f | cut -d: -f1); [ -n "$n" ] && { echo "$f, before line $n:"; sed -n "$((n > 25 ? n - 25 : 1)),${n}p" $b/build/$f; }; }
             done
             for f in $(find $b/trunk/tests $b/trunk/src/library $b/patched/tests $b/patched/src/library -name '*.Rout.fail' 2>/dev/null); do
               echo "== $f"
