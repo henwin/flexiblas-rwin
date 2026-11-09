@@ -1,7 +1,7 @@
 #!/bin/bash
-# R CMD check --as-cran of CRAN source packages under the built R and
-# under CRAN's build of the same R, to show that the FlexiBLAS build gives
-# a package nothing that R itself does not:
+# R CMD check of CRAN source packages, as the CRAN daily checks run it,
+# under the built R and under CRAN's build of the same R, to show that the
+# FlexiBLAS build gives a package nothing that R itself does not:
 #   check-packages.sh REFBIN BIN PACKAGE...
 # REFBIN and BIN are the directories with R.exe.  The reference checks the
 # same tarballs, downloaded once, twice (chk-ref1, chk-ref2), the built R
@@ -11,9 +11,9 @@
 # compared with tools::Rdiff and printed.  Exits 1 when an item counts or
 # a check did not finish.
 refbin=$1 bin=$2; shift 2
-export LC_ALL=C MAKEFLAGS=-j2 _R_CHECK_CRAN_INCOMING_=false \
-    _R_CHECK_CRAN_INCOMING_REMOTE_=false _R_CHECK_FORCE_SUGGESTS_=false \
-    _R_CHECK_SYSTEM_CLOCK_=false
+# without --as-cran, so the examples run without timings, as for the
+# .Rout.save that tools::Rdiff expects to compare with
+export LC_ALL=C MAKEFLAGS=-j2 _R_CHECK_FORCE_SUGGESTS_=false
 for r in "$refbin" "$bin"; do
     echo "$r: $("$r/Rscript" -e 'cat(R.version.string)')"
 done
@@ -26,7 +26,7 @@ check() {   # check NAME RBIN: all packages, one after the other
     mkdir -p chk-$1
     for t in src/*.tar.gz; do
         p=$(basename $t); p=${p%%_*}
-        (cd chk-$1 && "$2/R" CMD check --as-cran --no-manual --ignore-vignettes "../$t" > $p.out 2>&1)
+        (cd chk-$1 && "$2/R" CMD check --no-manual --ignore-vignettes "../$t" > $p.out 2>&1)
     done
 }
 # ref2 a minute later, so that times to the second or minute printed by

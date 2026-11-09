@@ -614,7 +614,7 @@ jobs:
           Rscript tests/test-xerbla.R 2>&1 | tee xerbla.log
           test -f xerbla.ok || { echo "::error::test-xerbla.R did not finish"; exit 1; }
 
-      # R CMD check --as-cran of packages that call the BLAS and LAPACK
+      # R CMD check of packages that call the BLAS and LAPACK
       # (Matrix, MASS and four from CRAN with no dependencies beyond R and
       # the recommended packages) and one that does not (lattice), under
       # both Rs, the reference twice: the built R must add no NOTE,
