@@ -50,11 +50,12 @@ echo "only in the built R: ${new:-none}"
 norm() {   # example output without what differs between any two runs:
            # the R version line, the time at the end, the output of
            # system.time() and proc.time() (the header and the line after
-           # it, so other lines of three numbers stay), and addresses
+           # it, so other lines of three numbers stay), and the addresses R
+           # prints for bytecode, environments and external pointers
     tr -d '\r' | sed -e '/^R Under development\|^R version/d' \
         -e '/^Time elapsed:/d' \
         -e '/^ *user \+system \+elapsed *$/{N;d}' \
-        -e 's/0x[0-9a-f]\+/0x/g'
+        -e 's/<\(bytecode\|environment\|pointer\): 0x[0-9a-f]\+>/<\1: address>/g'
 }
 echo "example output, lines that differ (version, timings and addresses left out):"
 for p in "$@"; do
