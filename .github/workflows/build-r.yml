@@ -15,8 +15,8 @@ name: R with the R-core scripts
 # build.sh builds trunk or the R-patched branch at the revision of CRAN's
 # current build of it, the reference of the test job, so that the two Rs
 # differ only by FlexiBLAS; for release, the branch in the checkout line is
-# replaced by the latest R-x-y-z tag of the release series, since R-core
-# builds release in another way.
+# replaced by the branch the latest R-x-y-z tag was copied from, at the
+# revision copied, since R-core builds release in another way.
 # The test job then installs the installer and runs tests/ against it.
 # Long, so it runs only on demand.
 on:
@@ -216,12 +216,21 @@ jobs:
           cd /c/rbuild
           if [ "${{ inputs.r }}" = release ]; then
             tag=$(svn ls https://svn.r-project.org/R/tags | grep -E '^R-[0-9]+-[0-9]+-[0-9]+/$' | sort -t- -k2,2n -k3,3n -k4,4n | tail -1 | tr -d /)
-            echo "release tag $tag"
-            sed -i "s#branches/\${BNAME} patched#tags/$tag patched#" build.sh
-            grep -n "tags/$tag" build.sh
-            # the revision the tag was made at, which CRAN's release reports;
-            # without it the checkout reports the repository's newest
-            svn info --show-item last-changed-revision https://svn.r-project.org/R/tags/$tag > release-rev
+            # the tag is a copy of its branch, and CRAN's release reports the
+            # revision copied, not the tag's own; build that branch at that
+            # revision, which must have the content of the tag
+            # (paths in svn log relative to the repository root, /R/ or /)
+            from=$(svn log -v -q --stop-on-copy -r 1:HEAD -l 1 https://svn.r-project.org/R/tags/$tag | tr -d '\r' |
+              sed -nE "s#^ *A /(R/)?tags/$tag \(from /(R/)?([^:]+):([0-9]+)\)\$#\3 \4#p")
+            src=${from% *}; rev=${from#* }
+            echo "release tag $tag, copied from $src at r$rev"
+            [ -n "$src" ] && [ -n "$rev" ] && [ "$src" != "$from" ] || { echo "::error::no copy source for tags/$tag"; exit 1; }
+            d=$(svn diff --summarize https://svn.r-project.org/R/$src@$rev https://svn.r-project.org/R/tags/$tag)
+            [ -z "$d" ] || { echo "::error::tags/$tag differs from $src@$rev"; echo "$d"; exit 1; }
+            sed -i "s#branches/\${BNAME} patched#$src patched#" build.sh
+            grep -n "$src patched" build.sh
+            echo "$rev" > release-rev
+            echo "R $tag, $src at r$rev" >> /c/bundle.txt
           fi
           ls -la
 
@@ -234,7 +243,7 @@ jobs:
         working-directory: C:\rbuild
         run: |
           # devel and patched at the revision of CRAN's build (none exists
-          # for aarch64), release at that of its tag
+          # for aarch64), release at the revision its tag copies
           rev=
           if [ "${{ inputs.r }}" = release ]; then
             rev=$(tr -dc 0-9 < release-rev)
