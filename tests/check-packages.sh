@@ -7,9 +7,10 @@
 # same tarballs, downloaded once, twice (chk-ref1, chk-ref2), the built R
 # once (chk-our), with its default backend.  An item that did not end in
 # OK counts when the built R has it and neither reference run does.  The
-# output of examples and tests, which raises no NOTE when it differs, is
-# compared with tools::Rdiff and printed.  Exits 1 when an item counts or
-# a check did not finish.
+# output of examples and tests, which raises no NOTE when it differs,
+# counts where it differs beyond noise and design (compare-output.R).
+# Exits 1 when an item or an output difference counts, or a check did not
+# finish.
 refbin=$1 bin=$2; shift 2
 # without --as-cran, so the examples run without timings, as for the
 # .Rout.save that tools::Rdiff expects to compare with
@@ -56,24 +57,22 @@ echo "$new" | grep . | while IFS= read -r l; do
         awk -v it="$item" 'f && /^\* /{exit} f; $0 == it {f=1}' | sed 's/^/    /'
 done
 [ -z "$new" ] || status=1
-# the output of examples and tests, compared as R CMD check compares output
-# with .Rout.save, by tools::Rdiff (forEx for examples): the reference with
-# itself, which shows what varies between runs, and with the built R; both
-# printed in full.  Reported, not decided, until the noise is settled from
-# these.
-rdiff() {   # rdiff FROM TO FOREX
-    "$bin/Rscript" -e 'a <- commandArgs(TRUE); invisible(tools::Rdiff(a[1], a[2], useDiff = TRUE, forEx = as.logical(a[3])))' "$1" "$2" "$3"
-}
-echo "output of examples and tests, tools::Rdiff:"
+# the output of examples and tests, compared by tools::Rdiff as R CMD
+# check compares output with .Rout.save, with what varies between the two
+# reference runs and what differs between the installations by design left
+# out (compare-output.R)
+home() { "$1/Rscript" -e 'cat(normalizePath(R.home(), "/"))'; }
+refhome=$(home "$refbin") ourhome=$(home "$bin")
+echo "output of examples and tests:"
 for p in "$@"; do
     for f in $p-Ex.Rout $(for r in ref1 our; do (cd chk-$r/$p.Rcheck 2> /dev/null && ls tests/*.Rout 2> /dev/null); done | sort -u); do
         a=chk-ref1/$p.Rcheck/$f b=chk-ref2/$p.Rcheck/$f c=chk-our/$p.Rcheck/$f
         ex=FALSE; [ $f = $p-Ex.Rout ] && ex=TRUE
+        echo "== $p $f"
         if [ -f $a ] && [ -f $b ] && [ -f $c ]; then
-            echo "== $p $f, ref1 against ref2:"; rdiff $a $b $ex
-            echo "== $p $f, ref1 against the built R:"; rdiff $a $c $ex
+            "$bin/Rscript" "$(dirname "$0")/compare-output.R" $a $b $c $ex "$refhome" "$ourhome" || status=1
         else
-            echo "== $p $f: not in every run"
+            echo "not in every run"
             status=1
         fi
     done

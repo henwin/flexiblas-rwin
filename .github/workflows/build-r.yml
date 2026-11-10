@@ -648,8 +648,8 @@ jobs:
       # (Matrix, MASS and four from CRAN with no dependencies beyond R and
       # the recommended packages) and one that does not (lattice), under
       # both Rs, the reference twice: the built R must add no NOTE,
-      # WARNING or ERROR; the output is compared with tools::Rdiff and
-      # printed (tests/check-packages.sh)
+      # WARNING or ERROR and no difference in the output of examples and
+      # tests beyond noise and design (tests/check-packages.sh)
       - name: Package checks against CRAN's R
         id: pkgcheck
         if: always() && steps.install.outcome == 'success'
@@ -716,7 +716,7 @@ jobs:
               "backend selection: default, FLEXIBLAS, user flexiblasrc" "${{ steps.backends.outcome }}" \
               "R's reg-BLAS.R under each backend" "${{ steps.regblas.outcome }}" \
               "invalid arguments give R's xerbla error, each backend" "${{ steps.xerbla.outcome }}" \
-              "R CMD check of 7 packages: no item beyond CRAN's R" "${{ steps.pkgcheck.outcome }}" \
+              "R CMD check of 7 packages: nothing beyond CRAN's R" "${{ steps.pkgcheck.outcome }}" \
               "the package's tinytest suite" "${{ steps.pkgtests.outcome }}"
             echo
             echo "Measurements (the step fails only if a run crashes or hangs):"
