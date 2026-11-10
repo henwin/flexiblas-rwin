@@ -58,36 +58,33 @@ jobs:
           rhome=$(cygpath -u "$R_HOME_DIR")
           bin=$rhome/bin/x64
           cp "$bin/Rblas.dll" work/Rblas-cran.dll; cp "$bin/Rlapack.dll" work/Rlapack-cran.dll
-          run() {  # label, Rblas.dll, Rlapack.dll
-            cp "$2" "$bin/Rblas.dll"; cp "$3" "$bin/Rlapack.dll"
-            "$rhome/bin/Rscript" tests/test-flags.R cmp "$1" 2>&1 | tee -a flags.log
+          # every comparison must run, and the builds with R's flags must
+          # reproduce CRAN's results ("same": test-flags.R exits 1 otherwise);
+          # differences under other flags are the results
+          failed=
+          run() {  # label, Rblas.dll, Rlapack.dll, [same]
+            cp "$2" "$bin/Rblas.dll" && cp "$3" "$bin/Rlapack.dll" || { failed="$failed; $1"; return; }
+            "$rhome/bin/Rscript" tests/test-flags.R cmp "$1" $4 2>&1 | tee -a flags.log || failed="$failed; $1"
           }
-          "$rhome/bin/Rscript" tests/test-flags.R ref "CRAN" 2>&1 | tee flags.log
+          "$rhome/bin/Rscript" tests/test-flags.R ref "CRAN" 2>&1 | tee flags.log || exit 1
           w=work
-          run "BLAS R's flags (-O2)" $w/blas-R/Rblas.dll $w/Rlapack-cran.dll
+          run "BLAS R's flags (-O2)" $w/blas-R/Rblas.dll $w/Rlapack-cran.dll same
           run "BLAS -O3"             $w/blas-O3/Rblas.dll $w/Rlapack-cran.dll
           run "BLAS native -O2"      $w/blas-native-O2/Rblas.dll $w/Rlapack-cran.dll
           run "BLAS native -O3"      $w/blas-native-O3/Rblas.dll $w/Rlapack-cran.dll
-          run "LAPACK R's flags (-O3)" $w/Rblas-cran.dll $w/lapack-R/Rlapack.dll
+          run "LAPACK R's flags (-O3)" $w/Rblas-cran.dll $w/lapack-R/Rlapack.dll same
           run "LAPACK -O2"           $w/Rblas-cran.dll $w/lapack-O2/Rlapack.dll
           run "LAPACK native -O2"    $w/Rblas-cran.dll $w/lapack-native-O2/Rlapack.dll
           run "LAPACK native -O3"    $w/Rblas-cran.dll $w/lapack-native-O3/Rlapack.dll
           run "both native -O2"      $w/blas-native-O2/Rblas.dll $w/lapack-native-O2/Rlapack.dll
           run "both native -O3"      $w/blas-native-O3/Rblas.dll $w/lapack-native-O3/Rlapack.dll
-          run "CRAN again"           $w/Rblas-cran.dll $w/Rlapack-cran.dll
+          run "CRAN again"           $w/Rblas-cran.dll $w/Rlapack-cran.dll same
           cp $w/Rblas-cran.dll "$bin/Rblas.dll"; cp $w/Rlapack-cran.dll "$bin/Rlapack.dll"
           # timings as a table, seconds, operations by build; Rscript -e on
           # Windows does not take a program over several lines
           "$rhome/bin/Rscript" tests/test-flags.R table flags.log > timings.txt 2>&1
           cat timings.txt
-          # every build must have been compared, and the builds with R's flags
-          # must reproduce CRAN's results; differences under other flags are
-          # the results
-          n=$(grep -c -E ': [0-9]+ of [0-9]+ results differ' flags.log || true)
-          [ "$n" -eq 11 ] || { echo "::error::$n of 11 builds compared"; exit 1; }
-          if grep -E "^(BLAS R's flags|LAPACK R's flags|CRAN again).*results differ" flags.log | grep -v ': 0 of '; then
-            echo "::error::a build with R's flags does not reproduce CRAN's results"; exit 1
-          fi
+          [ -z "$failed" ] || { echo "::error::failed or not as CRAN's results: ${failed#; }"; exit 1; }
 
       - name: Summarise
         if: always()

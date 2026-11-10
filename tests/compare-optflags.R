@@ -1,13 +1,16 @@
 ## Compare the outputs of examples and tests between builds: CRAN packages
 ## built with R's package flags (-O2) and with -O3, as R would build them
-## without the sed in src/gnuwin32/fixed/Makefile (r57974), or R's own and
-## packages' tests with R's Rblas.dll and with one built with -O3.
+## without the sed in src/gnuwin32/fixed/Makefile (r57974), or packages'
+## examples and tests with R's Rblas.dll and with one built with -O3.
 ##   Rscript compare-optflags.R build O2|O3 PKG...    install PKG from source into lib-O2 or lib-O3
-##   Rscript compare-optflags.R binary PKG...         install CRAN's binary of PKG and add the tests from its source
+##   Rscript compare-optflags.R binary PKG...         install CRAN's binary of PKG and add the tests from its source;
+##                                                   appends PKG and installed, not installed or version mismatch
+##                                                   to binary.tsv
 ##   Rscript compare-optflags.R test RUN LIB PKG...   examples and tests of PKG in lib-LIB (LIB "default": the first library), into out-RUN
-##   Rscript compare-optflags.R base RUN              R's tests (testInstalledBasic, recommended packages), into out-RUN
+##   Rscript compare-optflags.R base RUN              examples and tests of the recommended packages, into
+##                                                   out-RUN/recommended; fails if one has no example output
 ##   Rscript compare-optflags.R compare A,A2.. B,B2.. [PKG...]  the B runs against the A runs, on the lines each
-##                                                   set agrees on
+##                                                   set agrees on; the counts per package to compare.tsv
 ## The R running "test" and "base" is the one whose output is recorded; the
 ## directories are in $OPTFLAGS_WORK, or optflags-work.
 ## o3-packages.yml runs the Rblas.dll comparison. The package-flags comparison
@@ -66,7 +69,11 @@ if (mode == "binary") {
     for (i in seq_len(nrow(src))) {
         p <- src[i, 1]
         inst <- tryCatch(find.package(p), error = function(e) "")
-        if (!nzchar(inst)) { cat(sprintf("%-12s not installed\n", p)); next }
+        if (!nzchar(inst)) {
+            cat(sprintf("%-12s not installed\n", p))
+            cat(p, "not installed\n", sep = "\t", file = "binary.tsv", append = TRUE)
+            next
+        }
         files <- untar(src[i, 2], list = TRUE)
         t <- grep(sprintf("^%s/tests/", p), files, value = TRUE)
         if (length(t)) {
@@ -77,6 +84,8 @@ if (mode == "binary") {
         srcver <- sub(sprintf("^%s_(.*)\\.tar\\.gz$", p), "\\1", basename(src[i, 2]))
         cat(sprintf("%-12s binary %s, %d test files%s\n", p, packageVersion(p), length(t),
                     if (packageVersion(p) == srcver) "" else sprintf(", from source %s: VERSION MISMATCH", srcver)))
+        cat(p, if (packageVersion(p) == srcver) "installed\n" else "version mismatch\n",
+            sep = "\t", file = "binary.tsv", append = TRUE)
     }
 }
 
@@ -130,21 +139,26 @@ if (mode == "test") {
 }
 
 if (mode == "base") {
+    ## R's own tests cannot run here: CRAN's binary installs only part of
+    ## tests/, and testInstalledBasic() finds none of its files (R built
+    ## with the -O3 Rblas.dll runs them, build-r.yml). A package whose
+    ## examples fail does not run its tests (testInstalledPackage()), so
+    ## only the example output is required.
     run <- args[2]
-    cat(sprintf("%s: %s; tests %s\n", run, R.home(),
-                if (dir.exists(file.path(R.home(), "tests"))) "installed" else "NOT installed"))
-    out <- file.path(work, paste0("out-", run))
-    dir.create(file.path(out, "base"), recursive = TRUE, showWarnings = FALSE)
-    dir.create(file.path(out, "recommended"), showWarnings = FALSE)
+    cat(sprintf("%s: %s\n", run, R.home()))
+    out <- file.path(work, paste0("out-", run), "recommended")
+    dir.create(out, recursive = TRUE, showWarnings = FALSE)
     ## failures are part of the result, not reasons to stop
-    for (s in c("basic", "devel"))
-        cat(sprintf("testInstalledBasic(\"%s\"): %s\n", s,
-                    tryCatch(tools::testInstalledBasic(s, outDir = file.path(out, "base")),
-                             error = function(e) conditionMessage(e))))
     cat(sprintf("testInstalledPackages: %s\n",
-                tryCatch(tools::testInstalledPackages(outDir = file.path(out, "recommended"), scope = "recommended",
+                tryCatch(tools::testInstalledPackages(outDir = out, scope = "recommended",
                                                       types = c("examples", "tests"), errorsAreFatal = FALSE),
                          error = function(e) conditionMessage(e))))
+    ## the packages testInstalledPackages() takes, whether installed or not
+    rec <- tools:::.get_standard_package_names()$recommended
+    none <- rec[!file.exists(file.path(out, paste0(rec, "-Ex.Rout"))) &
+                !file.exists(file.path(out, paste0(rec, "-Ex.Rout.fail")))]
+    if (!length(rec) || length(none))
+        stop("no output of the examples of ", if (length(rec)) paste(none, collapse = ", ") else "any package")
 }
 
 if (mode == "compare") {
@@ -244,6 +258,7 @@ if (mode == "compare") {
     if (!length(groups))
         groups <- list.dirs(file.path(work, paste0("out-", ref[1])), full.names = FALSE, recursive = FALSE)
     total <- setNames(integer(length(kinds)), kinds)
+    rows <- list()
     for (g in groups) {
         files <- sort(unique(sub("\\.fail$", "", unlist(lapply(c(ref, alt), function(r)
             list.files(dir(r, g), "\\.Rout(\\.fail)?$", recursive = TRUE))))))
@@ -251,10 +266,13 @@ if (mode == "compare") {
             cat(sprintf("  %s: not compared: %s\n", f, conditionMessage(e))); "missing" }), "")
         n <- table(factor(k, kinds))
         total <- total + n
+        rows[[g]] <- data.frame(package = g, files = length(files), t(c(n)))
         ## "failed" is a failure in every run, so not a difference
         cat(sprintf("== %-12s %3d output files: %3d same, %3d differ in %s, %3d failed, %3d missing, %3d unstable\n",
                     g, length(files), n["same"], n["differ"], paste(alt, collapse = "+"), n["failed"], n["missing"],
                     n["unstable"]))
     }
     cat(sprintf("total %d output files: %s\n", sum(total), paste(total, names(total), collapse = ", ")))
+    tsv <- do.call(rbind, c(list(data.frame(package = character(), files = integer(), t(total)[0, , drop = FALSE])), rows))
+    write.table(tsv, "compare.tsv", sep = "\t", quote = FALSE, row.names = FALSE)
 }

@@ -1,7 +1,8 @@
 ## Results and timings of R's BLAS and LAPACK uses, for comparing builds of
 ## Rblas.dll and Rlapack.dll with different compiler flags.
 ##   Rscript test-flags.R ref          saves the results to flags-ref.rds
-##   Rscript test-flags.R cmp LABEL    compares with them, bit for bit
+##   Rscript test-flags.R cmp LABEL [same]  compares with them, bit for bit;
+##                                     with "same", exits with status 1 if any differ
 ## Both print timings, the median of five runs, as "LABEL op seconds".
 ##   Rscript test-flags.R table LOG    tabulates the timings in LOG
 args <- commandArgs(TRUE)
@@ -97,3 +98,4 @@ if (mode == "ref") {
                 if (length(diff_ops)) paste(diff_ops, collapse = ", ") else "none"))
 }
 timings()
+if (mode == "cmp" && identical(args[3], "same") && !all(same)) quit(save = "no", status = 1)
