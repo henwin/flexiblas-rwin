@@ -9,11 +9,14 @@ name: R with the R-core scripts
 # Added here: the FlexiBLAS bundle from the latest successful run of
 # build-bundle.yml, patches/r as further r_*.diff, and patches/r-dev-web
 # applied to a mirror of WindowsBuilds: 0001, after which build.sh uses
-# the bundle when present, and 0002, without which build.sh --patched
-# checks out no branch.
-# build.sh builds trunk or the R-patched branch; for release, the branch
-# in the checkout line is replaced by the latest R-x-y-z tag of the
-# release series, since R-core builds release in another way.
+# the bundle when present, 0002, without which build.sh --patched checks
+# out no branch, and 0003, without which --revision is undone by the svn
+# update after the checkout.
+# build.sh builds trunk or the R-patched branch at the revision of CRAN's
+# current build of it, the reference of the test job, so that the two Rs
+# differ only by FlexiBLAS; for release, the branch in the checkout line is
+# replaced by the latest R-x-y-z tag of the release series, since R-core
+# builds release in another way.
 # The test job then installs the installer and runs tests/ against it.
 # Long, so it runs only on demand.
 on:
@@ -216,6 +219,9 @@ jobs:
             echo "release tag $tag"
             sed -i "s#branches/\${BNAME} patched#tags/$tag patched#" build.sh
             grep -n "tags/$tag" build.sh
+            # the revision the tag was made at, which CRAN's release reports;
+            # without it the checkout reports the repository's newest
+            svn info --show-item last-changed-revision https://svn.r-project.org/R/tags/$tag > release-rev
           fi
           ls -la
 
@@ -227,7 +233,18 @@ jobs:
           FLEXIBLAS: ${{ inputs.backend }}
         working-directory: C:\rbuild
         run: |
-          ./build.sh ${{ inputs.target == 'aarch64' && 'aarch64' || '' }} ${{ inputs.check && '--check' || '' }} ${{ inputs.r != 'devel' && '--patched' || '' }} > build.log 2>&1
+          # devel and patched at the revision of CRAN's build (none exists
+          # for aarch64), release at that of its tag
+          rev=
+          if [ "${{ inputs.r }}" = release ]; then
+            rev=$(tr -dc 0-9 < release-rev)
+          elif [ "${{ inputs.target }}" != aarch64 ]; then
+            page=${{ inputs.r == 'devel' && 'rdevel' || 'rpatched' }}.html
+            rev=$(curl -fsS https://cran.r-project.org/bin/windows/base/$page | grep -o '(r[0-9][0-9]*)\|r[0-9][0-9]* development snapshot' | head -1 | grep -o '[0-9][0-9]*')
+            [ -n "$rev" ] || { echo "::error::no revision on CRAN's $page"; exit 1; }
+            echo "R r$rev, the revision of CRAN's build" | tee -a /c/bundle.txt
+          fi
+          ./build.sh ${{ inputs.target == 'aarch64' && 'aarch64' || '' }} ${{ inputs.check && '--check' || '' }} ${{ inputs.r != 'devel' && '--patched' || '' }} ${rev:+--revision $rev} > build.log 2>&1
           status=$?
           tail -30 build.log
           ls -la build
@@ -424,6 +441,19 @@ jobs:
           & $exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /DIR=C:\R-inst | Out-Null
           Get-ChildItem "C:\R-inst\$env:RBIN\flexiblas", C:\R-inst\etc\flexiblasrc*
           "C:\R-inst\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+      # The built R is CRAN's revision (build job), unless CRAN published a
+      # new build in between or the installer is reused; then every
+      # comparison with the reference is between two revisions
+      - name: Same revision as CRAN's R
+        id: samerev
+        if: always() && steps.install.outcome == 'success' && steps.ref.outcome == 'success' && inputs.target != 'aarch64'
+        shell: bash
+        run: |
+          ref=$("$(cygpath -u "$(cat ref-bin.txt)")/Rscript" -e 'cat(R.version[["svn rev"]])')
+          our=$(/c/R-inst/$RBIN/Rscript -e 'cat(R.version[["svn rev"]])')
+          echo "CRAN's R r$ref, the built R r$our"
+          [ "$ref" = "$our" ]
 
       # Rblas.dll and Rlapack.dll export what CRAN's do, less the LAPACK
       # names FlexiBLAS lacks (tests/compare-exports.sh)
@@ -674,6 +704,7 @@ jobs:
             printf '  %-58s %s\n' \
               "reference results from CRAN's R" "${{ steps.ref.outcome }}" \
               "installer installs" "${{ steps.install.outcome }}" \
+              "the same revision as CRAN's R" "${{ steps.samerev.outcome }}" \
               "Rblas/Rlapack export as CRAN's, less FlexiBLAS gaps" "${{ steps.exports.outcome }}" \
               "flexiblas package installs" "${{ steps.pkg.outcome }}" \
               "startup with FLEXIBLAS_VERBOSE=1" "${{ steps.startup.outcome }}" \

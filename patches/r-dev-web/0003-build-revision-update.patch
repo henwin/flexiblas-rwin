@@ -1,0 +1,22 @@
+Index: winutf8/ucrt3/r/build.sh
+===================================================================
+--- winutf8/ucrt3/r/build.sh	(revision 6991)
++++ winutf8/ucrt3/r/build.sh	(working copy)
+@@ -217,7 +217,7 @@
+   #   (possibly network issues)
+   cd trunk
+   svn cleanup
+-  if ! svn up ; then
++  if ! svn up $SVNEXTRA ; then
+     echo "svn checkout failed." >&2
+     exit 2
+   fi
+@@ -230,7 +230,7 @@
+   # see branch above
+   cd patched
+   svn cleanup
+-  if ! svn up ; then
++  if ! svn up $SVNEXTRA ; then
+     echo "svn checkout failed." >&2
+     exit 2
+   fi
