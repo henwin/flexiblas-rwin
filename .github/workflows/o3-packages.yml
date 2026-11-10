@@ -6,7 +6,9 @@ name: Rblas.dll with -O3, CRAN and recommended packages
 # with -O3 (.github/actions/rblas-o3): the recommended packages (job base),
 # and CRAN packages (job packages), by default those that call the BLAS or
 # LAPACK themselves (tests/cran-blas-users.sh: a DLL in their Windows binary
-# imports from Rblas.dll or Rlapack.dll), as the CRAN binaries for that R
+# imports from Rblas.dll or Rlapack.dll), or a reproducible sample of the
+# others (tests/cran-others-sample.sh), which reach the BLAS only through
+# R's own functions, reported apart; as the CRAN binaries for that R
 # with the tests taken from their sources. R's own tests need R built with
 # that DLL (build-r.yml, experiment "Rblas -O3"). A
 # package whose outputs differ runs once more each way, and a line counts
@@ -15,8 +17,16 @@ on:
   workflow_dispatch:
     inputs:
       packages:
-        description: CRAN packages, separated by spaces (empty for all that call the BLAS or LAPACK; "none" for no packages)
+        description: CRAN packages, separated by spaces (empty for the set below; "none" for no packages)
         default: ''
+      set:
+        description: Without packages named, the packages that call the BLAS or LAPACK, or a sample of the others
+        type: choice
+        options: [call the BLAS, sample of the others]
+        default: call the BLAS
+      sample:
+        description: Size and seed of the sample of the others
+        default: '1000 1'
       groups:
         description: Number of parallel jobs for the packages (at most 256)
         default: '64'
@@ -30,7 +40,7 @@ on:
         options: [devel, release]
         default: devel
       summarise:
-        description: Only summarise the package logs of this earlier run (its id), for a run whose summary job failed
+        description: Only summarise the package logs of this earlier run (its id), for a run whose summary job failed; give the set of that run too, which names its comment
         default: ''
 
 permissions:
@@ -50,14 +60,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Packages that call the BLAS or LAPACK
+      - name: The packages
         run: |
           if [ -n "${{ inputs.packages }}" ]; then
             echo ${{ inputs.packages }} | tr ' ' '\n' > packages.txt
           else
             # the version behind "devel" or "release", which names the CRAN binary directory
             v=$(curl -sSf "https://api.r-hub.io/rversions/resolve/${{ inputs.r }}" | jq -r .version | cut -d. -f1,2)
-            tests/cran-blas-users.sh "$v" > packages.txt
+            if [ "${{ inputs.set }}" = "sample of the others" ]; then
+              tests/cran-others-sample.sh "$v" ${{ inputs.sample }} > packages.txt
+            else
+              tests/cran-blas-users.sh "$v" > packages.txt
+            fi
           fi
           echo "$(wc -l < packages.txt) packages"
 
@@ -184,6 +198,8 @@ jobs:
           if [ "$g" -gt 0 ] && [ "$ok" -eq "$g" ]; then st=success; else st=failure; fi
           echo "status=$st" >> $GITHUB_OUTPUT
           {
+            [ -n "${{ inputs.packages }}" ] || [ "${{ inputs.set }}" != "sample of the others" ] ||
+              echo "a sample of the packages that do not call the BLAS or LAPACK: size and seed ${{ inputs.sample }}"
             echo "group jobs of run $run: $ok of $g succeeded"
             echo "logs downloaded: $(ls -d log-*/ 2>/dev/null | wc -l) of $g"
             echo "groups with results: $(ls log-*/result.tsv 2>/dev/null | wc -l) of $g"
@@ -210,6 +226,8 @@ jobs:
       - uses: ./.github/actions/report
         if: always()
         with:
+          # the sample of the others in a comment of its own
+          key: ${{ github.workflow }}${{ inputs.packages == '' && inputs.set == 'sample of the others' && ' (a sample of the other packages)' || '' }}
           status: ${{ steps.summarise.outputs.status || needs.packages.result }}
           summary: summary.txt
           files: |

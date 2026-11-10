@@ -1,7 +1,8 @@
 #!/bin/bash
 # The CRAN packages that call the BLAS or LAPACK themselves: those whose
 # Windows binary has a DLL importing from Rblas.dll or Rlapack.dll. Only
-# packages with compiled code are downloaded.
+# packages with compiled code are downloaded; a binary that cannot be
+# downloaded fails the script, since it would count as not calling them.
 #   tests/cran-blas-users.sh 4.6 > packages.txt
 set -eo pipefail
 export LC_ALL=C
@@ -18,7 +19,7 @@ echo "$(wc -l < "$w/zips") Windows binaries with compiled code" >&2
 
 one() {
     d=$(mktemp -d)
-    if curl -sSf -o "$d/z" "$1/$3"; then
+    if curl -sSf --retry 3 -o "$d/z" "$1/$3"; then
         unzip -qq -o "$d/z" '*/libs/*' -d "$d" 2>/dev/null || true
         for f in $(find "$d" -name '*.dll'); do
             if [ "$(objdump -p "$f" | grep -ciE 'DLL Name: R(blas|lapack)\.dll')" -gt 0 ]; then
@@ -26,7 +27,7 @@ one() {
             fi
         done
     else
-        echo "not downloaded: $3" >&2
+        echo "not downloaded: $3" >&2; rm -rf "$d"; return 1
     fi
     rm -rf "$d"
 }
