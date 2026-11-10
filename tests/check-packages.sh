@@ -48,6 +48,13 @@ done
 for r in ref1 ref2 our; do echo "$r:"; sed 's/^/  /' items-$r.txt; done
 new=$(comm -13 <(sort -u items-ref1.txt items-ref2.txt) items-our.txt)
 echo "items only in the built R: ${new:-none}"
+# what each such item says in the 00check.log of the built R
+echo "$new" | grep . | while IFS= read -r l; do
+    p=${l%%: *}; item=${l#*: }
+    echo "  $l:"
+    tr -d '\r' < chk-our/$p.Rcheck/00check.log | sed 's/ \[[^]]*\]//' |
+        awk -v it="$item" 'f && /^\* /{exit} f; $0 == it {f=1}' | sed 's/^/    /'
+done
 [ -z "$new" ] || status=1
 # the output of examples and tests, compared as R CMD check compares output
 # with .Rout.save, by tools::Rdiff (forEx for examples): the reference with
