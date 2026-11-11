@@ -9,8 +9,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 target=${1:-x86_64}
 
+# IMAGE_BUILT=yes skips the build, for build-bundle.yml, whose cached
+# docker/build-push-action step has built the image already
 image=flexiblas-rwin-mxe
-docker build -t "$image" -f docker/Dockerfile \
+[ "${IMAGE_BUILT:-}" = yes ] || docker build -t "$image" -f docker/Dockerfile \
     --build-arg WITH_AARCH64=$([ "$target" = aarch64 ] && echo yes || echo no) .
 docker run --rm -v "$PWD":/work -w /work "$image" bash -c \
     "bash scripts/build-mxe.sh $target && bash scripts/build-bundle.sh $target"

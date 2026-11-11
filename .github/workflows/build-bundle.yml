@@ -83,6 +83,10 @@ jobs:
 
       - name: Build in Docker
         id: build
+        env:
+          # built by the step above; the script's own docker build has no
+          # gha cache and would fetch everything again
+          IMAGE_BUILT: "yes"
         run: bash scripts/build-in-docker.sh ${{ matrix.target }} 2>&1 | tee docker-build.log
 
       - name: Save the MXE build
