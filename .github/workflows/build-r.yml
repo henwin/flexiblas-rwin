@@ -338,6 +338,10 @@ jobs:
           else
             /c/R-inst/bin/Rscript -e 'sessionInfo()'
           fi
+          # which R the installer holds, for chain.yml's release: version,
+          # status, svn revision and date
+          /c/R-inst/bin/Rscript -e 'v <- R.version; cat(paste0(v$major, ".", v$minor), if (nzchar(v$status)) v$status else "release", v[["svn rev"]], paste(v$year, v$month, v$day, sep = "-"), sep = "\t"); cat("\n")' > /c/rbuild/build/R-info.txt
+          cat /c/rbuild/build/R-info.txt
 
       # The installer under a name that says which R it is, so that a run
       # that only tests finds one of the right kind; an experiment's
@@ -345,7 +349,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: R-${{ inputs.r }}${{ inputs.experiment != 'none' && '-experiment' || '' }}-installer${{ env.SUFFIX }}
-          path: C:/rbuild/build/R-*-win.exe
+          path: |
+            C:/rbuild/build/R-*-win.exe
+            C:/rbuild/build/R-info.txt
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v7

@@ -3,8 +3,9 @@ name: FlexiBLAS for R
 # The deliverable end to end, for one commit: the FlexiBLAS bundle built
 # and tested (build-bundle.yml), then R-devel and R-release built with it
 # by the R-core scripts, each checked against CRAN's build of the same R
-# and its backends measured (build-r.yml), and one comment that says
-# whether the commit is green. Started by hand while commits are being
+# and its backends measured (build-r.yml), the installers published as
+# releases when all is green, and one comment that says whether the
+# commit is green. Started by hand while commits are being
 # gathered; later on every push to master, with the push trigger below.
 on:
   workflow_dispatch:
@@ -46,8 +47,77 @@ jobs:
       r: ${{ matrix.r }}
       own_bundle: true
 
-  status:
+  # A green chain publishes its installers, unsigned: R-release as a
+  # GitHub release tagged with R's version and revision and the commit,
+  # R-devel as a prerelease under the tag devel, replaced every time.
+  publish:
     needs: [bundle, r]
+    if: needs.bundle.result == 'success' && needs.r.result == 'success' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: R-release-installer
+          path: release
+      - uses: actions/download-artifact@v8
+        with:
+          name: R-devel-installer
+          path: devel
+
+      - name: Publish the installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          run=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          # only the head of master: a rerun of an older run must not replace
+          # what a newer commit published
+          head=$(gh api repos/$GH_REPO/commits/master --jq .sha)
+          [ "$head" = "$GITHUB_SHA" ] || { echo "::error::${GITHUB_SHA:0:7} is no longer the head of master (${head:0:7}); nothing published"; exit 1; }
+          for kind in release devel; do
+            IFS=$'\t' read -r ver status rev date < <(tr -d '\r' < $kind/R-info.txt)
+            [ -n "$rev" ] || { echo "::error::no R-info.txt for $kind"; exit 1; }
+            exe=$(ls $kind/R-*-win.exe)
+            if [ $kind = release ]; then
+              name=R-$ver-flexiblas-win.exe; tag=r$ver-r$rev-${GITHUB_SHA:0:7}; title="R $ver with FlexiBLAS"
+            else
+              name=R-devel-flexiblas-win.exe; tag=devel; title="R-devel with FlexiBLAS (r$rev, $date)"
+            fi
+            mv "$exe" "$name"
+            {
+              echo "R $ver ($status, r$rev, $date), built by R-core's scripts with the FlexiBLAS bundle of commit ${GITHUB_SHA:0:7}, NETLIB the default backend."
+              echo
+              echo "Checked against CRAN's build of the same revision in [run $GITHUB_RUN_ID]($run): exports, NETLIB bit for bit R's own BLAS and LAPACK, R's error for invalid arguments, the backends, and R CMD check of seven packages."
+              echo
+              echo "Unsigned: Windows SmartScreen may warn before it runs. SHA-256:"
+              echo
+              echo '```'
+              sha256sum "$name"
+              echo '```'
+            } > notes.md
+            if [ $kind = devel ] && gh release view devel >/dev/null 2>&1; then
+              # in place, so that devel is never missing: the file, the
+              # text, then the tag moved to this commit
+              gh release upload devel "$name" --clobber
+              gh release edit devel --title "$title" --notes-file notes.md --prerelease
+              gh api -X PATCH repos/$GH_REPO/git/refs/tags/devel -f sha="$GITHUB_SHA" -F force=true > /dev/null
+            elif [ $kind = devel ]; then
+              # a tag left without its release would pin devel to its commit
+              gh api -X DELETE repos/$GH_REPO/git/refs/tags/devel > /dev/null 2>&1 || true
+              gh release create devel "$name" --prerelease --target "$GITHUB_SHA" --title "$title" --notes-file notes.md
+            elif gh release view "$tag" >/dev/null 2>&1; then
+              gh release upload "$tag" "$name" --clobber
+              gh release edit "$tag" --notes-file notes.md
+            else
+              gh release create "$tag" "$name" --latest --target "$GITHUB_SHA" --title "$title" --notes-file notes.md
+            fi
+            echo "$kind: $tag, $name" | tee -a published.txt
+          done
+
+  status:
+    needs: [bundle, r, publish]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -66,10 +136,11 @@ jobs:
         if: always()
         with:
           key: FlexiBLAS for R, the chain
-          status: ${{ (needs.bundle.result == 'success' && needs.r.result == 'success') && 'success' || 'failure' }}
+          status: ${{ (needs.bundle.result == 'success' && needs.r.result == 'success' && needs.publish.result == 'success') && 'success' || 'failure' }}
           ran: ran.txt
           checks: |
             ${{ needs.bundle.result }} | the bundle built, and tested on Windows
             ${{ needs.r.result }} | R-devel and R-release built, checked against CRAN's R, backends measured
+            ${{ needs.publish.result }} | the installers published as releases
           results: results.txt
           files: ""
