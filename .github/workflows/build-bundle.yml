@@ -4,23 +4,22 @@ name: FlexiBLAS bundle
 # through libflexiblas.dll, and the thread cases. Only x86_64 for now; aarch64
 # is paused (scripts and patches keep it) until x86_64 works end to end. Open
 # there: the OPENBLAS-OPENMP backend needs LLVM's libomp.dll, which installed
-# R does not ship, and CRAN has no R for windows-11-arm to compare against. Runs when the bundle's inputs change (the same list as the
-# provenance check in build-r.yml), and by hand.
+# R does not ship, and CRAN has no R for windows-11-arm to compare against.
+# Called by chain.yml, and runs by hand. Its inputs, which build-r.yml
+# checks a bundle against when run by hand (a bundle must be built from
+# master's last change to them):
+#   bundle inputs:
+#     - docker/**
+#     - scripts/build-mxe.sh
+#     - scripts/build-bundle.sh
+#     - scripts/build-in-docker.sh
+#     - patches/rtools-mxe/**
+#     - patches/openblas/**
+#     - patches/flexiblas/**
+#     - patches/r-dev-web/flexiblas_bundle/**
+#     - .github/workflows/build-bundle.yml
 on:
-  push:
-    branches: [master]
-    paths: &inputs
-      - docker/**
-      - scripts/build-mxe.sh
-      - scripts/build-bundle.sh
-      - scripts/build-in-docker.sh
-      - patches/rtools-mxe/**
-      - patches/openblas/**
-      - patches/flexiblas/**
-      - patches/r-dev-web/flexiblas_bundle/**
-      - .github/workflows/build-bundle.yml
-  pull_request:
-    paths: *inputs
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -32,10 +31,8 @@ defaults:
     shell: bash
 
 # runs that report to the same comment wait for each other rather than race
-# (per ref: a pull request queued behind master would cancel a pending
-# master run, and build-r needs a bundle from master's current sources)
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: build-bundle-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -133,7 +130,7 @@ jobs:
       - uses: ./.github/actions/report
         if: always()
         with:
-          key: ${{ github.workflow }}${{ matrix.target == 'aarch64' && ' (aarch64)' || '' }}
+          key: FlexiBLAS bundle${{ matrix.target == 'aarch64' && ' (aarch64)' || '' }}
           status: ${{ job.status }}
           ran: ran.txt
           checks: |
@@ -243,7 +240,7 @@ jobs:
       - uses: ./.github/actions/report
         if: always()
         with:
-          key: ${{ github.workflow }} (Windows ${{ matrix.target }})
+          key: FlexiBLAS bundle (Windows ${{ matrix.target }})
           status: ${{ (steps.bundle.outcome == 'success' || needs.build.result == 'success') && job.status || 'not run' }}
           # without a bundle: why
           verdict: ${{ steps.bundle.outcome != 'success' && (needs.build.result == 'success' && 'the build succeeded but its bundle could not be downloaded' || format('the build ended with {0}, so there was no bundle to test', needs.build.result)) || '' }}

@@ -1,0 +1,75 @@
+name: FlexiBLAS for R
+
+# The deliverable end to end, for one commit: the FlexiBLAS bundle built
+# and tested (build-bundle.yml), then R-devel and R-release built with it
+# by the R-core scripts, each checked against CRAN's build of the same R
+# and its backends measured (build-r.yml), and one comment that says
+# whether the commit is green. Started by hand while commits are being
+# gathered; later on every push to master, with the push trigger below.
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [master]
+  #   paths:
+  #     - docker/**
+  #     - scripts/**
+  #     - patches/**
+  #     - tests/**
+  #     - .github/actions/**
+  #     - .github/workflows/chain.yml
+  #     - .github/workflows/build-bundle.yml
+  #     - .github/workflows/build-r.yml
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+# one chain at a time: a newer one waits, and replaces any that was waiting
+concurrency:
+  group: chain
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    uses: ./.github/workflows/build-bundle.yml
+
+  # only with a bundle that also passed its Windows tests
+  r:
+    needs: bundle
+    strategy:
+      fail-fast: false
+      matrix:
+        r: [devel, release]
+    uses: ./.github/workflows/build-r.yml
+    with:
+      r: ${{ matrix.r }}
+      own_bundle: true
+
+  status:
+    needs: [bundle, r]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      # every job of the run, which the checks below sum up
+      - name: Summarise
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "commit ${GITHUB_SHA:0:7}: $(git log -1 --format=%s)" > ran.txt
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" --paginate \
+            --jq '.jobs[] | select(.name | test("status") | not) | "\(.conclusion // .status)  \(.name)"' > results.txt || true
+
+      - uses: ./.github/actions/report
+        if: always()
+        with:
+          key: FlexiBLAS for R, the chain
+          status: ${{ (needs.bundle.result == 'success' && needs.r.result == 'success') && 'success' || 'failure' }}
+          ran: ran.txt
+          checks: |
+            ${{ needs.bundle.result }} | the bundle built, and tested on Windows
+            ${{ needs.r.result }} | R-devel and R-release built, checked against CRAN's R, backends measured
+          results: results.txt
+          files: ""

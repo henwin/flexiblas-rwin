@@ -8,9 +8,6 @@ name: NA, NaN and Inf outside Windows
 # BLAS, LAPACK and arithmetic of CRAN's R (Posit's builds on Linux) on
 # Windows, Linux and macOS, x86-64 and arm64, compared between platforms.
 on:
-  push:
-    branches: [master]
-    paths: [tests/test-nan.R, tests/test-memory.R, tests/test-omp-caller.R, tests/omp-caller.c, .github/workflows/nan-platforms.yml]
   workflow_dispatch:
 
 permissions:

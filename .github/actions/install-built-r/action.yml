@@ -1,0 +1,33 @@
+name: Install the built R
+description: >
+  Installs R from the installer in inst/ into C:\R-inst, puts it first on
+  PATH for the later steps, and installs the flexiblas R package from its
+  repository with patches/r-flexiblas (pkg-install.log, and the commit in
+  r-flexiblas.txt). Shared by the test and measure jobs of build-r.yml.
+inputs:
+  rbin:
+    description: R's bin directory under R_HOME, bin/x64 or bin
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Install R from the installer
+      shell: pwsh
+      run: |
+        $exe = (Get-ChildItem inst -Recurse -Filter "R-*-win.exe")[0].FullName
+        & $exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /DIR=C:\R-inst | Out-Null
+        Get-ChildItem "C:\R-inst\${{ inputs.rbin }}\flexiblas", C:\R-inst\etc\flexiblasrc*
+        "C:\R-inst\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+    - name: Install the flexiblas R package, patched for Windows
+      shell: bash
+      run: |
+        exec > >(tee pkg-install.log) 2>&1
+        set -x
+        r=/c/R-inst/bin
+        git -c core.autocrlf=false clone -q --depth 1 https://github.com/Enchufa2/r-flexiblas.git
+        echo "r-flexiblas $(git -C r-flexiblas rev-parse HEAD)" | tee r-flexiblas.txt
+        git -C r-flexiblas apply -v ../patches/r-flexiblas/0001-windows.patch
+        $r/Rscript -e "install.packages('tinytest', repos = 'https://cloud.r-project.org')"
+        $r/R CMD INSTALL --install-tests r-flexiblas
+        $r/Rscript -e "stopifnot(requireNamespace('flexiblas'))"
