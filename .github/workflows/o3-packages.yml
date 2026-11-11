@@ -27,6 +27,9 @@ on:
       sample:
         description: Size and seed of the sample of the others
         default: '1000 1'
+      detail:
+        description: Differing lines shown per output file
+        default: '3'
       groups:
         description: Number of parallel jobs for the packages (at most 256)
         default: '64'
@@ -50,6 +53,7 @@ permissions:
 
 env:
   OPTFLAGS_WORK: ${{ github.workspace }}\optflags-work
+  OPTFLAGS_DETAIL: ${{ inputs.detail || '3' }}
 
 jobs:
   select:

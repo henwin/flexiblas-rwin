@@ -12,7 +12,8 @@
 ##   Rscript compare-optflags.R compare A,A2.. B,B2.. [PKG...]  the B runs against the A runs, on the lines each
 ##                                                   set agrees on; the counts per package to compare.tsv
 ## The R running "test" and "base" is the one whose output is recorded; the
-## directories are in $OPTFLAGS_WORK, or optflags-work.
+## directories are in $OPTFLAGS_WORK, or optflags-work. "compare" shows up to
+## $OPTFLAGS_DETAIL (3) differing lines of each side per output.
 ## o3-packages.yml runs the Rblas.dll comparison. The package-flags comparison
 ## (r57974) was run on 32 packages with
 ##   build O2 PKG...; build O3 PKG...; test O2 O2 PKG...; test O2b O2 PKG...;
@@ -162,6 +163,8 @@ if (mode == "base") {
 }
 
 if (mode == "compare") {
+    detail <- suppressWarnings(as.integer(Sys.getenv("OPTFLAGS_DETAIL", "3")))
+    if (is.na(detail) || detail < 0) stop("OPTFLAGS_DETAIL is not a count")
     ## Lines that differ between runs of the reference (addresses, dates,
     ## timings, packages' own random numbers) say nothing about what the
     ## alternative changes; a line counts only when every run of the
@@ -230,18 +233,21 @@ if (mode == "compare") {
         R <- lapply(R, `[[`, "lines"); A <- lapply(A, `[[`, "lines")
         n <- lengths(c(R, A)); nr <- n[seq_along(R)]; na <- n[-seq_along(R)]
         if (length(unique(nr)) > 1 || length(unique(na)) > 1) return("unstable")
+        ## bytes: substr() refuses strings in the "bytes" encoding
+        head100 <- function(x) rawToChar(head(charToRaw(x), 100))
         if (nr[1] != na[1]) {
             cat(sprintf("  %s: %d lines in %s, %d in %s\n", f, nr[1], ref[1], na[1], alt[1]))
+            ## the lines that one has and the other lacks
+            for (l in head(R[[1]][!R[[1]] %in% A[[1]]], detail)) cat(sprintf("    only %s: %s\n", ref[1], head100(l)))
+            for (l in head(A[[1]][!A[[1]] %in% R[[1]]], detail)) cat(sprintf("    only %s: %s\n", alt[1], head100(l)))
             return("differ")
         }
         same <- function(L) Reduce(`&`, lapply(L[-1], function(l) l == L[[1]]), rep(TRUE, n[1]))
         sR <- same(R); sA <- same(A)
-        ## bytes: substr() refuses strings in the "bytes" encoding
-        head100 <- function(x) rawToChar(head(charToRaw(x), 100))
         d <- which(sR & sA & R[[1]] != A[[1]])
         if (length(d)) {
             cat(sprintf("  %s: %d stable lines differ\n", f, length(d)))
-            for (k in head(d, 3))
+            for (k in head(d, detail))
                 cat(sprintf("    %s: %s\n    %s: %s\n", ref[1], head100(R[[1]][k]), alt[1], head100(A[[1]][k])))
             return("differ")
         }
@@ -250,7 +256,7 @@ if (mode == "compare") {
         ## what varies between runs of a set, for the blanking above
         u <- which(!(sR & sA)); L <- if (all(sR)) A else R; s <- if (all(sR)) alt else ref
         cat(sprintf("  %s: %d unstable lines\n", f, length(u)))
-        for (k in head(u, 3))
+        for (k in head(u, detail))
             cat(sprintf("    %s: %s\n    %s: %s\n", s[1], head100(L[[1]][k]), s[2], head100(L[[2]][k])))
         "unstable"
     }
