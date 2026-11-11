@@ -87,6 +87,7 @@ timings <- function() {
 
 res <- results()
 if (mode == "ref") {
+    unlink("flags.tsv")  # the counts of the comparisons that follow
     saveRDS(res, "flags-ref.rds")
 } else {
     ref <- readRDS("flags-ref.rds")
@@ -96,6 +97,9 @@ if (mode == "ref") {
     diff_ops <- unique(sub(" n=.*", "", names(res)[!same]))
     cat(sprintf("%s: %d of %d results differ from R's; operations: %s\n", label, sum(!same), length(same),
                 if (length(diff_ops)) paste(diff_ops, collapse = ", ") else "none"))
+    ## the counts, for the verdict of the workflow
+    cat(label, sum(!same), length(same), sep = "\t", file = "flags.tsv", append = TRUE)
+    cat("\n", file = "flags.tsv", append = TRUE)
 }
 timings()
 if (mode == "cmp" && identical(args[3], "same") && !all(same)) quit(save = "no", status = 1)

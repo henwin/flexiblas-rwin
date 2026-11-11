@@ -1,7 +1,8 @@
 name: Report to the results issue
 description: >
   Writes the result of this run as a comment on the results issue (#1),
-  one comment per key, replaced on every run: a heading with the status,
+  one comment per key, replaced on every run: a heading with the verdict,
+  or the status when the run failed or gives none,
   the run link, commit and time, the summary open, then the files given,
   collapsed (without a summary, the first file is shown open instead). Job
   logs live in blob storage that some API clients
@@ -14,6 +15,12 @@ inputs:
   status:
     description: The job's status, job.status
     required: true
+  verdict:
+    description: >
+      What the run found, for the heading in place of a successful status
+      (a run whose findings are results, such as differences, succeeds
+      whatever it finds); shown after the status when the run failed
+    default: ''
   summary:
     description: >
       A short file shown open under the heading: what was checked and how
@@ -32,6 +39,7 @@ runs:
         GH_TOKEN: ${{ github.token }}
         KEY: ${{ inputs.key }}
         STATUS: ${{ inputs.status }}
+        VERDICT: ${{ inputs.verdict }}
         SUMMARY: ${{ inputs.summary }}
         FILES: ${{ inputs.files }}
       run: |
@@ -42,7 +50,10 @@ runs:
         cap=$(((60000 - sz) / $(grep -c . <<< "$FILES")))
         {
           echo "<!-- report: $KEY -->"
-          echo "### $KEY — $STATUS"
+          if [ -z "$VERDICT" ]; then head=$STATUS
+          elif [ "$STATUS" = success ]; then head=$VERDICT
+          else head="$STATUS; $VERDICT"; fi
+          echo "### $KEY — $head"
           echo "[run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) · ${GITHUB_SHA:0:7} · $(date -u '+%Y-%m-%d %H:%M UTC')"
           first=yes
           if [ -n "$SUMMARY" ]; then

@@ -93,12 +93,16 @@ jobs:
           Rscript tests/compare-optflags.R compare CRAN,CRANb O3 2>&1 | tee -a probe.log
           echo "== -O3 rebuild against the -O2 rebuild" | tee -a probe.log
           Rscript tests/compare-optflags.R compare R2 O3 2>&1 | tee -a probe.log
+          cp compare.tsv o3-vs-o2.tsv
 
       - name: Summarise
+        id: summarise
         if: always()
         shell: bash
         run: |
           set +e
+          # the verdict: what -O3 changes against the -O2 rebuild, one run each
+          echo "verdict=-O3 against the -O2 rebuild, one run each: $(tests/optflags-verdict.sh o3-vs-o2.tsv)" >> $GITHUB_OUTPUT
           { grep -E '^== |of 76 routines' blas-bitwise.log; echo; cat probe.log; } > summary.log 2>/dev/null
           # the outcomes, the routine verdicts and, per comparison, the
           # totals over the output files
@@ -116,6 +120,7 @@ jobs:
         if: always()
         with:
           status: ${{ job.status }}
+          verdict: ${{ steps.summarise.outputs.verdict }}
           summary: brief.log
           files: |
             Differences in detail: summary.log

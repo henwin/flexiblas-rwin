@@ -43,7 +43,7 @@ on:
         options: [devel, release]
         default: devel
       summarise:
-        description: Only summarise the package logs of this earlier run (its id), for a run whose summary job failed; give the set of that run too, which names its comment
+        description: Only summarise the package logs of this earlier run (its id), for a run whose summary job failed; give the packages and set of that run too, which name its comment
         default: ''
 
 permissions:
@@ -201,6 +201,7 @@ jobs:
           g=$(grep -c . groups.txt || true); ok=$(grep -cx success groups.txt || true)
           if [ "$g" -gt 0 ] && [ "$ok" -eq "$g" ]; then st=success; else st=failure; fi
           echo "status=$st" >> $GITHUB_OUTPUT
+          echo "verdict=$(tests/optflags-verdict.sh result.tsv)" >> $GITHUB_OUTPUT
           {
             [ -n "${{ inputs.packages }}" ] || [ "${{ inputs.set }}" != "sample of the others" ] ||
               echo "a sample of the packages that do not call the BLAS or LAPACK: size and seed ${{ inputs.sample }}"
@@ -223,16 +224,17 @@ jobs:
           # the differing lines
           grep -aE '^(  \S+: |    O[23]b?: )' all.log > detail.txt || true
           # the stable differences alone, first, since the detail is cut at the comment's size
-          awk '/stable lines differ/ {p = 1; print; next} /^  [^ ]/ {p = 0} p' all.log > differ.txt || true
+          awk '/stable lines differ|: [0-9]+ lines in / {p = 1; print; next} /^  [^ ]/ {p = 0} p' all.log > differ.txt || true
           # the runs that failed or timed out (124), which run of which package
           { awk -F'\t' '{print $1 " " $2 ": exit status " $3}' failed.tsv; grep -aE 'output not removed|^Error' all.log; } | sort > failed.txt || true
 
       - uses: ./.github/actions/report
         if: always()
         with:
-          # the sample of the others in a comment of its own
-          key: ${{ github.workflow }}${{ inputs.packages == '' && inputs.set == 'sample of the others' && ' (a sample of the other packages)' || '' }}
-          status: ${{ steps.summarise.outputs.status || needs.packages.result }}
+          # named packages and the sample of the others in comments of their own
+          key: ${{ github.workflow }}${{ inputs.packages != '' && ' (named packages)' || inputs.set == 'sample of the others' && ' (a sample of the other packages)' || '' }}
+          status: ${{ steps.summarise.outcome == 'failure' && 'failure' || steps.summarise.outputs.status || needs.packages.result }}
+          verdict: ${{ steps.summarise.outputs.verdict }}
           summary: summary.txt
           files: |
             Stable differences: differ.txt
@@ -268,19 +270,25 @@ jobs:
         run: |
           Rscript tests/compare-optflags.R base O2 2>&1 | tee -a optflags.log
           /c/R-o3/bin/Rscript tests/compare-optflags.R base O3 2>&1 | tee -a optflags.log
-          # as for the packages: a second run each way only when they differ
+          # as for the packages: a second run each way only when they differ;
+          # compare.tsv is that of the last comparison that completed
+          rm -f compare.tsv
           Rscript tests/compare-optflags.R compare O2 O3 2>&1 | tee -a optflags.log
           if tr -d '\r' < compare.tsv | awk -F'\t' 'NR > 1 && $4 > 0 {d = 1} END {exit !d}'; then
             Rscript tests/compare-optflags.R base O2b 2>&1 | tee -a optflags.log
             /c/R-o3/bin/Rscript tests/compare-optflags.R base O3b 2>&1 | tee -a optflags.log
+            rm -f compare.tsv
             Rscript tests/compare-optflags.R compare O2,O2b O3,O3b 2>&1 | tee -a optflags.log
           fi
 
       - name: Summarise
+        id: summarise
         if: always()
         shell: bash
         run: |
           set +e
+          # the verdict from the last comparison, which has all the packages
+          echo "verdict=$(tests/optflags-verdict.sh compare.tsv)" >> $GITHUB_OUTPUT
           grep -aE '^(O[23]b?: |test|== |total |  \S+: |    O[23]b?: )' optflags.log > summary.log
           # the outcome, then the totals per group and comparison; the
           # differing lines are the detail
@@ -292,6 +300,7 @@ jobs:
         with:
           key: ${{ github.workflow }} (the recommended packages)
           status: ${{ job.status }}
+          verdict: ${{ steps.summarise.outputs.verdict }}
           summary: brief.log
           files: |
             Differences in detail: summary.log

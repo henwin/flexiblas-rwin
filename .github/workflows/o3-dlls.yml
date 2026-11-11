@@ -87,11 +87,17 @@ jobs:
           [ -z "$failed" ] || { echo "::error::failed or not as CRAN's results: ${failed#; }"; exit 1; }
 
       - name: Summarise
+        id: summarise
         if: always()
         shell: bash
         run: |
           set +e
           { cat cpu.txt; grep -v '|' flags.log; echo; cat timings.txt; } > summary.log 2>/dev/null
+          # the verdict from the counts test-flags.R wrote: label, differing, results
+          if [ -s flags.tsv ]; then
+            d=$(tr -d '\r' < flags.tsv | awk -F'\t' '$2 > 0 {printf "%s%s", s, $1; s = ", "}')
+            echo "verdict=$(wc -l < flags.tsv) builds compared; differing from CRAN's results: ${d:-none}" >> $GITHUB_OUTPUT
+          fi
           # the outcomes, then the verdict per build without the list of operations
           { printf '%-62s %s\n' \
               "DLLs built" "${{ steps.build.outcome }}" \
@@ -104,6 +110,7 @@ jobs:
         if: always()
         with:
           status: ${{ job.status }}
+          verdict: ${{ steps.summarise.outputs.verdict }}
           summary: brief.log
           files: |
             Results and timings: summary.log
