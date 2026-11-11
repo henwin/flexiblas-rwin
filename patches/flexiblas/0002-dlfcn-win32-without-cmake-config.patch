@@ -15,8 +15,8 @@ index 8b9af188..9d0dbc68 100644
 +        INCLUDE_DIRECTORIES(${dlfcn-win32_INCLUDEDIR})
 +        SET(DL_LIB dlfcn-win32::dl)
 +    ELSE()
-+        # dlfcn-win32 built with its own configure script (as in MXE and
-+        # MSYS2) installs no CMake package; find the library directly.
++        # dlfcn-win32 built with its own configure script (as in MXE)
++        # installs no CMake package; find the library directly.
 +        FIND_PATH(DLFCN_INCLUDE_DIR dlfcn.h REQUIRED)
 +        FIND_LIBRARY(DLFCN_LIBRARY NAMES dl REQUIRED)
 +        INCLUDE_DIRECTORIES(${DLFCN_INCLUDE_DIR})

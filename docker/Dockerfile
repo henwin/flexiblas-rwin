@@ -5,7 +5,7 @@
 FROM ubuntu:24.04
 
 # Host dependencies exactly as in toolchain_libs/build_in_docker.sh for
-# ubuntu:24.04, plus subversion, zstd, curl and innoextract.
+# ubuntu:24.04, plus subversion and zstd.
 RUN apt-get update \
  && echo "Etc/UTC" > /etc/timezone \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y tzdata \
@@ -16,7 +16,7 @@ RUN apt-get update \
         libxml-parser-perl lzip make openssl p7zip-full patch perl python3 \
         python3-mako python3-packaging python3-pkg-resources python3-setuptools \
         python-is-python3 ruby sed sqlite3 unzip wget xz-utils \
-        texinfo subversion zstd curl innoextract \
+        texinfo subversion zstd \
  && rm -rf /var/lib/apt/lists/*
 
 # The MXE revision that built the Rtools45 tarballs used below.

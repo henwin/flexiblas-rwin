@@ -89,8 +89,10 @@ jobs:
           cp work/Rblas-cran.dll "$bin/Rblas.dll"
           echo "== -O2 rebuild against CRAN's DLL" | tee -a probe.log
           Rscript tests/compare-optflags.R compare CRAN,CRANb R2 2>&1 | tee -a probe.log
+          cp compare.tsv o2-vs-cran.tsv
           echo "== -O3 rebuild against CRAN's DLL" | tee -a probe.log
           Rscript tests/compare-optflags.R compare CRAN,CRANb O3 2>&1 | tee -a probe.log
+          cp compare.tsv o3-vs-cran.tsv
           echo "== -O3 rebuild against the -O2 rebuild" | tee -a probe.log
           Rscript tests/compare-optflags.R compare R2 O3 2>&1 | tee -a probe.log
           cp compare.tsv o3-vs-o2.tsv
@@ -104,24 +106,27 @@ jobs:
           # the verdict: what -O3 changes against the -O2 rebuild, one run each
           echo "verdict=-O3 against the -O2 rebuild, one run each: $(tests/optflags-verdict.sh o3-vs-o2.tsv)" >> $GITHUB_OUTPUT
           { grep -E '^== |of 76 routines' blas-bitwise.log; echo; cat probe.log; } > summary.log 2>/dev/null
-          # the outcomes, the routine verdicts and, per comparison, the
-          # totals over the output files
-          { printf '%-58s %s\n' \
-              "Rblas.dll with R's flags is CRAN's, bit for bit" "${{ steps.bitwise.outcome }}" \
-              "packages installed" "${{ steps.install.outcome }}" \
-              "runs under the four DLLs and comparisons" "${{ steps.runs.outcome }}"
-            n=$(grep -c ': exit status ' probe.log 2>/dev/null); echo "runs that exited non-zero: ${n:-not found, no probe.log}"
-            echo
-            grep -E '^== |of 76 routines' blas-bitwise.log 2>/dev/null || echo "not found in blas-bitwise.log"
-            echo
-            grep -E '^== |^total ' probe.log 2>/dev/null || echo "not found in probe.log"; } > brief.log
+          { echo "$(Rscript -e 'cat(R.version.string)' 2>/dev/null), sources $R_SVN_PATH at r$R_SVN_REV"
+            echo "packages: ${{ inputs.packages }}"; } > ran.txt
+          {
+            grep -E '^== |of 76 routines' blas-bitwise.log 2>/dev/null || echo "routines: not found in blas-bitwise.log"
+            echo "-O2 rebuild against CRAN's DLL: $(tests/optflags-verdict.sh o2-vs-cran.tsv)"
+            echo "-O3 rebuild against CRAN's DLL: $(tests/optflags-verdict.sh o3-vs-cran.tsv)"
+            echo "-O3 rebuild against the -O2 rebuild, one run each: $(tests/optflags-verdict.sh o3-vs-o2.tsv)"
+            [ -f probe.log ] && echo "runs that exited non-zero: $(grep -c ': exit status ' probe.log)" || echo "runs that exited non-zero: probe.log not found"
+          } > results.txt
 
       - uses: ./.github/actions/report
         if: always()
         with:
           status: ${{ job.status }}
           verdict: ${{ steps.summarise.outputs.verdict }}
-          summary: brief.log
+          ran: ran.txt
+          checks: |
+            ${{ steps.bitwise.outcome }} | Rblas.dll with R's flags is CRAN's, bit for bit
+            ${{ steps.install.outcome }} | packages installed
+            ${{ steps.runs.outcome }} | runs under the four DLLs and comparisons
+          results: results.txt
           files: |
             Differences in detail: summary.log
             blas-bitwise.log

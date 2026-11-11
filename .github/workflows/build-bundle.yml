@@ -110,25 +110,29 @@ jobs:
           log=dist/build_ucrt-${{ matrix.target }}.out
           tail -60 docker-build.log > tail.log
           ls -la dist dist/*/bin/* > dist.log 2>&1
+          { echo "FlexiBLAS bundle for ${{ matrix.target }}, MXE r$(sed -n 's/^ARG MXE_REV=\([0-9]*\).*/\1/p' docker/Dockerfile)"
+            echo "OPENBLAS-THREADS: $(cat dist/openblas-pthreads-${{ matrix.target }}.txt 2>/dev/null || echo 'not found')"; } > ran.txt
           {
-            echo "build ${{ steps.build.outcome }}, upload ${{ steps.upload.outcome }}"
             z=dist/$DIST.zip
             [ -f $z ] && echo "$z: $(du -k $z | cut -f1) kB, $(du -sk dist/$DIST | cut -f1) kB installed" || echo "$z: not found"
             echo "backends configured: $(ls dist/$DIST/etc/flexiblasrc.d 2>/dev/null | sed 's/\.conf$//' | tr '\n' ' ')(OPENBLAS-OPENMP OPENBLAS-THREADS expected)"
             echo "backend DLLs: $(ls dist/$DIST/bin/*/flexiblas/ dist/$DIST/bin/flexiblas/ 2>/dev/null | grep dll | tr '\n' ' ')"
             echo "sha256 of the backend DLLs and libflexiblas.dll:"
             sha256sum dist/$DIST/bin/*/flexiblas/*.dll dist/$DIST/bin/flexiblas/*.dll dist/$DIST/bin/*/libflexiblas.dll dist/$DIST/bin/libflexiblas.dll 2>/dev/null | sed 's#dist/[^ ]*/##; s/^/  /'
-            echo "OPENBLAS-THREADS: $(cat dist/openblas-pthreads-${{ matrix.target }}.txt 2>/dev/null || echo 'not found')"
             grep -h -E '^-- (Build additional BLAS interface|-- Libs|Looking for Fortran DAXPY -)|does not contain a BLAS' $log 2>/dev/null | sed 's/^-- //' || echo "CMake's backend lines: not found in $log"
             grep -h ' imports: ' docker-build.log || echo "DLL imports: not found in docker-build.log"
-          } > summary.log
+          } > results.txt
 
       - uses: ./.github/actions/report
         if: always()
         with:
           key: ${{ github.workflow }}${{ matrix.target == 'aarch64' && ' (aarch64)' || '' }}
           status: ${{ job.status }}
-          summary: summary.log
+          ran: ran.txt
+          checks: |
+            ${{ steps.build.outcome }} | bundle built, every backend in EXTRA, no runtime exported
+            ${{ steps.upload.outcome }} | bundle uploaded
+          results: results.txt
           files: |
             The bundle: dist.log
             The end of the build log: tail.log
@@ -220,19 +224,13 @@ jobs:
         shell: bash
         run: |
           set +e
+          { echo "the bundle of run ${{ github.run_id }} on ${{ matrix.target }}, programs built with Rtools45"; } > ran.txt
           {
-            if [ "${{ steps.bundle.outcome }}" != success ]; then
-              if [ "${{ needs.build.result }}" = success ]; then
-                echo "failed; the build succeeded but its bundle could not be downloaded"
-              else
-                echo "not run; the build of this run ended with ${{ needs.build.result }}, so there was no bundle to test"
-              fi
-            fi
-            echo "every backend through libflexiblas.dll: ${{ steps.load.outcome }} (dgemm, dpotrf and the program's xerbla, each backend must say ok)"
-            grep -h ': ' load.log 2>/dev/null || echo "  load.log not found"
-            echo "thread cases: ${{ steps.cases.outcome }} (team sizes against the count set, and dgemm from a parallel region; every case must be ok)"
-            sed -n '/^cases:/,$p' omp-cases.log 2>/dev/null | grep . || echo "  tally not found in omp-cases.log"
-          } > brief.log
+            echo "every backend through libflexiblas.dll (dgemm, dpotrf and the program's xerbla):"
+            grep -h ': ' load.log 2>/dev/null | sed 's/^/  /' || echo "  no backend lines in load.log"
+            echo "thread cases (team sizes against the count set, and dgemm from a parallel region):"
+            sed -n '/^cases:/,$p' omp-cases.log 2>/dev/null | grep . | sed 's/^/  /' || echo "  tally not found in omp-cases.log"
+          } > results.txt
           touch load.log omp-cases.log
 
       - uses: ./.github/actions/report
@@ -240,7 +238,14 @@ jobs:
         with:
           key: ${{ github.workflow }} (Windows ${{ matrix.target }})
           status: ${{ (steps.bundle.outcome == 'success' || needs.build.result == 'success') && job.status || 'not run' }}
-          summary: brief.log
+          # without a bundle: why
+          verdict: ${{ steps.bundle.outcome != 'success' && (needs.build.result == 'success' && 'the build succeeded but its bundle could not be downloaded' || format('the build ended with {0}, so there was no bundle to test', needs.build.result)) || '' }}
+          ran: ran.txt
+          checks: |
+            ${{ steps.bundle.outcome }} | the bundle downloaded
+            ${{ steps.load.outcome }} | every backend loads and says ok
+            ${{ steps.cases.outcome }} | every thread case ok, none hangs (60 s each)
+          results: results.txt
           files: |
             load.log
             omp-cases.log

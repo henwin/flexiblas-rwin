@@ -46,22 +46,33 @@ jobs:
           for f in blas.f blas2.f90 cmplxblas.f cmplxblas2.f90 Rblas.def; do
             curl -sSf -o "src/$f" "https://svn.r-project.org/R/trunk/src/extra/blas/$f"
           done
-          gfortran --version | head -1
+          gfortran --version | head -1 | tee gfortran.txt
           cd work
           bash ../tests/blas-bitwise.sh ../src "$rhome" 2>&1 | tee ../blas-bitwise.log
 
-      # the outcome, then one line per flag set: how many of the 76 routines
-      # differ, and how many in more than which NaN
+      # one line per flag set: how many of the 76 routines differ, and how
+      # many in more than which NaN (the last line blas-bitwise.exe writes
+      # to cmp-SET.txt); the heading names the sets with more than NaN
       - name: Summarise
+        id: summarise
         if: always()
         shell: bash
         run: |
-          { echo "build with R's flags reproduces CRAN's Rblas.dll, no errors: ${{ steps.compare.outcome }}"
-            grep -E '^== |of 76 routines' blas-bitwise.log || echo "not found in blas-bitwise.log"; } > brief.log
+          set +e
+          { cat gfortran.txt 2>/dev/null || echo "gfortran: not recorded"; echo "R's BLAS sources from trunk; reference: the Rblas.dll of CRAN's $(Rscript -e 'cat(R.version.string)' 2>/dev/null)"; } > ran.txt
+          for f in work/cmp-*.txt; do
+            [ -f "$f" ] || continue; n=${f#work/cmp-}; printf '%-16s %s\n' "${n%.txt}" "$(tail -1 "$f" | tr -d '\r')"
+          done > results.txt
+          v=$(awk '$1 != "cran" && $NF == "NaN" {n++; if ($(NF - 7) > 0) m = m (m ? ", " : "") $1} END {if (n) print n " flag sets compared; differing in more than which NaN: " (m ? m : "none")}' results.txt)
+          echo "verdict=$v" >> $GITHUB_OUTPUT
 
       - uses: ./.github/actions/report
         if: always()
         with:
           status: ${{ job.status }}
-          summary: brief.log
+          verdict: ${{ steps.summarise.outputs.verdict }}
+          ran: ran.txt
+          checks: |
+            ${{ steps.compare.outcome }} | build with R's flags is CRAN's Rblas.dll, no errors
+          results: results.txt
           files: blas-bitwise.log

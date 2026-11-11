@@ -68,29 +68,32 @@ jobs:
       # every step's outcome, then the one-line results, "not found" when a
       # log lacks its line
       - name: Summarise
+        id: summarise
         if: always()
         run: |
           set +e
+          echo "verdict=$(tr -d '\r' < nan-verdict.txt 2>/dev/null)" >> $GITHUB_OUTPUT
+          { grep -E '^(R version|CPU:|BLAS:)' nan.log 2>/dev/null | head -3; } > ran.txt
           {
-            printf '%-48s %s\n' \
-              "test-nan.R propagate cmp" "${{ steps.nan.outcome }}" \
-              "test-memory.R per backend" "${{ steps.memory.outcome }}" \
-              "test-omp-caller.R" "${{ steps.ompcaller.outcome }}"
-            echo
-            grep -E '^(R version|BLAS:)' nan.log 2>/dev/null | head -2
             echo "nan.log: $(grep -m1 'results differ' nan.log 2>/dev/null || echo 'not found in nan.log')"
             echo "omp-caller.log, as many OpenMP callers as cores with as many BLAS threads, n = 1000 (shared libgomp):"
             awk '/^cores:/ {c = $2; p = ($4 == 1000)} p && $2 == c && $3 == c {found = 1; printf "  %-18s %s threads, %s s\n", $1, $5, $4} END {if (!found) print "  not found in omp-caller.log"}' omp-caller-short.log 2>/dev/null || echo "  not found in omp-caller.log"
             echo "memory.log, after loading the backend:"
             grep -E 'loaded,' memory.log 2>/dev/null | sed 's/^/  /' || echo "  not found in memory.log"
-          } > brief.log
+          } > results.txt
 
       - uses: ./.github/actions/report
         if: always()
         with:
           key: ${{ github.workflow }} (Fedora backends)
           status: ${{ job.status }}
-          summary: brief.log
+          verdict: ${{ steps.summarise.outputs.verdict }}
+          ran: ran.txt
+          checks: |
+            ${{ steps.nan.outcome }} | test-nan.R propagate cmp runs
+            ${{ steps.memory.outcome }} | test-memory.R per backend runs
+            ${{ steps.ompcaller.outcome }} | test-omp-caller.R runs
+          results: results.txt
           files: |
             nan.log
             omp-caller.log: omp-caller-short.log
@@ -121,24 +124,23 @@ jobs:
           Rscript tests/test-nan.R propagate cmp 2>&1 | tee nan.log
 
       - name: Summarise
+        id: summarise
         if: always()
         run: |
           set +e
-          {
-            printf '%-48s %s\n' \
-              "test-nan.R propagate ref, R's own BLAS" "${{ steps.ref.outcome }}" \
-              "test-nan.R propagate cmp, Accelerate" "${{ steps.cmp.outcome }}"
-            echo
-            grep -E '^(R version|BLAS:|LAPACK:)' nan.log 2>/dev/null | head -3
-            grep -m1 'results differ' nan.log 2>/dev/null || echo "not found in nan.log"
-          } > brief.log
+          echo "verdict=$(tr -d '\r' < nan-verdict.txt 2>/dev/null)" >> $GITHUB_OUTPUT
+          { grep -E '^(R version|BLAS:|LAPACK:)' nan.log 2>/dev/null | head -3; } > ran.txt
 
       - uses: ./.github/actions/report
         if: always()
         with:
           key: ${{ github.workflow }} (macOS Accelerate)
           status: ${{ job.status }}
-          summary: brief.log
+          verdict: ${{ steps.summarise.outputs.verdict }}
+          ran: ran.txt
+          checks: |
+            ${{ steps.ref.outcome }} | test-nan.R propagate ref, R's own BLAS
+            ${{ steps.cmp.outcome }} | test-nan.R propagate cmp, Accelerate
           files: nan.log
 
   platforms:
@@ -192,21 +194,23 @@ jobs:
       # the outcomes, the platforms, one line per operation, and the count;
       # the cells are the detail
       - name: Summarise
+        id: summarise
         if: always()
         run: |
           set +e
-          {
-            printf '%-48s %s\n' \
-              "recording on the five platforms" "${{ needs.platforms.result }}" \
-              "comparison, all five present" "${{ steps.compare.outcome }}"
-            echo
-            grep -E '^[0-9] of 5 platforms|^[a-z0-9-]+ +[a-z0-9_]+-|^\S.* (differ|same) on |operations differ' compare.log 2>/dev/null || echo "not found in compare.log"
-          } > brief.log
+          echo "verdict=$(tr -d '\r' < nan-verdict.txt 2>/dev/null)" >> $GITHUB_OUTPUT
+          grep -E '^[0-9] of 5 platforms|^[a-z0-9-]+ +[a-z0-9_]+-' compare.log > ran.txt 2>/dev/null
+          grep -E '^\S.* (differ|same) on ' compare.log > results.txt 2>/dev/null
 
       - uses: ./.github/actions/report
         if: always()
         with:
           key: ${{ github.workflow }} (platforms)
           status: ${{ job.status }}
-          summary: brief.log
+          verdict: ${{ steps.summarise.outputs.verdict }}
+          ran: ran.txt
+          checks: |
+            ${{ needs.platforms.result }} | recording on the five platforms
+            ${{ steps.compare.outcome }} | comparison, all five present
+          results: results.txt
           files: compare.log

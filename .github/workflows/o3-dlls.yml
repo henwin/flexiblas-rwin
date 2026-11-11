@@ -98,20 +98,19 @@ jobs:
             d=$(tr -d '\r' < flags.tsv | awk -F'\t' '$2 > 0 {printf "%s%s", s, $1; s = ", "}')
             echo "verdict=$(wc -l < flags.tsv) builds compared; differing from CRAN's results: ${d:-none}" >> $GITHUB_OUTPUT
           fi
-          # the outcomes, then the verdict per build without the list of operations
-          { printf '%-62s %s\n' \
-              "DLLs built" "${{ steps.build.outcome }}" \
-              "11 builds compared, R's flags reproduce CRAN's results" "${{ steps.compare.outcome }}"
-            echo
-            cat cpu.txt 2>/dev/null
-            grep 'results differ' flags.log 2>/dev/null | sed 's/; operations:.*//' || echo "not found in flags.log"; } > brief.log
+          { echo "$(Rscript -e 'cat(R.version.string)' 2>/dev/null), its Rblas.dll and Rlapack.dll rebuilt from its sources"; cat cpu.txt 2>/dev/null; } > ran.txt
+          tr -d '\r' < flags.tsv 2>/dev/null | awk -F'\t' '{printf "%-26s %d of %d results differ from the reference\n", $1, $2, $3}' > results.txt
 
       - uses: ./.github/actions/report
         if: always()
         with:
           status: ${{ job.status }}
           verdict: ${{ steps.summarise.outputs.verdict }}
-          summary: brief.log
+          ran: ran.txt
+          checks: |
+            ${{ steps.build.outcome }} | DLLs built
+            ${{ steps.compare.outcome }} | 11 builds compared, R's flags reproduce CRAN's results
+          results: results.txt
           files: |
             Results and timings: summary.log
             flags.log

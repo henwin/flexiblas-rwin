@@ -195,6 +195,8 @@ if (identical(mode, "propagate") && identical(what, "cmp")) {
     }
     cat(sprintf("%s%d of %d results differ from %s for at least one backend\n",
                 if (ndiff) "\n" else "", ndiff, length(ref), refname))
+    ## the verdict, for the workflows
+    writeLines(sprintf("%d of %d results differ from %s", ndiff, length(ref), refname), "nan-verdict.txt")
     if (length(threads)) {
         cat("\ndgemm NA n=385 [blas] by thread count:\n")
         for (l in threads) cat(l, "\n")
@@ -288,4 +290,5 @@ if (identical(mode, "pattern") && identical(what, "compare")) {
         }
     }
     cat(sprintf("\n%d of %d operations differ between platforms on some size\n", nd, length(ops)))
+    writeLines(sprintf("%d of %d operations differ between platforms on some size", nd, length(ops)), "nan-verdict.txt")
 }

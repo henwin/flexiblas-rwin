@@ -80,6 +80,7 @@ jobs:
       # target, of the MXE revision the bundle is built with, and the names
       # build.sh looks for them under
       - name: Toolchain names
+        id: names
         shell: bash
         run: |
           rev=$(sed -n 's/^ARG MXE_REV=\([0-9][0-9]*\).*/\1/p' docker/Dockerfile)
@@ -123,6 +124,7 @@ jobs:
           "bundle: build-bundle.yml run $id, commit $sha" | Tee-Object -FilePath C:\bundle.txt
 
       - uses: actions/download-artifact@v8
+        id: download
         with:
           name: ${{ env.BUNDLE }}
           path: dist
@@ -134,6 +136,7 @@ jobs:
       # (the howtos only to check that they still apply), and the ucrt3/r
       # directory copied to C:\rbuild, where build.sh runs.
       - name: Fetch R-core's scripts and patches
+        id: fetch
         shell: pwsh
         run: |
           # build.sh applies r_*.diff_aarch64 in place of its namesake on aarch64 only
@@ -146,6 +149,7 @@ jobs:
           Get-ChildItem -Recurse -File C:\rdw
 
       - name: Apply patches/r-dev-web
+        id: rdevweb
         shell: bash
         run: |
           cd /c/rdw
@@ -162,6 +166,7 @@ jobs:
       # setup.ps1 installs MSYS2 and the packages build.sh needs only when
       # C:\msys64 does not exist, and the runner image has its own there.
       - name: Move the runner's MSYS2 aside
+        id: msys2
         shell: pwsh
         run: Rename-Item C:\msys64 C:\msys64-runner
 
@@ -184,6 +189,7 @@ jobs:
           key: ${{ env.TOOLCHAIN }}-${{ env.TCLTK }}
 
       - name: Toolchain tarball and Tcl/Tk bundle
+        id: toolchain
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force cache | Out-Null
@@ -196,6 +202,7 @@ jobs:
           Copy-Item "cache\$env:TCLTK" "C:\rbuild\$env:TCLTK_AS"
 
       - name: Add the FlexiBLAS bundle and the patches
+        id: prepare
         shell: C:\msys64\usr\bin\bash.exe --login -eo pipefail {0}
         env:
           CHERE_INVOKING: 1
@@ -328,30 +335,22 @@ jobs:
           # bash -e, a loop ending in a false test would end the step)
           set +e
           b=/c/rbuild
-          # what was checked and how it came out
-          {
-            echo "R-${{ inputs.r }}$([ -f $b/build/svn_revision ] && echo " r$(cat $b/build/svn_revision)") for ${{ inputs.target }}, checks with FLEXIBLAS=${{ inputs.backend }}${{ inputs.experiment != 'none' && format(', experiment {0}', inputs.experiment) || '' }}"
+          # what ran, and the results of the checks of R's own
+          { echo "R-${{ inputs.r }}$([ -f $b/build/svn_revision ] && echo " r$(cat $b/build/svn_revision)") for ${{ inputs.target }}, checks with FLEXIBLAS=${{ inputs.backend }}${{ inputs.experiment != 'none' && format(', experiment {0}', inputs.experiment) || '' }}"
             cat /c/bundle.txt 2>/dev/null
-            echo "toolchain $TOOLCHAIN, Tcl/Tk $TCLTK"
-            echo
-            printf '%-32s %s\n' "setup.ps1" "${{ steps.setup.outcome }}" \
-              "build.sh, patches/r applied" "${{ steps.buildsh.outputs.patches || steps.buildsh.outcome }}" \
-              "build.sh, installer" "${{ steps.buildsh.outputs.installer || steps.buildsh.outcome }}" \
-              "make check-devel" "${{ steps.buildsh.outputs.checkdevel || 'not run' }}" \
-              "make check-all" "${{ steps.buildsh.outputs.checkall || 'not run' }}" \
-              "installer installs, R reports" "${{ steps.install.outcome }}"
+            echo "toolchain $TOOLCHAIN, Tcl/Tk $TCLTK"; } > ran.txt
+          {
             for f in checkdevel.out checkall.out; do
               [ -f $b/build/$f ] && echo "$f: $(grep -c '^Status: OK' $b/build/$f) OK, $(grep -c '^Status: .*NOTE' $b/build/$f) with NOTEs, $(grep -c '^Status: .*WARNING' $b/build/$f) with WARNINGs, $(grep -c '^Status: .*ERROR' $b/build/$f) with ERRORs"
             done
-            # what the NOTEs of the recommended packages say (check-devel
-            # checks no package): each checking line that ended in NOTE, and
-            # how often, then the first lines under it
+            # what the NOTEs of the packages say: each checking line that
+            # ended in NOTE, and how often, then the first lines under it
             if [ -f $b/build/checkall.out ]; then
               echo "checkall.out, checks with a NOTE:"
               grep -E '^\* checking .* NOTE[[:space:]]*$' $b/build/checkall.out | sort | uniq -c | sed 's/^/  /'
+              grep -A3 -E '^\* checking .* NOTE[[:space:]]*$' $b/build/checkall.out | head -40 | sed 's/^/  /'
             fi
-            [ -f $b/build/checkall.out ] && grep -A3 -E '^\* checking .* NOTE[[:space:]]*$' $b/build/checkall.out | head -40 | sed 's/^/  /'
-          } > summary.log
+          } > results.txt
           # the errors themselves, and nothing that only looks like one
           {
             if [ -f $b/setup.log ]; then
@@ -373,14 +372,30 @@ jobs:
               tail -15 "$f"
             done
           } > errors.log
-          cat summary.log errors.log
+          cat ran.txt results.txt errors.log
 
       - uses: ./.github/actions/report
         if: always()
         with:
           key: ${{ github.workflow }} (${{ inputs.r }}${{ inputs.experiment != 'none' && format(', {0}', inputs.experiment) || '' }}${{ env.SUFFIX && format(', {0}', inputs.target) || '' }})
           status: ${{ job.status }}
-          summary: summary.log
+          ran: ran.txt
+          checks: |
+            ${{ steps.names.outcome }} | toolchain and Tcl/Tk names from the Dockerfile
+            ${{ steps.build.outcome }} | a bundle built from the current sources
+            ${{ steps.download.outcome }} | the bundle downloaded
+            ${{ steps.fetch.outcome }} | R-core's scripts and patches fetched
+            ${{ steps.rdevweb.outcome }} | patches/r-dev-web applied
+            ${{ steps.msys2.outcome }} | the runner's MSYS2 moved aside
+            ${{ steps.setup.outcome }} | setup.ps1
+            ${{ steps.toolchain.outcome }} | toolchain tarball and Tcl/Tk bundle
+            ${{ steps.prepare.outcome }} | FlexiBLAS bundle and patches/r in place
+            ${{ steps.buildsh.outputs.patches || steps.buildsh.outcome }} | build.sh, patches/r applied
+            ${{ steps.buildsh.outputs.installer || steps.buildsh.outcome }} | build.sh, installer
+            ${{ steps.buildsh.outputs.checkdevel }} | make check-devel without make errors
+            ${{ steps.buildsh.outputs.checkall }} | make check-all without make errors
+            ${{ steps.install.outcome }} | installer installs, R reports
+          results: results.txt
           files: |
             Errors: errors.log
             Installation: /c/rbuild/install.log
@@ -693,11 +708,11 @@ jobs:
         run: |
           Rscript -e "tinytest::test_package('flexiblas')" 2>&1 | tee pkg-tests.log
 
-      # Every step's outcome, checks and measurements alike (a verdict is a
-      # step outcome, never a pattern found in a log), then the one-line
-      # results of the measurements with what is expected next to them, and
-      # "not found" when a log lacks its line; the logs themselves are
-      # collapsed in the report.
+      # What ran, every step's outcome as a check (a verdict is a step
+      # outcome, never a pattern found in a log; the measurements fail only
+      # if a run crashes or hangs), then the one-line results of the
+      # measurements with what is expected next to them, and "not found"
+      # when a log lacks its line; the logs themselves are collapsed.
       - name: Summarise
         if: always()
         shell: bash
@@ -705,55 +720,51 @@ jobs:
           # a report, not a check: a missing line must not end the step
           set +e
           line() { grep -m1 "$2" "$1" 2>/dev/null || echo "not found in $1"; }
+          { echo "$(Rscript -e 'cat(R.version.string)' 2>/dev/null), installer from run ${{ steps.prev.outputs.run_id || github.run_id }}"
+            echo "reference: CRAN's build of the same R"
+            cat r-flexiblas.txt 2>/dev/null; } > ran.txt
           {
-            echo "$(Rscript -e 'cat(R.version.string)' 2>/dev/null), installer from run ${{ steps.prev.outputs.run_id || github.run_id }}, reference: CRAN's build of the same R"
-            cat r-flexiblas.txt 2>/dev/null
-            echo
-            echo "Checks (the job fails if one fails):"
-            printf '  %-58s %s\n' \
-              "reference results from CRAN's R" "${{ steps.ref.outcome }}" \
-              "installer installs" "${{ steps.install.outcome }}" \
-              "the same revision as CRAN's R" "${{ steps.samerev.outcome }}" \
-              "Rblas/Rlapack export as CRAN's, less FlexiBLAS gaps" "${{ steps.exports.outcome }}" \
-              "flexiblas package installs" "${{ steps.pkg.outcome }}" \
-              "startup with FLEXIBLAS_VERBOSE=1" "${{ steps.startup.outcome }}" \
-              "test-flexiblas.R: backends, errors vs NETLIB, thread counts" "${{ steps.tests.outcome }}" \
-              "  the same with OMP_NUM_THREADS=1" "${{ steps.tests_omp1.outcome }}" \
-              "  the same with OMP_THREAD_LIMIT=1 (OpenMP build caps at 1)" "${{ steps.tests_limit1.outcome }}" \
-              "LAPACK calls reach the backend, no dgemm/dtrsm (profile)" "${{ steps.profile.outcome }}" \
-              "NETLIB bit for bit R's own (test-identical.R)" "${{ steps.identical.outcome }}" \
-              "backend selection: default, FLEXIBLAS, user flexiblasrc" "${{ steps.backends.outcome }}" \
-              "R's reg-BLAS.R under each backend" "${{ steps.regblas.outcome }}" \
-              "invalid arguments give R's xerbla error, each backend" "${{ steps.xerbla.outcome }}" \
-              "R CMD check of 7 packages: nothing beyond CRAN's R" "${{ steps.pkgcheck.outcome }}" \
-              "the package's tinytest suite" "${{ steps.pkgtests.outcome }}"
-            echo
-            echo "Measurements (the step fails only if a run crashes or hangs):"
-            printf '  %-58s %s\n' \
-              "chol() with non-finite input, per backend" "${{ steps.chol.outcome }}" \
-              "NA/NaN/Inf propagation, backends vs R's own" "${{ steps.nan.outcome }}" \
-              "memory use per backend and thread setting" "${{ steps.memory.outcome }}" \
-              "dgemm from OpenMP threads with a static libgomp" "${{ steps.ompcaller.outcome }}"
-            echo
-            echo "  identical.log (0 expected): $(line identical.log 'results differ')"
-            echo "  nan.log (6 expected: dpotrf at six sizes for the two OpenBLAS backends): $(line nan.log 'results differ')"
+            echo "identical.log (0 expected): $(line identical.log 'results differ')"
+            echo "nan.log (6 expected: dpotrf at six sizes for the two OpenBLAS backends): $(line nan.log 'results differ')"
             n=$(grep -c 'NaN on the diagonal' chol.log 2>/dev/null)
-            echo "  chol.log, NaN on the diagonal: ${n:-no} BLAS/LAPACK sets, $(grep -c 'NaN on the diagonal.*error:' chol.log 2>/dev/null) give an error (2 of 4 expected: R's own and NETLIB test the pivot with disnan(), OpenBLAS's dpotrf does not)"
-            echo "  memory.log, private bytes after loading the backend:"
-            awk '/^backend:/ {b = $2; ob = $5; om = $8} /loaded,/ {found = 1; printf "    %-18s OPENBLAS_NUM_THREADS=%-7s OMP_NUM_THREADS=%-7s %s threads, %s MB\n", b, ob, om, $3, $6} END {if (!found) print "    not found in memory.log"}' memory.log 2>/dev/null || echo "    not found in memory.log"
-            echo "  omp-caller.log: process thread counts with as many OpenMP callers as cores and as many BLAS threads, n = 1000:"
-            awk '/^cores:/ {c = $2; p = ($4 == 1000)} p && $2 == c && $3 == c {found = 1; printf "    %-18s %s threads, %s s\n", $1, $5, $4} END {if (!found) print "    not found in omp-caller.log"}' omp-caller.log 2>/dev/null || echo "    not found in omp-caller.log"
-            echo "  tests.log, B %*% B at n = 3000 (s):"
-            awk '/^== / {b = $2} /B %\*% B.*thread\(s\)/ {found = 1; for (i = 1; i <= NF; i++) if ($(i + 1) == "thread(s):") n = $i; printf "    %-18s %s threads: %s\n", b, n, $NF} END {if (!found) print "    not found in tests.log"}' tests.log 2>/dev/null || echo "    not found in tests.log"
-          } > summary.log 2>&1
-          cat summary.log
+            echo "chol.log, NaN on the diagonal: ${n:-no} BLAS/LAPACK sets, $(grep -c 'NaN on the diagonal.*error:' chol.log 2>/dev/null) give an error (2 of 4 expected: R's own and NETLIB test the pivot with disnan(), OpenBLAS's dpotrf does not)"
+            echo "memory.log, private bytes after loading the backend:"
+            awk '/^backend:/ {b = $2; ob = $5; om = $8} /loaded,/ {found = 1; printf "  %-18s OPENBLAS_NUM_THREADS=%-7s OMP_NUM_THREADS=%-7s %s threads, %s MB\n", b, ob, om, $3, $6} END {if (!found) print "  not found in memory.log"}' memory.log 2>/dev/null || echo "  not found in memory.log"
+            echo "omp-caller.log: process thread counts with as many OpenMP callers as cores and as many BLAS threads, n = 1000:"
+            awk '/^cores:/ {c = $2; p = ($4 == 1000)} p && $2 == c && $3 == c {found = 1; printf "  %-18s %s threads, %s s\n", $1, $5, $4} END {if (!found) print "  not found in omp-caller.log"}' omp-caller.log 2>/dev/null || echo "  not found in omp-caller.log"
+            echo "tests.log, B %*% B at n = 3000 (s):"
+            awk '/^== / {b = $2} /B %\*% B.*thread\(s\)/ {found = 1; for (i = 1; i <= NF; i++) if ($(i + 1) == "thread(s):") n = $i; printf "  %-18s %s threads: %s\n", b, n, $NF} END {if (!found) print "  not found in tests.log"}' tests.log 2>/dev/null || echo "  not found in tests.log"
+          } > results.txt 2>&1
+          cat ran.txt results.txt
 
       - uses: ./.github/actions/report
         if: always()
         with:
           key: ${{ github.workflow }} (${{ inputs.r }}, test${{ env.SUFFIX && format(', {0}', inputs.target) || '' }})
           status: ${{ job.status }}
-          summary: summary.log
+          ran: ran.txt
+          checks: |
+            ${{ steps.ref.outcome }} | reference results from CRAN's R
+            ${{ steps.install.outcome }} | installer installs
+            ${{ steps.samerev.outcome }} | the same revision as CRAN's R
+            ${{ steps.exports.outcome }} | Rblas/Rlapack export as CRAN's, less FlexiBLAS gaps
+            ${{ steps.pkg.outcome }} | flexiblas package installs
+            ${{ steps.startup.outcome }} | startup with FLEXIBLAS_VERBOSE=1
+            ${{ steps.tests.outcome }} | test-flexiblas.R: backends, errors vs NETLIB, thread counts
+            ${{ steps.tests_omp1.outcome }} | the same with OMP_NUM_THREADS=1
+            ${{ steps.tests_limit1.outcome }} | the same with OMP_THREAD_LIMIT=1 (OpenMP build caps at 1)
+            ${{ steps.profile.outcome }} | LAPACK calls reach the backend, no dgemm/dtrsm (profile)
+            ${{ steps.identical.outcome }} | NETLIB bit for bit R's own (test-identical.R)
+            ${{ steps.backends.outcome }} | backend selection: default, FLEXIBLAS, user flexiblasrc
+            ${{ steps.regblas.outcome }} | R's reg-BLAS.R under each backend
+            ${{ steps.xerbla.outcome }} | invalid arguments give R's xerbla error, each backend
+            ${{ steps.pkgcheck.outcome }} | R CMD check of 7 packages: nothing beyond CRAN's R
+            ${{ steps.pkgtests.outcome }} | the package's tinytest suite
+            ${{ steps.chol.outcome }} | chol() with non-finite input runs, per backend
+            ${{ steps.nan.outcome }} | NA/NaN/Inf propagation runs, backends vs R's own
+            ${{ steps.memory.outcome }} | memory use runs, per backend and thread setting
+            ${{ steps.ompcaller.outcome }} | dgemm from OpenMP threads with a static libgomp runs
+          results: results.txt
           files: |
             startup.log
             tests.log
@@ -782,10 +793,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - run: echo "not run; the build job ended with ${{ needs.build.result }}, so there was no installer to test" > summary.log
       - uses: ./.github/actions/report
         with:
           key: ${{ github.workflow }} (${{ inputs.r }}, test${{ env.SUFFIX && format(', {0}', inputs.target) || '' }})
           status: not run
-          summary: summary.log
-          files: summary.log
+          verdict: the build job ended with ${{ needs.build.result }}, so there was no installer to test
+          files: ""
