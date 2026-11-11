@@ -4,9 +4,10 @@ name: FlexiBLAS for R
 # and tested (build-bundle.yml), then R-devel and R-release built with it
 # by the R-core scripts, each checked against CRAN's build of the same R
 # and its backends measured (build-r.yml), the installers published as
-# releases when all is green, and one comment that says whether the
-# commit is green. Started by hand while commits are being
-# gathered; later on every push to master, with the push trigger below.
+# releases when all is green (once switched on, below), and one comment
+# that says whether the commit is green. Started by hand while commits
+# are being gathered; later on every push to master, with the push
+# trigger below.
 on:
   workflow_dispatch:
   # push:
@@ -50,9 +51,10 @@ jobs:
   # A green chain publishes its installers, unsigned: R-release as a
   # GitHub release tagged with R's version and revision and the commit,
   # R-devel as a prerelease under the tag devel, replaced every time.
+  # Off until the repository variable PUBLISH is set to true.
   publish:
     needs: [bundle, r]
-    if: needs.bundle.result == 'success' && needs.r.result == 'success' && github.ref == 'refs/heads/master'
+    if: vars.PUBLISH == 'true' && needs.bundle.result == 'success' && needs.r.result == 'success' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -130,17 +132,17 @@ jobs:
         run: |
           echo "commit ${GITHUB_SHA:0:7}: $(git log -1 --format=%s)" > ran.txt
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" --paginate \
-            --jq '.jobs[] | select(.name | test("status") | not) | "\(.conclusion // .status)  \(.name)"' > results.txt || true
+            --jq '.jobs[] | select((.name | test("status")) or .conclusion == "skipped" | not) | "\(.conclusion // .status)  \(.name)"' > results.txt || true
 
       - uses: ./.github/actions/report
         if: always()
         with:
           key: FlexiBLAS for R, the chain
-          status: ${{ (needs.bundle.result == 'success' && needs.r.result == 'success' && needs.publish.result == 'success') && 'success' || 'failure' }}
+          status: ${{ (needs.bundle.result == 'success' && needs.r.result == 'success' && (vars.PUBLISH != 'true' || needs.publish.result == 'success')) && 'success' || 'failure' }}
           ran: ran.txt
           checks: |
             ${{ needs.bundle.result }} | the bundle built, and tested on Windows
             ${{ needs.r.result }} | R-devel and R-release built, checked against CRAN's R, backends measured
-            ${{ needs.publish.result }} | the installers published as releases
+            ${{ vars.PUBLISH == 'true' && format('{0} | the installers published as releases', needs.publish.result) || '' }}
           results: results.txt
           files: ""
