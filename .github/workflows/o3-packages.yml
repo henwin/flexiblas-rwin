@@ -55,6 +55,12 @@ env:
   OPTFLAGS_WORK: ${{ github.workspace }}\optflags-work
   OPTFLAGS_DETAIL: ${{ inputs.detail || '3' }}
 
+# runs that report to the same comment wait for each other rather than race
+# (the base job's comment is shared by every set; runs with base are rare)
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.packages != '' && 'named' || inputs.set }}
+  cancel-in-progress: false
+
 jobs:
   select:
     if: inputs.packages != 'none' && inputs.summarise == ''
@@ -99,6 +105,8 @@ jobs:
     timeout-minutes: 360
     strategy:
       fail-fast: false
+      # of the 20 jobs an account runs at once, some left for the builds
+      max-parallel: 14
       matrix:
         group: ${{ fromJSON(needs.select.outputs.groups) }}
     env:

@@ -31,6 +31,13 @@ defaults:
   run:
     shell: bash
 
+# runs that report to the same comment wait for each other rather than race
+# (per ref: a pull request queued behind master would cancel a pending
+# master run, and build-r needs a bundle from master's current sources)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     name: Build (${{ matrix.target }})

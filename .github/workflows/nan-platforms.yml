@@ -23,16 +23,22 @@ defaults:
   run:
     shell: bash
 
+# runs that report to the same comment wait for each other rather than race
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   backends-linux:
     name: Fedora, FlexiBLAS backends against each other
     runs-on: ubuntu-24.04
     container: fedora:latest
-    timeout-minutes: 30
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v7
 
       - name: Install R with FlexiBLAS and its backends
+        timeout-minutes: 30
         run: |
           dnf install -y -q R-core R-core-devel R-flexiblas flexiblas-netlib binutils gcc redhat-rpm-config gh \
               flexiblas-openblas-serial flexiblas-openblas-openmp flexiblas-openblas-threads
@@ -42,20 +48,30 @@ jobs:
 
       - name: Compare backends
         id: nan
+        timeout-minutes: 5
         run: Rscript tests/test-nan.R propagate cmp 2>&1 | tee nan.log
 
       - name: Memory use
         id: memory
         if: always()
+        timeout-minutes: 10
         run: |
+          # each run limited, so that one that hangs shows which it is; the
+          # step fails if any run fails or times out (124)
+          st=0
           for b in OPENBLAS-OPENMP OPENBLAS-THREADS; do
-            Rscript tests/test-memory.R $b
-            OPENBLAS_NUM_THREADS=1 Rscript tests/test-memory.R $b
-          done 2>&1 | tee memory.log
+            for t in "" 1; do
+              echo "== $b${t:+ OPENBLAS_NUM_THREADS=$t}"
+              env ${t:+OPENBLAS_NUM_THREADS=$t} timeout -k 10 120 Rscript tests/test-memory.R $b 2>&1 || { r=$?; echo "exit status $r"; st=1; }
+            done
+          done > memory.log
+          cat memory.log
+          exit $st
 
       - name: BLAS called from OpenMP threads, shared libgomp
         id: ompcaller
         if: always()
+        timeout-minutes: 15
         run: |
           Rscript tests/test-omp-caller.R 2>&1 | tee omp-caller.log
           Rscript tests/test-omp-caller.R 200 200 2>&1 | tee -a omp-caller.log

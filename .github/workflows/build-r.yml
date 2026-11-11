@@ -66,6 +66,11 @@ env:
   # artifact names carry the target
   SUFFIX: ${{ inputs.target == 'aarch64' && '-aarch64' || '' }}
 
+# runs that report to the same comment wait for each other rather than race
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.r }}-${{ inputs.experiment }}-${{ inputs.target }}
+  cancel-in-progress: false
+
 jobs:
   build:
     if: inputs.build

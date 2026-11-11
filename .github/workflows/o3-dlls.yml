@@ -12,6 +12,11 @@ permissions:
   contents: read
   issues: write
 
+# runs that report to the same comment wait for each other rather than race
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   compare:
     runs-on: windows-2025
