@@ -90,6 +90,11 @@ jobs:
     if: inputs.build
     runs-on: ${{ inputs.target == 'aarch64' && 'windows-11-arm' || 'windows-latest' }}
     timeout-minutes: 360
+    # the test and measure jobs need the installer, not a build without a
+    # failed check: a check that fails (a network test of R's, say) must
+    # not hide what they show
+    outputs:
+      installer: ${{ steps.upload.outcome }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -322,6 +327,7 @@ jobs:
       # DLLs, backends and configuration must come with it.
       - name: Install R from the installer
         id: install
+        if: ${{ !cancelled() && steps.buildsh.outputs.installer == 'ok' && steps.buildsh.outputs.patches == 'ok' }}
         timeout-minutes: 15
         shell: C:\msys64\usr\bin\bash.exe --login -eo pipefail {0}
         env:
@@ -347,6 +353,8 @@ jobs:
       # that only tests finds one of the right kind; an experiment's
       # installer has no FlexiBLAS and is never tested.
       - uses: actions/upload-artifact@v7
+        id: upload
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         with:
           name: R-${{ inputs.r }}${{ inputs.experiment != 'none' && '-experiment' || '' }}-installer${{ env.SUFFIX }}
           path: |
@@ -444,7 +452,7 @@ jobs:
   test:
     name: Test the installed R
     needs: build
-    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped') && inputs.experiment == 'none'
+    if: ${{ !cancelled() && (needs.build.outputs.installer == 'success' || needs.build.result == 'skipped') && inputs.experiment == 'none' }}
     timeout-minutes: 160
     runs-on: ${{ inputs.target == 'aarch64' && 'windows-11-arm' || 'windows-latest' }}
     steps:
@@ -457,8 +465,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $id = gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts?name=R-${{ inputs.r }}-installer$env:SUFFIX&per_page=20" --jq '[.artifacts[] | select(.expired | not)][0].workflow_run.id'
-          if (-not $id) { throw "no R-${{ inputs.r }}-installer$env:SUFFIX; build one first" }
+          # a failed build uploads its installer too, for its own test and
+          # measure jobs; only a successful run's is reused
+          $id = $null
+          foreach ($r in (gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts?name=R-${{ inputs.r }}-installer$env:SUFFIX&per_page=50" --jq '.artifacts[] | select(.expired | not) | .workflow_run.id')) {
+            if ((gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$r" --jq .conclusion) -eq "success") { $id = $r; break }
+          }
+          if (-not $id) { throw "no R-${{ inputs.r }}-installer$env:SUFFIX from a successful run; build one first" }
           "run_id=$id" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
 
       - uses: actions/download-artifact@v8
@@ -742,7 +755,7 @@ jobs:
   measure:
     name: Measure the backends of the installed R
     needs: build
-    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped') && inputs.experiment == 'none'
+    if: ${{ !cancelled() && (needs.build.outputs.installer == 'success' || needs.build.result == 'skipped') && inputs.experiment == 'none' }}
     timeout-minutes: 60
     runs-on: ${{ inputs.target == 'aarch64' && 'windows-11-arm' || 'windows-latest' }}
     steps:
@@ -755,8 +768,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $id = gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts?name=R-${{ inputs.r }}-installer$env:SUFFIX&per_page=20" --jq '[.artifacts[] | select(.expired | not)][0].workflow_run.id'
-          if (-not $id) { throw "no R-${{ inputs.r }}-installer$env:SUFFIX; build one first" }
+          # a failed build uploads its installer too, for its own test and
+          # measure jobs; only a successful run's is reused
+          $id = $null
+          foreach ($r in (gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts?name=R-${{ inputs.r }}-installer$env:SUFFIX&per_page=50" --jq '.artifacts[] | select(.expired | not) | .workflow_run.id')) {
+            if ((gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$r" --jq .conclusion) -eq "success") { $id = $r; break }
+          }
+          if (-not $id) { throw "no R-${{ inputs.r }}-installer$env:SUFFIX from a successful run; build one first" }
           "run_id=$id" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
 
       - uses: actions/download-artifact@v8
