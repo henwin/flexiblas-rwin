@@ -42,7 +42,7 @@ jobs:
       fail-fast: false
       matrix:
         target: [x86_64]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     env:
       # the artifact's name, which build-r.yml looks for
       ARTIFACT: ${{ matrix.target == 'aarch64' && 'flexiblas-rwin-aarch64' || 'flexiblas-rwin' }}
@@ -156,7 +156,7 @@ jobs:
       matrix:
         include:
           - target: x86_64
-            runner: windows-2025
+            runner: windows-latest
             artifact: flexiblas-rwin
             dist: FlexiBLAS
             bin: bin/x64

@@ -64,7 +64,7 @@ concurrency:
 jobs:
   select:
     if: inputs.packages != 'none' && inputs.summarise == ''
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     outputs:
       groups: ${{ steps.split.outputs.groups }}
     steps:
@@ -101,7 +101,7 @@ jobs:
 
   packages:
     needs: select
-    runs-on: windows-2025
+    runs-on: windows-latest
     timeout-minutes: 360
     strategy:
       fail-fast: false
@@ -184,7 +184,7 @@ jobs:
   summary:
     needs: packages
     if: always() && (inputs.summarise != '' || needs.packages.result != 'skipped')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
@@ -271,7 +271,7 @@ jobs:
 
   base:
     if: inputs.base && inputs.summarise == ''
-    runs-on: windows-2025
+    runs-on: windows-latest
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v7

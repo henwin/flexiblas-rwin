@@ -28,20 +28,62 @@ concurrency:
 jobs:
   backends-linux:
     name: Fedora, FlexiBLAS backends against each other
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     container: fedora:latest
-    timeout-minutes: 75
+    timeout-minutes: 140
     steps:
       - uses: actions/checkout@v7
 
       - name: Install R with FlexiBLAS and its backends
+        id: install
         timeout-minutes: 30
         run: |
           dnf install -y -q R-core R-core-devel R-flexiblas flexiblas-netlib binutils gcc redhat-rpm-config gh \
               flexiblas-openblas-serial flexiblas-openblas-openmp flexiblas-openblas-threads
           flexiblas list
-          # OpenBLAS's build configuration, including MAX_THREADS (NUM_THREADS)
-          for f in /usr/lib64/libopenblas*.so.0; do echo "$f: $(strings "$f" | grep -m1 'MAX_THREADS')"; done
+          echo "version=$(rpm -q --qf '%{VERSION}' openblas-openmp)" >> $GITHUB_OUTPUT
+
+      # Fedora's OpenMP OpenBLAS rebuilt from the same upstream version with
+      # patches/openblas/, in its place, so that the OPENBLAS-OPENMP backend
+      # has the patches; without them 0.3.34 hangs when the thread count
+      # set exceeds the OpenMP team and in a caller's parallel region (run
+      # 43007389890). Here, with one libgomp shared by R, the packages and
+      # OpenBLAS, all four patches act. A version the patches no longer
+      # apply to fails the step.
+      - name: Restore the patched OpenBLAS
+        id: cache
+        uses: actions/cache/restore@v6
+        with:
+          path: /opt/openblaso
+          key: openblaso-${{ steps.install.outputs.version }}-${{ hashFiles('patches/openblas/*.patch') }}
+
+      - name: OpenBLAS ${{ steps.install.outputs.version }} with patches/openblas, OpenMP
+        id: openblas
+        timeout-minutes: 60
+        run: |
+          v=${{ steps.install.outputs.version }}
+          if [ "${{ steps.cache.outputs.cache-hit }}" != true ]; then
+            dnf install -y -q patch
+            curl -sSfL https://github.com/OpenMathLib/OpenBLAS/releases/download/v$v/OpenBLAS-$v.tar.gz | tar xz
+            for p in patches/openblas/*.patch; do patch -d OpenBLAS-$v -p1 < $p; done
+            o="USE_OPENMP=1 USE_THREAD=1 DYNAMIC_ARCH=1 TARGET=CORE2 NUM_THREADS=64 LIBNAMESUFFIX=o NO_STATIC=1"
+            # shared depends on libs and netlib and runs them one after the other
+            make -C OpenBLAS-$v -j$(nproc) $o shared > openblas-build.log 2>&1 || { tail -50 openblas-build.log; exit 1; }
+            make -C OpenBLAS-$v $o PREFIX=/opt/openblaso install > /dev/null
+          fi
+          # onto the file Fedora's soname link points to, keeping the link
+          f=$(readlink -f /usr/lib64/libopenblaso.so.0)
+          install -m 755 /opt/openblaso/lib/libopenblaso.so.0 "$f"
+          ldconfig
+          cmp /opt/openblaso/lib/libopenblaso.so.0 /usr/lib64/libopenblaso.so.0
+          ldd $(rpm -ql flexiblas-openblas-openmp | grep 'openblas-openmp\.so$') | grep libopenblaso
+
+      - name: Save the patched OpenBLAS
+        if: steps.cache.outputs.cache-hit != 'true' && steps.openblas.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: /opt/openblaso
+          key: openblaso-${{ steps.install.outputs.version }}-${{ hashFiles('patches/openblas/*.patch') }}
 
       - name: Compare backends
         id: nan
@@ -50,7 +92,7 @@ jobs:
 
       - name: Memory use
         id: memory
-        if: always()
+        if: always() && steps.openblas.outcome == 'success'
         timeout-minutes: 10
         run: |
           # each run limited, so that one that hangs shows which it is; the
@@ -67,7 +109,7 @@ jobs:
 
       - name: BLAS called from OpenMP threads, shared libgomp
         id: ompcaller
-        if: always()
+        if: always() && steps.openblas.outcome == 'success'
         timeout-minutes: 15
         run: |
           Rscript tests/test-omp-caller.R 2>&1 | tee omp-caller.log
@@ -86,7 +128,8 @@ jobs:
         run: |
           set +e
           echo "verdict=$(tr -d '\r' < nan-verdict.txt 2>/dev/null)" >> $GITHUB_OUTPUT
-          { grep -E '^(R version|CPU:|BLAS:)' nan.log 2>/dev/null | head -3; } > ran.txt
+          { grep -E '^(R version|CPU:|BLAS:)' nan.log 2>/dev/null | head -3
+            echo "Fedora's FlexiBLAS backends, OPENBLAS-OPENMP rebuilt from OpenBLAS ${{ steps.install.outputs.version }} with patches/openblas, with OpenBLAS's bundled LAPACK, which may differ from Fedora's build"; } > ran.txt
           {
             echo "nan.log: $(grep -m1 'results differ' nan.log 2>/dev/null || echo 'not found in nan.log')"
             echo "omp-caller.log, as many OpenMP callers as cores with as many BLAS threads, n = 1000 (shared libgomp):"
@@ -103,6 +146,7 @@ jobs:
           verdict: ${{ steps.summarise.outputs.verdict }}
           ran: ran.txt
           checks: |
+            ${{ steps.openblas.outcome }} | OPENBLAS-OPENMP with patches/openblas
             ${{ steps.nan.outcome }} | test-nan.R propagate cmp runs
             ${{ steps.memory.outcome }} | test-memory.R per backend runs
             ${{ steps.ompcaller.outcome }} | test-omp-caller.R runs
@@ -114,7 +158,7 @@ jobs:
 
   backends-macos:
     name: macOS arm64, R's BLAS against Accelerate
-    runs-on: macos-15
+    runs-on: macos-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
@@ -162,11 +206,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: windows-2025, label: windows-x86-64 }
-          - { os: ubuntu-24.04, label: linux-x86-64 }
-          - { os: ubuntu-24.04-arm, label: linux-arm64 }
-          - { os: macos-15, label: macos-arm64 }
-          - { os: macos-15-intel, label: macos-x86-64 }
+          - { os: windows-latest, label: windows-x86-64 }
+          - { os: ubuntu-latest, label: linux-x86-64 }
+          - { os: ubuntu-26.04-arm, label: linux-arm64 }
+          - { os: macos-latest, label: macos-arm64 }
+          - { os: macos-26-intel, label: macos-x86-64 }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -185,7 +229,7 @@ jobs:
   compare:
     needs: platforms
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: r-lib/actions/setup-r@v2

@@ -55,7 +55,7 @@ jobs:
   publish:
     needs: [bundle, r]
     if: vars.PUBLISH == 'true' && needs.bundle.result == 'success' && needs.r.result == 'success' && github.ref == 'refs/heads/master'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
@@ -121,7 +121,7 @@ jobs:
   status:
     needs: [bundle, r, publish]
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 

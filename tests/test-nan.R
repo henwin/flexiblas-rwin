@@ -254,8 +254,8 @@ if (identical(mode, "pattern") && identical(what, "run")) {
         if (n <= 193)
             rec("matprod internal", n, local({ op <- options(matprod = "internal"); r <- A %*% B; options(op); r }))
     }
-    hdr <- sprintf("%s|platform||%s %s; %s|BLAS %s|LAPACK %s|", label, R.version$platform,
-                   R.version.string, cpu(), extSoftVersion()[["BLAS"]], La_library())
+    hdr <- sprintf("%s|platform||%s %s; %s; %s|BLAS %s|LAPACK %s|", label, R.version$platform,
+                   R.version.string, utils::osVersion, cpu(), extSoftVersion()[["BLAS"]], La_library())
     writeLines(c(hdr, out), sprintf("nan-pattern-%s.txt", label))
     info()
     cat(sprintf("%d results at %d sizes written\n", length(out), length(psizes)))

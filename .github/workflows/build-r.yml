@@ -58,7 +58,7 @@ on:
         type: boolean
         default: true
       target:
-        description: "x86_64 on windows-2025, or aarch64 natively on windows-11-arm (build.sh aarch64, the LLVM toolchain)"
+        description: "x86_64 on windows-latest, or aarch64 natively on windows-11-arm (build.sh aarch64, the LLVM toolchain)"
         type: choice
         options: [x86_64, aarch64]
         default: x86_64
@@ -88,7 +88,7 @@ concurrency:
 jobs:
   build:
     if: inputs.build
-    runs-on: ${{ inputs.target == 'aarch64' && 'windows-11-arm' || 'windows-2025' }}
+    runs-on: ${{ inputs.target == 'aarch64' && 'windows-11-arm' || 'windows-latest' }}
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v7
@@ -446,7 +446,7 @@ jobs:
     needs: build
     if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped') && inputs.experiment == 'none'
     timeout-minutes: 160
-    runs-on: ${{ inputs.target == 'aarch64' && 'windows-11-arm' || 'windows-2025' }}
+    runs-on: ${{ inputs.target == 'aarch64' && 'windows-11-arm' || 'windows-latest' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -744,7 +744,7 @@ jobs:
     needs: build
     if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped') && inputs.experiment == 'none'
     timeout-minutes: 60
-    runs-on: ${{ inputs.target == 'aarch64' && 'windows-11-arm' || 'windows-2025' }}
+    runs-on: ${{ inputs.target == 'aarch64' && 'windows-11-arm' || 'windows-latest' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -880,7 +880,7 @@ jobs:
     name: Test not run
     needs: [build, test, measure]
     if: always() && needs.test.result == 'skipped' && inputs.experiment == 'none'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/report
