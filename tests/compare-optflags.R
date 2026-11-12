@@ -1,4 +1,4 @@
-## Compare the outputs of examples and tests between builds: CRAN packages
+## Run the examples and tests of packages for a comparison between builds: CRAN packages
 ## built with R's package flags (-O2) and with -O3, as R would build them
 ## without the sed in src/gnuwin32/fixed/Makefile (r57974), or packages'
 ## examples and tests with R's Rblas.dll and with one built with -O3.
@@ -9,15 +9,13 @@
 ##   Rscript compare-optflags.R test RUN LIB PKG...   examples and tests of PKG in lib-LIB (LIB "default": the first library), into out-RUN
 ##   Rscript compare-optflags.R base RUN              examples and tests of the recommended packages, into
 ##                                                   out-RUN/recommended; fails if one has no example output
-##   Rscript compare-optflags.R compare A,A2.. B,B2.. [PKG...]  the B runs against the A runs, on the lines each
-##                                                   set agrees on; the counts per package to compare.tsv
 ## The R running "test" and "base" is the one whose output is recorded; the
-## directories are in $OPTFLAGS_WORK, or optflags-work. "compare" shows up to
-## $OPTFLAGS_DETAIL (3) differing lines of each side per output.
+## directories are in $OPTFLAGS_WORK, or optflags-work. compare-runs.R
+## compares the runs.
 ## o3-packages.yml runs the Rblas.dll comparison. The package-flags comparison
 ## (r57974) was run on 32 packages with
 ##   build O2 PKG...; build O3 PKG...; test O2 O2 PKG...; test O2b O2 PKG...;
-##   test O3 O3 PKG...; compare O2,O2b O3
+##   test O3 O3 PKG...; and compare-runs.R work/out-O2/%s,work/out-O2b/%s work/out-O3/%s PKG...
 ## and found only paths, timings and build dates differing.
 args <- commandArgs(TRUE)
 mode <- args[1]
@@ -160,125 +158,4 @@ if (mode == "base") {
                 !file.exists(file.path(out, paste0(rec, "-Ex.Rout.fail")))]
     if (!length(rec) || length(none))
         stop("no output of the examples of ", if (length(rec)) paste(none, collapse = ", ") else "any package")
-}
-
-if (mode == "compare") {
-    detail <- suppressWarnings(as.integer(Sys.getenv("OPTFLAGS_DETAIL", "3")))
-    if (is.na(detail) || detail < 0) stop("OPTFLAGS_DETAIL is not a count")
-    ## Lines that differ between runs of the reference (addresses, dates,
-    ## timings, packages' own random numbers) say nothing about what the
-    ## alternative changes; a line counts only when every run of the
-    ## reference agrees on it, every run of the alternative agrees on it, and
-    ## the two disagree. Addresses, system.time() values and the test
-    ## frameworks' own timings are blanked first.
-    ## The packages are those with output from the first run of the
-    ## reference unless given; a run that lacks a package's output is
-    ## reported as missing.
-    a <- args[-1]
-    ref <- strsplit(a[1], ",")[[1]]; alt <- strsplit(a[2], ",")[[1]]; groups <- a[-(1:2)]
-    norm <- function(f) {
-        if (!file.exists(f)) return(NULL)
-        l <- readLines(f, warn = FALSE, encoding = "bytes")
-        h <- grep("user +system +elapsed", l)
-        if (length(h)) l <- l[-c(h, h + 1L)]
-        ## byte-wise: outputs need not be valid in the session's encoding
-        l <- gsub('0x[0-9a-fA-F]+|<[0-9A-F]{8,16}>|"[0-9a-f]{16}"', "ADDR", l, useBytes = TRUE)
-        l <- gsub("C:([/\\\\]+)R-o3", "C:\\1R", l, useBytes = TRUE)   # the copy with the -O3 BLAS
-        l <- gsub("out-(O[23]b?|R2|CRANb?)([/\\\\])", "out-RUN\\2", l, useBytes = TRUE)   # this run's output directory
-        ## timings the test frameworks print, which a faster BLAS changes
-        ## systematically: tinytest's "12 tests OK 92ms" and "(1.3s)",
-        ## testthat's "[ FAIL 0 | ... ]" summary line; and gc()'s table
-        l <- gsub("([0-9]+ tests( OK| FAILED)?|All ok, [0-9]+ results) \\(?[0-9.]+m?s\\)?", "\\1 TIME", l, useBytes = TRUE)
-        ## timings packages print: a number with a unit of time, and the
-        ## numbers on a line that announces one; a bare number stays, since
-        ## nothing says it is a time (the 25 timing lines of run 40680758450
-        ## are the sample behind these)
-        l <- gsub("\\b[0-9]+(\\.[0-9]+)?(e[-+]?[0-9]+)? ?(s|sec|secs|seconds?|ms|min|mins|minutes?|h|hours?|CPU-s|elapsed-s)\\b",
-                  "TIME \\3", l, useBytes = TRUE, perl = TRUE)
-        t <- grepl("(?i)\\b(time elapsed|elapsed time|elapsed|CPU time|run time|time required|took|time_use|time =|time:|timing)",
-                   l, perl = TRUE, useBytes = TRUE)
-        l[t] <- gsub("\\b[0-9]+(\\.[0-9]+)?(e[-+]?[0-9]+)?\\b", "TIME", l[t], useBytes = TRUE, perl = TRUE)
-        l <- l[!grepl("^(Ncells|Vcells) +[0-9]", l, useBytes = TRUE)]
-        ## widths of columns follow their widest entry, a path or a timing
-        gsub(" +", " ", trimws(l, "right"), useBytes = TRUE)
-    }
-    dir <- function(r, g) file.path(work, paste0("out-", r), g)
-    ## the output of file f in run r: its lines and whether the run failed
-    ## (R CMD BATCH left f.Rout.fail), or NULL when there is neither
-    read <- function(r, g, f) {
-        for (ext in c("", ".fail")) {
-            l <- norm(file.path(dir(r, g), paste0(f, ext)))
-            if (!is.null(l)) return(list(lines = l, failed = ext == ".fail"))
-        }
-        NULL
-    }
-    ## one of "same", "differ", "failed", "missing", "unstable" for output f:
-    ## "same" when every run agrees on every line, "differ" when the runs of
-    ## each set agree on a line and the sets do not (or one set failed and the
-    ## other did not), "unstable" when the runs of a set disagree on a line or
-    ## on failing without a stable difference, "failed" when every run failed
-    one <- function(g, f, ref, alt) {
-        R <- lapply(ref, read, g, f); A <- lapply(alt, read, g, f)
-        miss <- c(ref, alt)[vapply(c(R, A), is.null, NA)]
-        if (length(miss)) {
-            cat(sprintf("  %s: missing in %s\n", f, paste(miss, collapse = ", ")))
-            return("missing")
-        }
-        fr <- vapply(R, `[[`, NA, "failed"); fa <- vapply(A, `[[`, NA, "failed")
-        if (any(fr) || any(fa)) {
-            cat(sprintf("  %s: failed in %s\n", f, paste(c(ref[fr], alt[fa]), collapse = ", ")))
-            if (any(fr) != all(fr) || any(fa) != all(fa)) return("unstable")
-            if (all(fr) != all(fa)) return("differ")
-        }
-        R <- lapply(R, `[[`, "lines"); A <- lapply(A, `[[`, "lines")
-        n <- lengths(c(R, A)); nr <- n[seq_along(R)]; na <- n[-seq_along(R)]
-        if (length(unique(nr)) > 1 || length(unique(na)) > 1) return("unstable")
-        ## bytes: substr() refuses strings in the "bytes" encoding
-        head100 <- function(x) rawToChar(head(charToRaw(x), 100))
-        if (nr[1] != na[1]) {
-            cat(sprintf("  %s: %d lines in %s, %d in %s\n", f, nr[1], ref[1], na[1], alt[1]))
-            ## the lines that one has and the other lacks
-            for (l in head(R[[1]][!R[[1]] %in% A[[1]]], detail)) cat(sprintf("    only %s: %s\n", ref[1], head100(l)))
-            for (l in head(A[[1]][!A[[1]] %in% R[[1]]], detail)) cat(sprintf("    only %s: %s\n", alt[1], head100(l)))
-            return("differ")
-        }
-        same <- function(L) Reduce(`&`, lapply(L[-1], function(l) l == L[[1]]), rep(TRUE, n[1]))
-        sR <- same(R); sA <- same(A)
-        d <- which(sR & sA & R[[1]] != A[[1]])
-        if (length(d)) {
-            cat(sprintf("  %s: %d stable lines differ\n", f, length(d)))
-            for (k in head(d, detail))
-                cat(sprintf("    %s: %s\n    %s: %s\n", ref[1], head100(R[[1]][k]), alt[1], head100(A[[1]][k])))
-            return("differ")
-        }
-        if (all(fr)) return("failed")
-        if (all(sR & sA)) return("same")
-        ## what varies between runs of a set, for the blanking above
-        u <- which(!(sR & sA)); L <- if (all(sR)) A else R; s <- if (all(sR)) alt else ref
-        cat(sprintf("  %s: %d unstable lines\n", f, length(u)))
-        for (k in head(u, detail))
-            cat(sprintf("    %s: %s\n    %s: %s\n", s[1], head100(L[[1]][k]), s[2], head100(L[[2]][k])))
-        "unstable"
-    }
-    kinds <- c("same", "differ", "failed", "missing", "unstable")
-    if (!length(groups))
-        groups <- list.dirs(file.path(work, paste0("out-", ref[1])), full.names = FALSE, recursive = FALSE)
-    total <- setNames(integer(length(kinds)), kinds)
-    rows <- list()
-    for (g in groups) {
-        files <- sort(unique(sub("\\.fail$", "", unlist(lapply(c(ref, alt), function(r)
-            list.files(dir(r, g), "\\.Rout(\\.fail)?$", recursive = TRUE))))))
-        k <- vapply(files, function(f) tryCatch(one(g, f, ref, alt), error = function(e) {
-            cat(sprintf("  %s: not compared: %s\n", f, conditionMessage(e))); "missing" }), "")
-        n <- table(factor(k, kinds))
-        total <- total + n
-        rows[[g]] <- data.frame(package = g, files = length(files), t(c(n)))
-        ## "failed" is a failure in every run, so not a difference
-        cat(sprintf("== %-12s %3d output files: %3d same, %3d differ in %s, %3d failed, %3d missing, %3d unstable\n",
-                    g, length(files), n["same"], n["differ"], paste(alt, collapse = "+"), n["failed"], n["missing"],
-                    n["unstable"]))
-    }
-    cat(sprintf("total %d output files: %s\n", sum(total), paste(total, names(total), collapse = ", ")))
-    tsv <- do.call(rbind, c(list(data.frame(package = character(), files = integer(), t(total)[0, , drop = FALSE])), rows))
-    write.table(tsv, "compare.tsv", sep = "\t", quote = FALSE, row.names = FALSE)
 }

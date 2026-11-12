@@ -92,14 +92,15 @@ jobs:
           run R2 work/blas-R.dll
           run O3 work/blas-O3.dll
           cp work/Rblas-cran.dll "$bin/Rblas.dll"
+          W=$OPTFLAGS_WORK p="${{ inputs.packages }}"
           echo "== -O2 rebuild against CRAN's DLL" | tee -a probe.log
-          Rscript tests/compare-optflags.R compare CRAN,CRANb R2 2>&1 | tee -a probe.log
+          Rscript tests/compare-runs.R --blank "$W/out-CRAN/%s,$W/out-CRANb/%s" "$W/out-R2/%s" $p 2>&1 | tee -a probe.log
           cp compare.tsv o2-vs-cran.tsv
           echo "== -O3 rebuild against CRAN's DLL" | tee -a probe.log
-          Rscript tests/compare-optflags.R compare CRAN,CRANb O3 2>&1 | tee -a probe.log
+          Rscript tests/compare-runs.R --blank "$W/out-CRAN/%s,$W/out-CRANb/%s" "$W/out-O3/%s" $p 2>&1 | tee -a probe.log
           cp compare.tsv o3-vs-cran.tsv
           echo "== -O3 rebuild against the -O2 rebuild" | tee -a probe.log
-          Rscript tests/compare-optflags.R compare R2 O3 2>&1 | tee -a probe.log
+          Rscript tests/compare-runs.R --blank "$W/out-R2/%s" "$W/out-O3/%s" $p 2>&1 | tee -a probe.log
           cp compare.tsv o3-vs-o2.tsv
 
       - name: Summarise

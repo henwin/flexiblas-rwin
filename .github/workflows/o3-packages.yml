@@ -11,8 +11,8 @@ name: Rblas.dll with -O3, CRAN and recommended packages
 # R's own functions, reported apart; as the CRAN binaries for that R
 # with the tests taken from their sources. R's own tests need R built with
 # that DLL (o3-rtests.yml). A
-# package whose outputs differ runs once more each way, and a line counts
-# only if both runs of each side agree on it (tests/compare-optflags.R).
+# package whose outputs differ runs once more each way, and a difference
+# counts only if both runs of each side bear it out (tests/compare-runs.R).
 on:
   workflow_dispatch:
     inputs:
@@ -28,7 +28,7 @@ on:
         description: Size and seed of the sample of the others
         default: '1000 1'
       detail:
-        description: Differing lines shown per output file
+        description: Differences shown per output file
         default: '3'
       groups:
         description: Number of parallel jobs for the packages (at most 256)
@@ -53,7 +53,7 @@ permissions:
 
 env:
   OPTFLAGS_WORK: ${{ github.workspace }}\optflags-work
-  OPTFLAGS_DETAIL: ${{ inputs.detail || '3' }}
+  COMPARE_DETAIL: ${{ inputs.detail || '3' }}
 
 # runs that report to the same comment wait for each other rather than race
 # (the base job's comment is shared by every set; runs with base are rare)
@@ -153,19 +153,22 @@ jobs:
           for p in $PKGS; do run O2 $p; run O3 $p; done
           # The counts per package come from compare.tsv, each comparison
           # adding its packages; result.tsv exists only when both passes are done.
-          Rscript tests/compare-optflags.R compare O2 O3 $PKGS > pass1.log 2>&1
+          # R's home and the copy with the -O3 BLAS print as one (compare-runs.R)
+          cmp() { Rscript tests/compare-runs.R --blank --home=C:/R-o3 --home=C:/R "$@"; }
+          W=$OPTFLAGS_WORK
+          cmp "$W/out-O2/%s" "$W/out-O3/%s" $PKGS > pass1.log 2>&1
           differ=$(tr -d '\r' < compare.tsv | awk -F'\t' 'NR > 1 && $4 > 0 {print $1}')
           tr -d '\r' < compare.tsv | head -1 > result.part
           rest=$(comm -23 <(tr ' ' '\n' <<< "$PKGS" | sort) <(tr ' ' '\n' <<< "$differ" | sort))
           [ -z "$rest" ] || {
-            Rscript tests/compare-optflags.R compare O2 O3 $rest 2>&1 | tee -a optflags.log
+            cmp "$W/out-O2/%s" "$W/out-O3/%s" $rest 2>&1 | tee -a optflags.log
             tr -d '\r' < compare.tsv | tail -n +2 >> result.part
           }
           [ -z "$differ" ] || {
             # O2, O3, O3b, O2b: noise that follows the time of a run (a
             # web service limiting its calls, say) then differs within a set
             for p in $differ; do run O3b $p; run O2b $p; done
-            Rscript tests/compare-optflags.R compare O2,O2b O3,O3b $differ 2>&1 | tee -a optflags.log
+            cmp "$W/out-O2/%s,$W/out-O2b/%s" "$W/out-O3/%s,$W/out-O3b/%s" $differ 2>&1 | tee -a optflags.log
             tr -d '\r' < compare.tsv | tail -n +2 >> result.part
           }
           mv result.part result.tsv
@@ -239,9 +242,9 @@ jobs:
           } > summary.txt
           cat summary.txt
           # the differing lines
-          grep -aE '^(  \S+: |    O[23]b?: )' all.log > detail.txt || true
+          grep -aE '^(  \S+: |    )' all.log > detail.txt || true
           # the stable differences alone, first, since the detail is cut at the comment's size
-          awk '/stable lines differ|: [0-9]+ lines in / {p = 1; print; next} /^  [^ ]/ {p = 0} p' all.log > differ.txt || true
+          awk '/ [0-9]+ stable differences$/ {p = 1; print; next} /^  [^ ]|^== |^total / {p = 0} p' all.log > differ.txt || true
           # the runs that failed or timed out (124), which run of which package
           { awk -F'\t' '{print $1 " " $2 ": exit status " $3}' failed.tsv; grep -aE 'output not removed|^Error' all.log; } | sort > failed.txt || true
 
@@ -293,12 +296,14 @@ jobs:
           # as for the packages: a second run each way only when they differ;
           # compare.tsv is that of the last comparison that completed
           rm -f compare.tsv
-          Rscript tests/compare-optflags.R compare O2 O3 2>&1 | tee -a optflags.log
+          cmp() { Rscript tests/compare-runs.R --blank --home=C:/R-o3 --home=C:/R "$@" recommended; }
+          W=$OPTFLAGS_WORK
+          cmp "$W/out-O2/%s" "$W/out-O3/%s" 2>&1 | tee -a optflags.log
           if tr -d '\r' < compare.tsv | awk -F'\t' 'NR > 1 && $4 > 0 {d = 1} END {exit !d}'; then
             /c/R-o3/bin/Rscript tests/compare-optflags.R base O3b 2>&1 | tee -a optflags.log
             Rscript tests/compare-optflags.R base O2b 2>&1 | tee -a optflags.log
             rm -f compare.tsv
-            Rscript tests/compare-optflags.R compare O2,O2b O3,O3b 2>&1 | tee -a optflags.log
+            cmp "$W/out-O2/%s,$W/out-O2b/%s" "$W/out-O3/%s,$W/out-O3b/%s" 2>&1 | tee -a optflags.log
           fi
 
       - name: Summarise
@@ -309,7 +314,7 @@ jobs:
           set +e
           # the verdict from the last comparison, which has all the packages
           echo "verdict=$(tests/optflags-verdict.sh compare.tsv)" >> $GITHUB_OUTPUT
-          grep -aE '^(O[23]b?: |test|== |total |  \S+: |    O[23]b?: )' optflags.log > summary.log
+          grep -aE '^(O[23]b?: |test|== |total |  \S+: |    )' optflags.log > summary.log
           echo "$(Rscript -e 'cat(R.version.string)' 2>/dev/null), the recommended packages, examples and tests" > ran.txt
           grep -aE '^(== |total )' optflags.log > results.txt 2>/dev/null
 

@@ -8,7 +8,7 @@
 # once (chk-our), with its default backend.  An item that did not end in
 # OK counts when the built R has it and neither reference run does.  The
 # output of examples and tests, which raises no NOTE when it differs,
-# counts where it differs beyond noise and design (compare-output.R).
+# counts where it differs beyond noise and design (compare-runs.R).
 # Exits 1 when an item or an output difference counts, or a check did not
 # finish.
 refbin=$1 bin=$2; shift 2
@@ -60,21 +60,11 @@ done
 # the output of examples and tests, compared by tools::Rdiff as R CMD
 # check compares output with .Rout.save, with what varies between the two
 # reference runs and what differs between the installations by design left
-# out (compare-output.R)
+# out: R.home(), the check directory, and sessionInfo() naming the FlexiBLAS
+# backend before the LAPACK version (patches/r/0002) (compare-runs.R)
 home() { "$1/Rscript" -e 'cat(normalizePath(R.home(), "/"))'; }
-refhome=$(home "$refbin") ourhome=$(home "$bin")
 echo "output of examples and tests:"
-for p in "$@"; do
-    for f in $p-Ex.Rout $(for r in ref1 our; do (cd chk-$r/$p.Rcheck 2> /dev/null && ls tests/*.Rout 2> /dev/null); done | sort -u); do
-        a=chk-ref1/$p.Rcheck/$f b=chk-ref2/$p.Rcheck/$f c=chk-our/$p.Rcheck/$f
-        ex=FALSE; [ $f = $p-Ex.Rout ] && ex=TRUE
-        echo "== $p $f"
-        if [ -f $a ] && [ -f $b ] && [ -f $c ]; then
-            "$bin/Rscript" "$(dirname "$0")/compare-output.R" $a $b $c $ex "$refhome" "$ourhome" || status=1
-        else
-            echo "not in every run"
-            status=1
-        fi
-    done
-done
+COMPARE_DETAIL=1000 "$bin/Rscript" "$(dirname "$0")/compare-runs.R" --fail --need=%s-Ex.Rout --home="$(home "$refbin")" --home="$(home "$bin")" \
+    --drop='BLAS/LAPACK: FlexiBLAS [A-Z-]+; *' --only='^([^/]+-Ex|tests/[^/]+)\.Rout$' \
+    'chk-ref1/%s.Rcheck,chk-ref2/%s.Rcheck' 'chk-our/%s.Rcheck' "$@" || status=1
 exit $status
