@@ -89,7 +89,8 @@ jobs:
   build:
     if: inputs.build
     runs-on: ${{ inputs.target == 'aarch64' && 'windows-11-arm' || 'windows-latest' }}
-    timeout-minutes: 360
+    # x86_64 takes 70-90 minutes with the checks; aarch64 has no record yet
+    timeout-minutes: ${{ inputs.target == 'aarch64' && 360 || 190 }}
     # the test and measure jobs need the installer, not a build without a
     # failed check: a check that fails (a network test of R's, say) must
     # not hide what they show
@@ -278,6 +279,7 @@ jobs:
 
       - name: Run build.sh --check
         id: buildsh
+        timeout-minutes: ${{ inputs.target == 'aarch64' && 300 || 150 }}
         shell: C:\msys64\usr\bin\bash.exe --login {0}
         env:
           CHERE_INVOKING: 1
@@ -295,8 +297,12 @@ jobs:
             [ -n "$rev" ] || { echo "::error::no revision on CRAN's $page"; exit 1; }
             echo "R r$rev, the revision of CRAN's build" | tee -a /c/bundle.txt
           fi
-          ./build.sh ${{ inputs.target == 'aarch64' && 'aarch64' || '' }} ${{ inputs.check && '--check' || '' }} ${{ inputs.r != 'devel' && '--patched' || '' }} ${rev:+--revision $rev} > build.log 2>&1
+          # a hung check ends build.sh, not the step, so that what it built
+          # is still judged below and the installer installed and uploaded
+          timeout -k 2m ${{ inputs.target == 'aarch64' && 280 || 140 }}m ./build.sh ${{ inputs.target == 'aarch64' && 'aarch64' || '' }} ${{ inputs.check && '--check' || '' }} ${{ inputs.r != 'devel' && '--patched' || '' }} ${rev:+--revision $rev} < /dev/null > build.log 2>&1
           status=$?
+          # 124 after TERM, 137 after KILL; R's own children may outlive build.sh
+          case $status in 124|137) timedout=yes; echo "::error::build.sh stopped after its time limit"; taskkill //F //T //IM Rterm.exe > /dev/null 2>&1;; esac
           tail -30 build.log
           ls -la build
           # build.sh goes on after errors and pipes make through tee, so its
@@ -316,7 +322,7 @@ jobs:
           if [ "${{ inputs.check }}" = true ]; then
             for f in build/checkdevel.out build/checkall.out; do
               r=ok
-              if [ ! -f "$f" ]; then echo "::error::$f missing"; status=1; r=missing
+              if [ ! -f "$f" ]; then echo "::error::$f missing"; status=1; r=${timedout:+timed out}; r=${r:-missing}
               elif grep -n 'make.*\*\*\*' "$f"; then echo "::error::make errors in $f"; status=1; r=failed; fi
               n=${f##*/}; echo "${n%.out}=$r" >> $GITHUB_OUTPUT
             done
