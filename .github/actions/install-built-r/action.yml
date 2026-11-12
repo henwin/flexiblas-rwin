@@ -3,7 +3,8 @@ description: >
   Installs R from the installer in inst/ into C:\R-inst, puts it first on
   PATH for the later steps, and installs the flexiblas R package from its
   repository with patches/r-flexiblas (pkg-install.log, and the commit in
-  r-flexiblas.txt). Shared by the test and measure jobs of build-r.yml.
+  r-flexiblas.txt). Shared by the test job of build-r.yml and the Windows
+  job of measure.yml.
 inputs:
   rbin:
     description: R's bin directory under R_HOME, bin/x64 or bin

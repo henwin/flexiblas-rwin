@@ -3,7 +3,7 @@ name: FlexiBLAS for R
 # The deliverable end to end, for one commit: the FlexiBLAS bundle built
 # and tested (build-bundle.yml), then R-devel and R-release built with it
 # by the R-core scripts, each checked against CRAN's build of the same R
-# and its backends measured (build-r.yml), the installers published as
+# (build-r.yml), the installers published as
 # releases when all is green (once switched on, below), and one comment
 # that says whether the commit is green. Started by hand while commits
 # are being gathered; later on every push to master, with the push
@@ -91,7 +91,7 @@ jobs:
             {
               echo "R $ver ($status, r$rev, $date), built by R-core's scripts with the FlexiBLAS bundle of commit ${GITHUB_SHA:0:7}, NETLIB the default backend."
               echo
-              echo "Checked against CRAN's build of the same revision in [run $GITHUB_RUN_ID]($run): exports, NETLIB bit for bit R's own BLAS and LAPACK, R's error for invalid arguments, the backends, and R CMD check of seven packages."
+              echo "Checked against CRAN's build of the same revision in [run $GITHUB_RUN_ID]($run): exports, NETLIB bit for bit R's own BLAS and LAPACK, R's error for invalid arguments, backend selection and threads, and R CMD check of seven packages."
               echo
               echo "Unsigned: Windows SmartScreen may warn before it runs. SHA-256:"
               echo
@@ -142,7 +142,7 @@ jobs:
           ran: ran.txt
           checks: |
             ${{ needs.bundle.result }} | the bundle built, and tested on Windows
-            ${{ needs.r.result }} | R-devel and R-release built, checked against CRAN's R, backends measured
+            ${{ needs.r.result }} | R-devel and R-release built and checked against CRAN's R
             ${{ vars.PUBLISH == 'true' && format('{0} | the installers published as releases', needs.publish.result) || '' }}
           results: results.txt
           files: ""

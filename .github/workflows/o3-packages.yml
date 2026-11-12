@@ -10,7 +10,7 @@ name: Rblas.dll with -O3, CRAN and recommended packages
 # others (tests/cran-others-sample.sh), which reach the BLAS only through
 # R's own functions, reported apart; as the CRAN binaries for that R
 # with the tests taken from their sources. R's own tests need R built with
-# that DLL (build-r.yml, experiment "Rblas -O3"). A
+# that DLL (o3-rtests.yml). A
 # package whose outputs differ runs once more each way, and a line counts
 # only if both runs of each side agree on it (tests/compare-optflags.R).
 on:

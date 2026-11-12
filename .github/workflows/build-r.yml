@@ -18,7 +18,9 @@ name: R with the R-core scripts
 # replaced by the branch the latest R-x-y-z tag was copied from, at the
 # revision copied, since R-core builds release in another way.
 # The test job then installs the installer and runs the checks of tests/
-# against it, and the measure job the measurements of the backends.
+# against it; measure.yml measures the backends of the latest installer.
+# The Rblas -O3 experiment (o3-rtests.yml) builds R without FlexiBLAS and
+# with R's own BLAS at -O3, and runs only the build job.
 # Called by chain.yml with the bundle of the same run, or on demand with
 # the latest bundle built from master's current sources.
 on:
@@ -26,6 +28,8 @@ on:
     inputs:
       r: {type: string, default: devel}
       backend: {type: string, default: OPENBLAS-OPENMP}
+      # set by o3-rtests.yml; empty in a dispatched run, which the
+      # expressions below read as none
       experiment: {type: string, default: none}
       build: {type: boolean, default: true}
       check: {type: boolean, default: true}
@@ -39,11 +43,6 @@ on:
       backend:
         description: FlexiBLAS backend for the build and checks
         default: OPENBLAS-OPENMP
-      experiment:
-        description: "Rblas -O3: R without FlexiBLAS, its own BLAS built with -O3 (patches/experiments/rblas-O3.diff); no test job"
-        type: choice
-        options: [none, Rblas -O3]
-        default: none
       r:
         description: The R to build, and to test against CRAN's build of the same
         type: choice
@@ -82,7 +81,7 @@ env:
 
 # runs that report to the same comment wait for each other rather than race
 concurrency:
-  group: build-r-${{ inputs.r }}-${{ inputs.experiment }}-${{ inputs.target }}
+  group: build-r-${{ inputs.r }}-${{ inputs.experiment || 'none' }}-${{ inputs.target }}
   cancel-in-progress: false
 
 jobs:
@@ -91,9 +90,9 @@ jobs:
     runs-on: ${{ inputs.target == 'aarch64' && 'windows-11-arm' || 'windows-latest' }}
     # x86_64 takes 70-90 minutes with the checks; aarch64 has no record yet
     timeout-minutes: ${{ inputs.target == 'aarch64' && 360 || 190 }}
-    # the test and measure jobs need the installer, not a build without a
-    # failed check: a check that fails (a network test of R's, say) must
-    # not hide what they show
+    # the test job and measure.yml need the installer, not a build
+    # without a failed check: a check that fails (a network test of R's,
+    # say) must not hide what they show
     outputs:
       installer: ${{ steps.upload.outcome }}
     steps:
@@ -127,6 +126,8 @@ jobs:
       # in build-bundle.yml.
       - name: Find the bundle
         id: build
+        # an experiment builds R without FlexiBLAS
+        if: (inputs.experiment || 'none') == 'none'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -160,6 +161,7 @@ jobs:
 
       - uses: actions/download-artifact@v8
         id: download
+        if: (inputs.experiment || 'none') == 'none'
         with:
           name: ${{ env.BUNDLE }}
           path: dist
@@ -249,7 +251,7 @@ jobs:
             i=$((i + 1))
             cp "$p" "/c/rbuild/r_${i}_$(basename "$p" .patch).diff"
           done
-          if [ "${{ inputs.experiment }}" = "Rblas -O3" ]; then
+          if [ "${{ inputs.experiment || 'none' }}" = "Rblas -O3" ]; then
             # R's own BLAS, built with -O3 instead of -O2 (r76787)
             cp "$w/patches/experiments/rblas-O3.diff" /c/rbuild/r_201_rblas-O3.diff
           else
@@ -306,14 +308,14 @@ jobs:
           tail -30 build.log
           ls -la build
           # build.sh goes on after errors and pipes make through tee, so its
-          # products decide: patches/r all in the tree (each reverses
+          # products decide: patches/r (and an experiment's diff) all in the tree (each reverses
           # cleanly, which fails also for a missing file; build.sh does not
           # check patch's status), the installer, and checks without make
           # errors
           d=$(ls -d trunk patched 2>/dev/null | head -1)
           if [ -z "$d" ]; then r="not run, no R tree"; status=1
           else
-            bad=$(cd $d && for p in ../r_1[0-9][0-9]_*.diff; do patch --binary --dry-run -R -s -f -p0 < $p > /dev/null 2>&1 || echo ${p#../}; done)
+            bad=$(cd $d && for p in ../r_[12][0-9][0-9]_*.diff; do patch --binary --dry-run -R -s -f -p0 < $p > /dev/null 2>&1 || echo ${p#../}; done)
             r=ok; [ -z "$bad" ] || { r="not applied: $(echo $bad)"; echo "::error::$r"; status=1; }
           fi
           echo "patches=$r" >> $GITHUB_OUTPUT
@@ -342,7 +344,7 @@ jobs:
           exec > >(tee /c/rbuild/install.log) 2>&1
           # build.sh names the release installer as the patched one
           /c/rbuild/build/R-${{ inputs.r == 'devel' && 'devel' || 'patched' }}-win.exe //VERYSILENT //SUPPRESSMSGBOXES //NORESTART //CURRENTUSER //DIR='C:\R-inst'
-          if [ "${{ inputs.experiment }}" = none ]; then
+          if [ "${{ inputs.experiment || 'none' }}" = none ]; then
             ls /c/R-inst/$RBIN/flexiblas /c/R-inst/etc
             for b in NETLIB OPENBLAS-OPENMP OPENBLAS-THREADS; do
               FLEXIBLAS=$b /c/R-inst/bin/Rscript -e 'cat(extSoftVersion()[["BLAS"]], La_library(), sep = "\n")'
@@ -362,7 +364,7 @@ jobs:
         id: upload
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         with:
-          name: R-${{ inputs.r }}${{ inputs.experiment != 'none' && '-experiment' || '' }}-installer${{ env.SUFFIX }}
+          name: R-${{ inputs.r }}${{ (inputs.experiment || 'none') != 'none' && '-experiment' || '' }}-installer${{ env.SUFFIX }}
           path: |
             C:/rbuild/build/R-*-win.exe
             C:/rbuild/build/R-info.txt
@@ -371,7 +373,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: R-${{ inputs.r }}${{ inputs.experiment != 'none' && '-experiment' || '' }}-logs${{ env.SUFFIX }}
+          name: R-${{ inputs.r }}${{ (inputs.experiment || 'none') != 'none' && '-experiment' || '' }}-logs${{ env.SUFFIX }}
           path: |
             C:/rbuild/build/*.out
             C:/rbuild/*.log
@@ -386,7 +388,7 @@ jobs:
           set +e
           b=/c/rbuild
           # what ran, and the results of the checks of R's own
-          { echo "R-${{ inputs.r }}$([ -f $b/build/svn_revision ] && echo " r$(cat $b/build/svn_revision)") for ${{ inputs.target }}, checks with FLEXIBLAS=${{ inputs.backend }}${{ inputs.experiment != 'none' && format(', experiment {0}', inputs.experiment) || '' }}"
+          { echo "R-${{ inputs.r }}$([ -f $b/build/svn_revision ] && echo " r$(cat $b/build/svn_revision)") for ${{ inputs.target }}, checks with FLEXIBLAS=${{ inputs.backend }}${{ (inputs.experiment || 'none') != 'none' && format(', experiment {0}', inputs.experiment) || '' }}"
             cat /c/bundle.txt 2>/dev/null
             echo "toolchain $TOOLCHAIN, Tcl/Tk $TCLTK"; } > ran.txt
           {
@@ -427,20 +429,20 @@ jobs:
       - uses: ./.github/actions/report
         if: always()
         with:
-          key: R with the R-core scripts (${{ inputs.r }}${{ inputs.experiment != 'none' && format(', {0}', inputs.experiment) || '' }}${{ env.SUFFIX && format(', {0}', inputs.target) || '' }})
+          key: R with the R-core scripts (${{ inputs.r }}${{ (inputs.experiment || 'none') != 'none' && format(', {0}', inputs.experiment) || '' }}${{ env.SUFFIX && format(', {0}', inputs.target) || '' }})
           status: ${{ job.status }}
           ran: ran.txt
           checks: |
             ${{ steps.names.outcome }} | toolchain and Tcl/Tk names from the Dockerfile
-            ${{ steps.build.outcome }} | a bundle built from the current sources
-            ${{ steps.download.outcome }} | the bundle downloaded
+            ${{ (inputs.experiment || 'none') == 'none' && format('{0} | a bundle built from the current sources', steps.build.outcome) || '' }}
+            ${{ (inputs.experiment || 'none') == 'none' && format('{0} | the bundle downloaded', steps.download.outcome) || '' }}
             ${{ steps.fetch.outcome }} | R-core's scripts and patches fetched
             ${{ steps.rdevweb.outcome }} | patches/r-dev-web applied
             ${{ steps.msys2.outcome }} | the runner's MSYS2 moved aside
             ${{ steps.setup.outcome }} | setup.ps1
             ${{ steps.toolchain.outcome }} | toolchain tarball and Tcl/Tk bundle
-            ${{ steps.prepare.outcome }} | FlexiBLAS bundle and patches/r in place
-            ${{ steps.buildsh.outputs.patches || steps.buildsh.outcome }} | build.sh, patches/r applied
+            ${{ steps.prepare.outcome }} | ${{ (inputs.experiment || 'none') == 'none' && 'FlexiBLAS bundle and patches/r in place' || 'patches/r and the experiment diff in place' }}
+            ${{ steps.buildsh.outputs.patches || steps.buildsh.outcome }} | build.sh, patches/r (and an experiment's diff) applied
             ${{ steps.buildsh.outputs.installer || steps.buildsh.outcome }} | build.sh, installer
             ${{ steps.buildsh.outputs.checkdevel }} | make check-devel without make errors
             ${{ steps.buildsh.outputs.checkall }} | make check-all without make errors
@@ -458,7 +460,7 @@ jobs:
   test:
     name: Test the installed R
     needs: build
-    if: ${{ !cancelled() && (needs.build.outputs.installer == 'success' || needs.build.result == 'skipped') && inputs.experiment == 'none' }}
+    if: ${{ !cancelled() && (needs.build.outputs.installer == 'success' || needs.build.result == 'skipped') && (inputs.experiment || 'none') == 'none' }}
     timeout-minutes: 160
     runs-on: ${{ inputs.target == 'aarch64' && 'windows-11-arm' || 'windows-latest' }}
     steps:
@@ -471,8 +473,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # a failed build uploads its installer too, for its own test and
-          # measure jobs; only a successful run's is reused
+          # a failed build uploads its installer too, for its own test
+          # job; only a successful run's is reused
           $id = $null
           foreach ($r in (gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts?name=R-${{ inputs.r }}-installer$env:SUFFIX&per_page=50" --jq '.artifacts[] | select(.expired | not) | .workflow_run.id')) {
             if ((gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$r" --jq .conclusion) -eq "success") { $id = $r; break }
@@ -699,7 +701,7 @@ jobs:
       # What ran, every step's outcome as a check (a verdict is a step
       # outcome, never a pattern found in a log), then the results the
       # checks report; the logs themselves are collapsed. The measurements
-      # are the measure job's.
+      # are measure.yml's.
       - name: Summarise
         if: always()
         shell: bash
@@ -755,155 +757,12 @@ jobs:
             identical.log
             exports.log
 
-  # The measurements of the backends on the built R, apart from the checks:
-  # each fails only if a run crashes or hangs, and the results are
-  # reported, with what is expected next to them.
-  measure:
-    name: Measure the backends of the installed R
-    needs: build
-    if: ${{ !cancelled() && (needs.build.outputs.installer == 'success' || needs.build.result == 'skipped') && inputs.experiment == 'none' }}
-    timeout-minutes: 60
-    runs-on: ${{ inputs.target == 'aarch64' && 'windows-11-arm' || 'windows-latest' }}
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Find the latest installer of the same R
-        id: prev
-        if: ${{ !inputs.build }}
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # a failed build uploads its installer too, for its own test and
-          # measure jobs; only a successful run's is reused
-          $id = $null
-          foreach ($r in (gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts?name=R-${{ inputs.r }}-installer$env:SUFFIX&per_page=50" --jq '.artifacts[] | select(.expired | not) | .workflow_run.id')) {
-            if ((gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$r" --jq .conclusion) -eq "success") { $id = $r; break }
-          }
-          if (-not $id) { throw "no R-${{ inputs.r }}-installer$env:SUFFIX from a successful run; build one first" }
-          "run_id=$id" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: R-${{ inputs.r }}-installer${{ env.SUFFIX }}
-          path: inst
-          run-id: ${{ steps.prev.outputs.run_id || github.run_id }}
-          github-token: ${{ github.token }}
-
-      - uses: r-lib/actions/setup-r@v2
-        with:
-          r-version: ${{ inputs.r == 'patched' && 'next' || inputs.r }}
-          rtools-version: '45'
-
-      - name: Reference results with CRAN's build of the same R, with R's own BLAS and LAPACK
-        id: ref
-        timeout-minutes: 5
-        shell: bash
-        run: |
-          Rscript -e "stopifnot(identical(R.version[['arch']], '${{ inputs.target == 'aarch64' && 'aarch64' || 'x86_64' }}'))"
-          Rscript tests/test-nan.R propagate ref
-          Rscript tests/test-chol.R "R's own" 2>&1 | tee chol.log
-
-      - name: Install R and the flexiblas package
-        id: install
-        timeout-minutes: 15
-        uses: ./.github/actions/install-built-r
-        with:
-          rbin: ${{ env.RBIN }}
-
-      - name: chol() with non-finite input
-        id: chol
-        if: always() && steps.install.outcome == 'success'
-        timeout-minutes: 5
-        shell: bash
-        run: |
-          for b in NETLIB OPENBLAS-OPENMP OPENBLAS-THREADS; do
-            FLEXIBLAS=$b Rscript tests/test-chol.R 2>&1 | tee -a chol.log
-          done
-
-      - name: NA/NaN/Inf propagation through FlexiBLAS backends
-        id: nan
-        if: always() && steps.install.outcome == 'success'
-        timeout-minutes: 5
-        # against R's own, saved by the reference step; without it test-nan.R
-        # would compare with the first backend
-        shell: bash
-        run: |
-          [ -f nan-ref.rds ] || { echo "::error::no nan-ref.rds from the reference step"; exit 1; }
-          Rscript tests/test-nan.R propagate cmp 2>&1 | tee nan.log
-
-      # A measurement, but a crash or a hang (the 64-thread product is the
-      # one place where a count above the core count reaches dgemm) fails
-      # the step and the job.
-      - name: Memory use
-        id: memory
-        if: always() && steps.install.outcome == 'success'
-        timeout-minutes: 5
-        shell: bash
-        run: |
-          for b in OPENBLAS-OPENMP OPENBLAS-THREADS; do
-            Rscript tests/test-memory.R $b 2>&1 | tee -a memory.log
-            OPENBLAS_NUM_THREADS=1 Rscript tests/test-memory.R $b 2>&1 | tee -a memory.log
-            OMP_NUM_THREADS=1 Rscript tests/test-memory.R $b 2>&1 | tee -a memory.log
-          done
-
-      - name: BLAS called from OpenMP threads with a static libgomp
-        id: ompcaller
-        if: always() && steps.install.outcome == 'success'
-        timeout-minutes: 10
-        shell: bash
-        # large calls, and many small ones, where a server that serialises
-        # callers would show
-        run: |
-          Rscript tests/test-omp-caller.R 2>&1 | tee omp-caller.log
-          Rscript tests/test-omp-caller.R 200 200 2>&1 | tee -a omp-caller.log
-          Rscript tests/test-omp-caller.R 64 1000 2>&1 | tee -a omp-caller.log
-
-      - name: Summarise
-        if: always()
-        shell: bash
-        run: |
-          set +e
-          line() { grep -m1 "$2" "$1" 2>/dev/null || echo "not found in $1"; }
-          { echo "$(Rscript -e 'cat(R.version.string)' 2>/dev/null), installer from run ${{ steps.prev.outputs.run_id || github.run_id }}"
-            echo "reference: CRAN's build of the same R"; } > ran.txt
-          {
-            echo "nan.log (6 expected: dpotrf at six sizes for the two OpenBLAS backends): $(line nan.log 'results differ')"
-            n=$(grep -c 'NaN on the diagonal' chol.log 2>/dev/null)
-            echo "chol.log, NaN on the diagonal: ${n:-no} BLAS/LAPACK sets, $(grep -c 'NaN on the diagonal.*error:' chol.log 2>/dev/null) give an error (2 of 4 expected: R's own and NETLIB test the pivot with disnan(), OpenBLAS's dpotrf does not)"
-            echo "memory.log, private bytes after loading the backend:"
-            awk '/^backend:/ {b = $2; ob = $5; om = $8} /loaded,/ {found = 1; printf "  %-18s OPENBLAS_NUM_THREADS=%-7s OMP_NUM_THREADS=%-7s %s threads, %s MB\n", b, ob, om, $3, $6} END {if (!found) print "  not found in memory.log"}' memory.log 2>/dev/null || echo "  not found in memory.log"
-            echo "omp-caller.log: process thread counts with as many OpenMP callers as cores and as many BLAS threads, n = 1000:"
-            awk '/^cores:/ {c = $2; p = ($4 == 1000)} p && $2 == c && $3 == c {found = 1; printf "  %-18s %s threads, %s s\n", $1, $5, $4} END {if (!found) print "  not found in omp-caller.log"}' omp-caller.log 2>/dev/null || echo "  not found in omp-caller.log"
-          } > results.txt 2>&1
-          cat ran.txt results.txt
-
-      - uses: ./.github/actions/report
-        if: always()
-        with:
-          key: R with the R-core scripts (${{ inputs.r }}, backends${{ env.SUFFIX && format(', {0}', inputs.target) || '' }})
-          status: ${{ job.status }}
-          ran: ran.txt
-          checks: |
-            ${{ steps.ref.outcome }} | reference results from CRAN's R
-            ${{ steps.install.outcome }} | installer and flexiblas package install
-            ${{ steps.chol.outcome }} | chol() with non-finite input runs, per backend
-            ${{ steps.nan.outcome }} | NA/NaN/Inf propagation runs, backends vs R's own
-            ${{ steps.memory.outcome }} | memory use runs, per backend and thread setting
-            ${{ steps.ompcaller.outcome }} | dgemm from OpenMP threads with a static libgomp runs
-          results: results.txt
-          files: |
-            nan.log
-            chol.log
-            memory.log
-            omp-caller.log
-
-  # The test and backends comments would otherwise keep the previous run's
-  # status when the build fails and the jobs are skipped.
+  # The test comment would otherwise keep the previous run's status when
+  # the build fails and the test job is skipped.
   test-not-run:
     name: Test not run
-    needs: [build, test, measure]
-    if: always() && needs.test.result == 'skipped' && inputs.experiment == 'none'
+    needs: [build, test]
+    if: always() && needs.test.result == 'skipped' && (inputs.experiment || 'none') == 'none'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -912,11 +771,4 @@ jobs:
           key: R with the R-core scripts (${{ inputs.r }}, test${{ env.SUFFIX && format(', {0}', inputs.target) || '' }})
           status: not run
           verdict: the build job ended with ${{ needs.build.result }}, so there was no installer to test
-          files: ""
-      - uses: ./.github/actions/report
-        if: always()
-        with:
-          key: R with the R-core scripts (${{ inputs.r }}, backends${{ env.SUFFIX && format(', {0}', inputs.target) || '' }})
-          status: not run
-          verdict: the build job ended with ${{ needs.build.result }}, so there was no installer to measure
           files: ""

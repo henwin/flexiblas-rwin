@@ -1,0 +1,30 @@
+name: Rblas.dll with -O3, R's own tests
+
+# R's regression tests and the checks of the recommended packages, which
+# compare their output with saved output, on R built without FlexiBLAS and
+# with its own BLAS compiled with -O3 instead of -O2 (r76787 reverted,
+# patches/experiments/rblas-O3.diff). They cannot run from CRAN's binary
+# installation, which ships only part of tests/, so build-r.yml builds R
+# with the R-core scripts and runs make check-devel and check-all; its
+# build job fails unless the diff is in the tree and both checks finish
+# without make errors.
+on:
+  workflow_dispatch:
+    inputs:
+      r:
+        description: The R to build
+        type: choice
+        options: [devel, patched, release]
+        default: devel
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-r.yml
+    with:
+      r: ${{ inputs.r }}
+      experiment: Rblas -O3
