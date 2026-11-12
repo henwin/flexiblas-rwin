@@ -65,7 +65,7 @@ jobs:
           echo "sources: $R_SVN_PATH at r$R_SVN_REV"
           mkdir -p src work
           for f in blas.f blas2.f90 cmplxblas.f cmplxblas2.f90 Rblas.def; do
-            curl -sSf -o "src/$f" "https://svn.r-project.org/R/$R_SVN_PATH/src/extra/blas/$f?p=$R_SVN_REV"
+            curl -sSf -o "src/$f" "https://svn.r-project.org/R/$R_SVN_PATH/src/extra/blas/$f?p=$R_SVN_REV" || exit 1
           done
           cd work
           bash ../tests/blas-bitwise.sh ../src "$rhome" 2>&1 | tee ../blas-bitwise.log
