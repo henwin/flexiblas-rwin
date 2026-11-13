@@ -22,7 +22,7 @@ Index: doc/manual/rw-FAQ.texi
 ===================================================================
 --- doc/manual/rw-FAQ.texi	(revision 90763)
 +++ doc/manual/rw-FAQ.texi	(working copy)
-@@ -1761,6 +1761,12 @@
+@@ -1761,6 +1761,26 @@
  
  With a native build of R on ARM, exclude @file{\x64} from the above.
  
@@ -31,6 +31,20 @@ Index: doc/manual/rw-FAQ.texi
 +at run time instead: set the environment variable @env{FLEXIBLAS},
 +for example to @code{OPENBLAS-OPENMP}, before starting R, or change the
 +default in @file{R_HOME\etc\flexiblasrc}.
++
++The two @I{OpenBLAS} backends differ in their threads.  With no variable
++set, both use every core, up to 64.  @code{OPENBLAS-OPENMP}, the
++@I{OpenBLAS} of @I{Rtools}, takes its count from @env{OMP_NUM_THREADS},
++capped by @env{OMP_THREAD_LIMIT}, and ignores @env{OPENBLAS_NUM_THREADS}.
++It has its own copy of the @I{OpenMP} run time, so it does not see the
++parallel region of a package that calls the BLAS from several @I{OpenMP}
++threads: such calls run one at a time, and each calling thread keeps a
++team of threads of its own.  @code{OPENBLAS-THREADS} keeps one pool of
++threads for all callers and takes its count from
++@env{OPENBLAS_NUM_THREADS} or @env{OMP_NUM_THREADS}, but not from
++@env{OMP_THREAD_LIMIT}.  With code that runs threads of its own, one BLAS
++thread avoids running more threads than cores.  On x86_64 @I{OpenBLAS}
++commits 128MB of memory per thread and keeps it until R exits.
 +
  @c Versions of Dr Kazushige Goto's BLAS (see
  @c @uref{https://en.wikipedia.org/wiki/Kazushige_Goto}) for 64-bit Windows
