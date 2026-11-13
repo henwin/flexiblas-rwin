@@ -135,14 +135,17 @@ jobs:
       - name: BLAS called from OpenMP threads with a static libgomp
         id: ompcaller
         if: always() && steps.install.outcome == 'success'
-        timeout-minutes: 10
+        timeout-minutes: 15
         shell: bash
         # large calls, and many small ones, where a server that serialises
         # callers would show
         run: |
-          Rscript tests/test-omp-caller.R 2>&1 | tee omp-caller.log
-          Rscript tests/test-omp-caller.R 200 200 2>&1 | tee -a omp-caller.log
-          Rscript tests/test-omp-caller.R 64 1000 2>&1 | tee -a omp-caller.log
+          # one process per backend, so that its thread count is its own
+          bs=$(Rscript -e 'cat(setdiff(flexiblas::flexiblas_list(), "__FALLBACK__"))')
+          [ -n "$bs" ] || { echo "::error::flexiblas_list() gave no backends"; exit 1; }
+          for b in $bs; do
+            for a in "1000 2" "200 200" "64 1000"; do FLEXIBLAS=$b Rscript tests/test-omp-caller.R $a $b; done
+          done 2>&1 | tee omp-caller.log
 
       - name: Summarise
         if: always()
@@ -270,9 +273,12 @@ jobs:
         if: always() && steps.openblas.outcome == 'success'
         timeout-minutes: 15
         run: |
-          Rscript tests/test-omp-caller.R 2>&1 | tee omp-caller.log
-          Rscript tests/test-omp-caller.R 200 200 2>&1 | tee -a omp-caller.log
-          Rscript tests/test-omp-caller.R 64 1000 2>&1 | tee -a omp-caller.log
+          # one process per backend, so that its thread count is its own
+          bs=$(Rscript -e 'cat(setdiff(flexiblas::flexiblas_list(), "__FALLBACK__"))')
+          [ -n "$bs" ] || { echo "::error::flexiblas_list() gave no backends"; exit 1; }
+          for b in $bs; do
+            for a in "1000 2" "200 200" "64 1000"; do FLEXIBLAS=$b Rscript tests/test-omp-caller.R $a $b; done
+          done 2>&1 | tee omp-caller.log
           # the pthreads server prints a warning per call from a parallel
           # region; count them rather than show them
           n=$(grep -c 'Detect OpenMP Loop' omp-caller.log || true); grep -v 'Detect OpenMP Loop' omp-caller.log > omp-caller-short.log || true

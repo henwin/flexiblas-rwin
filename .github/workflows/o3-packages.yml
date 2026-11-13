@@ -265,6 +265,7 @@ jobs:
             Failed or timed out: failed.txt
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: summary
           path: |

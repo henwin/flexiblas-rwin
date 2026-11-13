@@ -3,8 +3,10 @@
 ## OpenMP flags, so on Windows with its own static libgomp like a package),
 ## against each FlexiBLAS backend with the default BLAS thread count and
 ## with one. Records the time and how many threads the process has
-## afterwards, since the libgomp pools and the OpenBLAS workers stay.
-##   Rscript test-omp-caller.R [n] [reps]
+## afterwards, since the libgomp pools and the OpenBLAS workers stay; a
+## backend given runs alone, and with FLEXIBLAS set to it that count is
+## that backend's.
+##   Rscript test-omp-caller.R [n] [reps] [backend]
 args <- commandArgs(TRUE)
 n <- if (length(args)) as.integer(args[1]) else 1000L
 reps <- if (length(args) > 1) as.integer(args[2]) else 2L
@@ -28,7 +30,8 @@ threads <- function() {
 }
 cores <- parallel::detectCores()
 fb <- requireNamespace("flexiblas", quietly = TRUE) && flexiblas::flexiblas_avail()
-backends <- if (fb) setdiff(flexiblas::flexiblas_list(), "__FALLBACK__") else "current BLAS"
+backends <- if (length(args) > 2) { stopifnot(fb); args[3] } else
+    if (fb) setdiff(flexiblas::flexiblas_list(), "__FALLBACK__") else "current BLAS"
 
 cat(R.version.string, "on", R.version$platform, "\n")
 cat("cores:", cores, " n:", n, " dgemm calls per OpenMP thread:", reps, "\n")
