@@ -68,7 +68,7 @@ for (be in grep("^OPENBLAS", flexiblas_list(), value = TRUE)) {
         ## OpenBLAS is built for (NUM_THREADS) and, in the OpenMP build,
         ## at OMP_THREAD_LIMIT, which is read by libgomp: the pthreads build
         ## has no OpenMP runtime and is outside that variable, as on Linux;
-        ## its caps are OPENBLAS_NUM_THREADS and OMP_NUM_THREADS.
+        ## those variables give only its count at load, not a cap.
         limit <- if (grepl("OPENMP", be)) as.integer(Sys.getenv("OMP_THREAD_LIMIT", k)) else k
         check(flexiblas_get_num_threads() == min(k, 64L, limit),
               sprintf("  %d thread(s) after the products (reports %d)", k,

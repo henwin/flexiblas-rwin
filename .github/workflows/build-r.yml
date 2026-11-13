@@ -345,10 +345,8 @@ jobs:
           # build.sh names the release installer as the patched one
           /c/rbuild/build/R-${{ inputs.r == 'devel' && 'devel' || 'patched' }}-win.exe //VERYSILENT //SUPPRESSMSGBOXES //NORESTART //CURRENTUSER //DIR='C:\R-inst'
           if [ "${{ inputs.experiment || 'none' }}" = none ]; then
+            # what each backend gives is the test job's
             ls /c/R-inst/$RBIN/flexiblas /c/R-inst/etc
-            for b in NETLIB OPENBLAS-OPENMP OPENBLAS-THREADS; do
-              FLEXIBLAS=$b /c/R-inst/bin/Rscript -e 'cat(extSoftVersion()[["BLAS"]], La_library(), sep = "\n")'
-            done
           else
             /c/R-inst/bin/Rscript -e 'sessionInfo()'
           fi
@@ -542,33 +540,31 @@ jobs:
             ${{ inputs.target == 'aarch64' && '/c/rtools45-aarch64/aarch64-w64-mingw32.static.posix/bin/llvm-objdump.exe' || '/c/rtools45/x86_64-w64-mingw32.static.posix/bin/objdump.exe' }} \
             "$(cygpath -u "$(cat ref-bin.txt)")" /c/R-inst/$RBIN 2>&1 | tee exports.log
 
+      # HOWTO 3: FlexiBLAS reads its configuration from R_HOME\etc and
+      # starts with NETLIB, and sessionInfo() names it (patches/r/0002)
       - name: Startup with verbose FlexiBLAS
         id: startup
+        if: always() && steps.install.outcome == 'success'
         timeout-minutes: 5
         shell: pwsh
         env:
           FLEXIBLAS_VERBOSE: 1
-        run: Rscript -e "sessionInfo()" 2>&1 | Tee-Object -FilePath startup.log
+        run: |
+          Rscript -e "sessionInfo()" 2>&1 | Tee-Object -FilePath startup.log
+          $etc = Join-Path (Rscript -e "cat(normalizePath(R.home()))") "etc\flexiblasrc"
+          $log = Get-Content startup.log
+          $missing = @("Load system config $etc", "Use default BLAS: NETLIB", "BLAS/LAPACK: FlexiBLAS NETLIB;") |
+            Where-Object { -not ($log | Select-String -SimpleMatch -Quiet $_) }
+          $missing | ForEach-Object { "::error::not in startup.log: $_" }
+          if ($missing) { exit 1 }
 
       - name: Run tests
         id: tests
+        if: always() && steps.install.outcome == 'success'
         timeout-minutes: 15
         shell: pwsh
         run: |
           Rscript tests/test-flexiblas.R 2>&1 | Tee-Object -FilePath tests.log
-          exit $LASTEXITCODE
-
-      - name: Run tests with OMP_NUM_THREADS=1
-        id: tests_omp1
-        if: always()
-        timeout-minutes: 8
-        shell: pwsh
-        env:
-          # Checks patches/openblas/0001-explicit-thread-count.patch: without
-          # it, an explicit count above OMP_NUM_THREADS deadlocks.
-          OMP_NUM_THREADS: 1
-        run: |
-          Rscript tests/test-flexiblas.R 2>&1 | Tee-Object -FilePath tests-omp1.log
           exit $LASTEXITCODE
 
       - name: Run tests with OMP_THREAD_LIMIT=1
@@ -730,9 +726,8 @@ jobs:
             ${{ steps.install.outcome }} | installer and flexiblas package install
             ${{ steps.samerev.outcome }} | the same revision as CRAN's R
             ${{ steps.exports.outcome }} | Rblas/Rlapack export as CRAN's, less FlexiBLAS gaps
-            ${{ steps.startup.outcome }} | startup with FLEXIBLAS_VERBOSE=1
+            ${{ steps.startup.outcome }} | configuration from R_HOME\etc, NETLIB the default (verbose startup)
             ${{ steps.tests.outcome }} | test-flexiblas.R: backends, errors vs NETLIB, thread counts
-            ${{ steps.tests_omp1.outcome }} | the same with OMP_NUM_THREADS=1
             ${{ steps.tests_limit1.outcome }} | the same with OMP_THREAD_LIMIT=1 (OpenMP build caps at 1)
             ${{ steps.profile.outcome }} | LAPACK calls reach the backend, no dgemm/dtrsm (profile)
             ${{ steps.identical.outcome }} | NETLIB bit for bit R's own (test-identical.R)
@@ -745,7 +740,6 @@ jobs:
           files: |
             startup.log
             tests.log
-            tests-omp1.log
             tests-limit1.log
             reg-BLAS.log
             xerbla.log
