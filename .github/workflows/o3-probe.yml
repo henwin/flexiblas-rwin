@@ -20,6 +20,8 @@ on:
 
 env:
   OPTFLAGS_WORK: ${{ github.workspace }}\optflags-work
+  # every difference in the log: the point is to find them
+  COMPARE_DETAIL: '100000'
 
 permissions:
   contents: read
@@ -102,6 +104,15 @@ jobs:
           echo "== -O3 rebuild against the -O2 rebuild" | tee -a probe.log
           Rscript tests/compare-runs.R --blank "$W/out-R2/%s" "$W/out-O3/%s" $p 2>&1 | tee -a probe.log
           cp compare.tsv o3-vs-o2.tsv
+          # what the normalisation of --blank hides, reported only; elsewhere,
+          # so that compare.tsv stays that of the counted comparison
+          raw() { (cd "$RUNNER_TEMP" && Rscript "$GITHUB_WORKSPACE/tests/compare-runs.R" --plain "$@" $p) 2>&1 | tee -a probe.log; }
+          echo "== without normalisation: -O2 rebuild against CRAN's DLL" | tee -a probe.log
+          raw "$W/out-CRAN/%s,$W/out-CRANb/%s" "$W/out-R2/%s"
+          echo "== without normalisation: -O3 rebuild against CRAN's DLL" | tee -a probe.log
+          raw "$W/out-CRAN/%s,$W/out-CRANb/%s" "$W/out-O3/%s"
+          echo "== without normalisation: -O3 rebuild against the -O2 rebuild" | tee -a probe.log
+          raw "$W/out-R2/%s" "$W/out-O3/%s"
 
       - name: Summarise
         id: summarise
@@ -121,6 +132,15 @@ jobs:
             echo "-O3 rebuild against the -O2 rebuild, one run each: $(tests/optflags-verdict.sh o3-vs-o2.tsv)"
             [ -f probe.log ] && echo "runs that exited non-zero: $(grep -c ': exit status ' probe.log)" || echo "runs that exited non-zero: probe.log not found"
           } > results.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe
+          path: |
+            probe.log
+            blas-bitwise.log
+            *.tsv
 
       - uses: ./.github/actions/report
         if: always()

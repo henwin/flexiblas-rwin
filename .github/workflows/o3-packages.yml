@@ -28,8 +28,8 @@ on:
         description: Size and seed of the sample of the others
         default: '1000 1'
       detail:
-        description: Differences shown per output file
-        default: '3'
+        description: Differences shown per output file and kind
+        default: '100000'
       groups:
         description: Number of parallel jobs for the packages (at most 256)
         default: '64'
@@ -53,7 +53,7 @@ permissions:
 
 env:
   OPTFLAGS_WORK: ${{ github.workspace }}\optflags-work
-  COMPARE_DETAIL: ${{ inputs.detail || '3' }}
+  COMPARE_DETAIL: ${{ inputs.detail || '100000' }}
 
 # runs that report to the same comment wait for each other rather than race
 # (the base job's comment is shared by every set; runs with base are rare)
@@ -134,14 +134,21 @@ jobs:
           # one package at a time, so that a package that hangs costs only its own time
           run() {   # run package
             R=Rscript; [ "${1:0:2}" = O3 ] && R=/c/R-o3/bin/Rscript
-            timeout 3600 $R tests/compare-optflags.R test $1 default $2 > /dev/null 2>&1 || {
-              st=$?
+            st=0; timeout 3600 $R tests/compare-optflags.R test $1 default $2 > run.out 2>&1 || st=$?
+            sed "s/^/$2 $1| /" run.out >> runs.log
+            [ $st = 0 ] || {
               echo "$2 $1: exit status $st" | tee -a optflags.log
+              sed "s/^/$2 $1| /" run.out | tail -n 30 | tee -a optflags.log
               printf '%s\t%s\t%s\n' "$2" "$1" "$st" >> failed.tsv
               # timeout kills Rscript only; the Rterm it started and the R CMD
               # BATCH processes under it live on with the output files open
               [ $st != 124 ] || taskkill //F //T //IM Rterm.exe > /dev/null 2>&1 || true
-              # a killed run leaves a truncated .Rout, which must not be compared
+              # a killed run leaves a truncated .Rout, which must not be compared;
+              # its last lines go to the log first
+              for f in $(find "$OPTFLAGS_WORK/out-$1/$2" -name '*.Rout*' 2>/dev/null); do
+                echo "$2 $1: last lines of ${f##*/out-$1/}" | tee -a optflags.log
+                tail -n 15 "$f" | sed "s/^/$2 $1| /" | tee -a optflags.log
+              done
               rm -rf "$OPTFLAGS_WORK/out-$1/$2" || { sleep 10; rm -rf "$OPTFLAGS_WORK/out-$1/$2"; } ||
                 echo "$2 $1: output not removed" | tee -a optflags.log
             }
@@ -156,22 +163,30 @@ jobs:
           # R's home and the copy with the -O3 BLAS print as one (compare-runs.R)
           cmp() { Rscript tests/compare-runs.R --blank --home=C:/R-o3 --home=C:/R "$@"; }
           W=$OPTFLAGS_WORK
-          cmp "$W/out-O2/%s" "$W/out-O3/%s" $PKGS > pass1.log 2>&1
+          echo "== first runs, one each way" | tee -a optflags.log
+          cmp "$W/out-O2/%s" "$W/out-O3/%s" $PKGS 2>&1 | tee -a optflags.log
           differ=$(tr -d '\r' < compare.tsv | awk -F'\t' 'NR > 1 && $4 > 0 {print $1}')
           tr -d '\r' < compare.tsv | head -1 > result.part
           rest=$(comm -23 <(tr ' ' '\n' <<< "$PKGS" | sort) <(tr ' ' '\n' <<< "$differ" | sort))
           [ -z "$rest" ] || {
-            cmp "$W/out-O2/%s" "$W/out-O3/%s" $rest 2>&1 | tee -a optflags.log
+            # their counts; their lines are those of the first runs above
+            cmp "$W/out-O2/%s" "$W/out-O3/%s" $rest > /dev/null 2>&1
             tr -d '\r' < compare.tsv | tail -n +2 >> result.part
           }
           [ -z "$differ" ] || {
             # O2, O3, O3b, O2b: noise that follows the time of a run (a
             # web service limiting its calls, say) then differs within a set
             for p in $differ; do run O3b $p; run O2b $p; done
+            echo "== second runs, two each way" | tee -a optflags.log
             cmp "$W/out-O2/%s,$W/out-O2b/%s" "$W/out-O3/%s,$W/out-O3b/%s" $differ 2>&1 | tee -a optflags.log
             tr -d '\r' < compare.tsv | tail -n +2 >> result.part
           }
           mv result.part result.tsv
+          # what the normalisation of --blank hides, reported only; elsewhere,
+          # so that compare.tsv stays that of the counted comparison
+          echo "== first runs without normalisation" | tee -a optflags.log
+          (cd "$RUNNER_TEMP" && Rscript "$GITHUB_WORKSPACE/tests/compare-runs.R" --plain --home=C:/R-o3 --home=C:/R "$W/out-O2/%s" "$W/out-O3/%s" $PKGS) 2>&1 | tee -a optflags.log
+          echo "== end without normalisation" | tee -a optflags.log
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -183,6 +198,7 @@ jobs:
             result.tsv
             binary.tsv
             failed.tsv
+            runs.log
 
   summary:
     needs: packages
@@ -242,9 +258,15 @@ jobs:
           } > summary.txt
           cat summary.txt
           # the differing lines
-          grep -aE '^(  \S+: |    )' all.log > detail.txt || true
+          # the counted comparisons only; those without normalisation are in
+          # the job logs and the log-* artifacts
+          awk '/^== first runs without/ {raw = 1} /^== (end without|first runs, one)/ {raw = 0} !raw && /^(  [^ ]+: |    )/' all.log > detail.txt || true
           # the stable differences alone, first, since the detail is cut at the comment's size
-          awk '/ [0-9]+ stable differences$/ {p = 1; print; next} /^  [^ ]|^== |^total / {p = 0} p' all.log > differ.txt || true
+          # (from the second runs: a package whose first runs differ runs
+          # again, and only those runs decide; a group ends at the next first runs)
+          awk '/^== second runs/ {sec = 1} /^== first runs/ {sec = 0}
+               sec && / [0-9]+ stable differences( and a failure in one set of runs)?$/ {p = 1; print; next}
+               /^  [^ ]|^== |^total |^    and [0-9]+ (not counted|differences between the failed runs):$/ {p = 0} p' all.log > differ.txt || true
           # the runs that failed or timed out (124), which run of which package
           { awk -F'\t' '{print $1 " " $2 ": exit status " $3}' failed.tsv; grep -aE 'output not removed|^Error' all.log; } | sort > failed.txt || true
 
@@ -306,6 +328,11 @@ jobs:
             rm -f compare.tsv
             cmp "$W/out-O2/%s,$W/out-O2b/%s" "$W/out-O3/%s,$W/out-O3b/%s" 2>&1 | tee -a optflags.log
           fi
+          # what the normalisation of --blank hides, reported only; elsewhere,
+          # so that compare.tsv stays that of the counted comparison
+          echo "== first runs without normalisation" | tee -a optflags.log
+          (cd "$RUNNER_TEMP" && Rscript "$GITHUB_WORKSPACE/tests/compare-runs.R" --plain --home=C:/R-o3 --home=C:/R "$W/out-O2/%s" "$W/out-O3/%s" recommended) 2>&1 | tee -a optflags.log
+          echo "== end without normalisation" | tee -a optflags.log
 
       - name: Summarise
         id: summarise

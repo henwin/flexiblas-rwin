@@ -11,6 +11,8 @@
 ##   --need=NAME    an output every run must have (%s for the group)
 ##   --blank        blank addresses, timings and gc() tables first, for
 ##                  runs whose speed differs by design
+##   --plain        diff itself in place of tools::Rdiff, so that nothing
+##                  Rdiff drops or masks and no white space is ignored
 ##   --fail         exit 1 when an output differs or is missing, or the
 ##                  alternative fails an output a reference run passes
 ## The run's own directory and its name are replaced first, in any of the
@@ -29,13 +31,15 @@
 ##   unstable  otherwise: some run differs, but not stably;
 ##   missing   when a run lacks it.
 ## Prints the class of every output that is not the same, with up to
-## $COMPARE_DETAIL (3) differences, a line per group, and the counts per
-## group to compare.tsv.
+## $COMPARE_DETAIL (3) differences of each kind, each with its run (for an
+## output that differs, also those not counted; for one that failed in
+## every run, those between the runs), the last lines of every failed run,
+## a line per group, and the counts per group to compare.tsv.
 
 a <- commandArgs(TRUE)
 opt <- function(name) sub(sprintf("^--%s=", name), "", grep(sprintf("^--%s=", name), a, value = TRUE))
 homes <- opt("home"); drops <- opt("drop"); only <- opt("only"); need <- opt("need")
-blank <- "--blank" %in% a; fail <- "--fail" %in% a
+blank <- "--blank" %in% a; fail <- "--fail" %in% a; plain <- "--plain" %in% a
 a <- grep("^--", a, value = TRUE, invert = TRUE)
 ref <- strsplit(a[1], ",")[[1]]; alt <- strsplit(a[2], ",")[[1]]; groups <- a[-(1:2)]
 detail <- suppressWarnings(as.integer(Sys.getenv("COMPARE_DETAIL", "3")))
@@ -88,8 +92,13 @@ read <- function(run, g, f) {
     }
     NULL
 }
+## --plain: diff itself, without the lines Rdiff drops or masks and
+## without ignoring white space
 rdiff <- function(from, to, forEx) {
-    r <- tools::Rdiff(from, to, useDiff = TRUE, forEx = forEx, Log = TRUE)
+    r <- if (plain) {
+        out <- suppressWarnings(system2("diff", shQuote(c(from, to)), stdout = TRUE, stderr = TRUE))
+        list(status = if (is.null(attr(out, "status"))) 0L else attr(out, "status"), out = out)
+    } else tools::Rdiff(from, to, useDiff = TRUE, forEx = forEx, Log = TRUE)
     if (r$status > 1L) stop("diff failed: ", paste(r$out, collapse = "\n"))
     ## every byte a character, so that the regular expressions below take
     ## output that is not valid in the session's encoding
@@ -120,7 +129,7 @@ diffs <- function(out) {
                   show = c(out[h[k]], sprintf("< %s", l), sprintf("> %s", r))))
     }), recursive = FALSE)
 }
-show <- function(x) cat(sprintf("    %s\n", x$show[1]), if (length(x$show) > 1) sprintf("    %s\n", x$show[-1]), sep = "")
+show <- function(x) cat(sprintf("    %s: %s\n", x$run, x$show[1]), if (length(x$show) > 1) sprintf("    %s\n", x$show[-1]), sep = "")
 altfailed <- FALSE
 
 one <- function(g, f) {
@@ -128,18 +137,27 @@ one <- function(g, f) {
     miss <- c(ref, alt)[vapply(c(R, A), is.null, NA)]
     if (length(miss)) {
         cat(sprintf("  %s: missing in %s\n", f, paste(vapply(miss, name, ""), collapse = ", ")))
+        have <- c(ref, alt)[!vapply(c(R, A), is.null, NA)]
+        for (i in seq_len(min(detail, length(have))))
+            cat(sprintf("    %s| %s\n", name(have[i]), tail(readLines(Filter(Negate(is.null), c(R, A))[[i]]$file, warn = FALSE), 5)), sep = "")
         return("missing")
     }
     fr <- vapply(R, `[[`, NA, "failed"); fa <- vapply(A, `[[`, NA, "failed")
     if (any(fr) || any(fa)) {
         cat(sprintf("  %s: failed in %s\n", f, paste(vapply(c(ref[fr], alt[fa]), name, ""), collapse = ", ")))
+        for (i in seq_len(min(detail, sum(fr, fa))))
+            cat(sprintf("    %s| %s\n", name(c(ref[fr], alt[fa])[i]),
+                        tail(readLines(c(R[fr], A[fa])[[i]]$file, warn = FALSE), 15)), sep = "")
         if (any(fa) && !all(fr)) altfailed <<- TRUE
-        if (any(fr) == all(fr) && any(fa) == all(fa) && all(fr) != all(fa)) return("differ")
     }
+    ## the alternative runs all fail and the reference runs do not, or the
+    ## other way round: a difference whatever the lines show, which follow
+    byfail <- any(fr) == all(fr) && any(fa) == all(fa) && all(fr) != all(fa)
     forEx <- grepl("-Ex\\.Rout$", f)
     base <- R[[1]]$file
-    dr <- lapply(R[-1], function(x) diffs(rdiff(base, x$file, forEx)))
-    da <- lapply(A, function(x) diffs(rdiff(base, x$file, forEx)))
+    tag <- function(d, run) lapply(d, function(x) { x$run <- name(run); x })
+    dr <- Map(function(x, r) tag(diffs(rdiff(base, x$file, forEx)), r), R[-1], ref[-1])
+    da <- Map(function(x, r) tag(diffs(rdiff(base, x$file, forEx)), r), A, alt)
     noise <- unlist(lapply(dr, function(d) vapply(d, `[[`, "", "at")))
     changed <- unlist(lapply(dr, function(d) unlist(lapply(d, `[[`, "changed"))))
     ## the line after the header of system.time() and proc.time() in the
@@ -150,13 +168,20 @@ one <- function(g, f) {
     counts <- function(x) !(x$at %in% noise) && !(x$line && x$changed %in% changed)
     count <- lapply(da, Filter, f = counts)
     stable <- Reduce(intersect, lapply(count, function(d) vapply(d, `[[`, "", "what")))
-    if (length(stable)) {
-        cat(sprintf("  %s: %d stable differences\n", f, length(stable)))
+    if (length(stable) || byfail) {
+        cat(sprintf("  %s: %d stable differences%s\n", f, length(stable), if (byfail) " and a failure in one set of runs" else ""))
         for (x in head(Filter(function(x) x$what %in% stable, count[[1]]), detail)) show(x)
+        rest <- Filter(function(x) !(x$what %in% stable), unlist(c(dr, da), recursive = FALSE))
+        if (length(rest)) cat(sprintf("    and %d not counted:\n", length(rest)))
+        for (x in head(rest, detail)) show(x)
         return("differ")
     }
-    if (all(fr) && all(fa)) return("failed")
     u <- unlist(c(dr, da), recursive = FALSE)
+    if (all(fr) && all(fa)) {
+        if (length(u)) cat(sprintf("    and %d differences between the failed runs:\n", length(u)))
+        for (x in head(u, detail)) show(x)
+        return("failed")
+    }
     if (!length(u) && !any(fr) && !any(fa)) return("same")
     cat(sprintf("  %s: %d unstable differences\n", f, length(u)))
     for (x in head(u, detail)) show(x)
