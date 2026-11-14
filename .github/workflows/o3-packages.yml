@@ -1,18 +1,17 @@
 name: Rblas.dll with -O3, CRAN and recommended packages
 
-# What an Rblas.dll built with -O3 instead of -O2 (r76787) changes in the
-# output of examples and tests, with the CRAN R (devel by default, or
-# release) and its Rblas.dll against a copy of R whose Rblas.dll is rebuilt
-# with -O3 (.github/actions/rblas-o3): the recommended packages (job base),
-# and CRAN packages (job packages), by default those that call the BLAS or
-# LAPACK themselves (tests/cran-blas-users.sh: a DLL in their Windows binary
-# imports from Rblas.dll or Rlapack.dll), or a reproducible sample of the
-# others (tests/cran-others-sample.sh), which reach the BLAS only through
-# R's own functions, reported apart; as the CRAN binaries for that R
-# with the tests taken from their sources. R's own tests need R built with
-# that DLL (o3-rtests.yml). A
-# package whose outputs differ runs once more each way, and a difference
-# counts only if both runs of each side bear it out (tests/compare-runs.R).
+# What an Rblas.dll built with -O3 instead of -O2 (r76787) changes, with the
+# CRAN R (devel by default, or release) and its Rblas.dll against a copy of
+# R whose Rblas.dll is rebuilt with -O3 (.github/actions/rblas-o3): R CMD
+# check of the recommended packages (job base) and of CRAN packages (job
+# packages), by default those that call the BLAS or LAPACK themselves
+# (tests/cran-blas-users.sh: a DLL in their Windows binary imports from
+# Rblas.dll or Rlapack.dll), or a reproducible sample of the others
+# (tests/cran-others-sample.sh), reported apart. Each package is checked
+# under CRAN's R twice and under the -O3 copy, and tools::Rdiff of every
+# output against the first run is printed in full (tests/check-runs.sh);
+# the review is separate. R's own tests need R built with that DLL
+# (o3-rtests.yml).
 on:
   workflow_dispatch:
     inputs:
@@ -27,9 +26,6 @@ on:
       sample:
         description: Size and seed of the sample of the others
         default: '1000 1'
-      detail:
-        description: Differences shown per output file and kind
-        default: '100000'
       groups:
         description: Number of parallel jobs for the packages (at most 256)
         default: '64'
@@ -42,18 +38,11 @@ on:
         type: choice
         options: [devel, release]
         default: devel
-      summarise:
-        description: Only summarise the package logs of this earlier run (its id), for a run whose summary job failed; give the packages and set of that run too, which name its comment
-        default: ''
 
 permissions:
   actions: read
   contents: read
   issues: write
-
-env:
-  OPTFLAGS_WORK: ${{ github.workspace }}\optflags-work
-  COMPARE_DETAIL: ${{ inputs.detail || '100000' }}
 
 # runs that report to the same comment wait for each other rather than race
 # (the base job's comment is shared by every set; runs with base are rare)
@@ -63,7 +52,7 @@ concurrency:
 
 jobs:
   select:
-    if: inputs.packages != 'none' && inputs.summarise == ''
+    if: inputs.packages != 'none'
     runs-on: ubuntu-latest
     outputs:
       groups: ${{ steps.split.outputs.groups }}
@@ -122,87 +111,34 @@ jobs:
       - name: R with Rblas.dll built with -O3
         uses: ./.github/actions/rblas-o3
 
-      - name: Install the packages
+      - name: The dependencies
         shell: bash
-        run: |
-          Rscript -e 'cat(R.version.string, "\n")' > r-version.txt
-          Rscript tests/compare-optflags.R binary $PKGS 2>&1 | tee -a optflags.log
+        run: Rscript tests/install-deps.R $PKGS 2>&1 | tee install.log
 
-      - name: Run examples and tests
+      # short of the job's limit, so that the logs are still uploaded
+      - name: R CMD check under each DLL
+        timeout-minutes: 330
         shell: bash
         run: |
-          # one package at a time, so that a package that hangs costs only its own time
-          run() {   # run package
-            R=Rscript; [ "${1:0:2}" = O3 ] && R=/c/R-o3/bin/Rscript
-            st=0; timeout 3600 $R tests/compare-optflags.R test $1 default $2 > run.out 2>&1 || st=$?
-            sed "s/^/$2 $1| /" run.out >> runs.log
-            [ $st = 0 ] || {
-              echo "$2 $1: exit status $st" | tee -a optflags.log
-              sed "s/^/$2 $1| /" run.out | tail -n 30 | tee -a optflags.log
-              printf '%s\t%s\t%s\n' "$2" "$1" "$st" >> failed.tsv
-              # timeout kills Rscript only; the Rterm it started and the R CMD
-              # BATCH processes under it live on with the output files open
-              [ $st != 124 ] || taskkill //F //T //IM Rterm.exe > /dev/null 2>&1 || true
-              # a killed run leaves a truncated .Rout, which must not be compared;
-              # its last lines go to the log first
-              for f in $(find "$OPTFLAGS_WORK/out-$1/$2" -name '*.Rout*' 2>/dev/null); do
-                echo "$2 $1: last lines of ${f##*/out-$1/}" | tee -a optflags.log
-                tail -n 15 "$f" | sed "s/^/$2 $1| /" | tee -a optflags.log
-              done
-              rm -rf "$OPTFLAGS_WORK/out-$1/$2" || { sleep 10; rm -rf "$OPTFLAGS_WORK/out-$1/$2"; } ||
-                echo "$2 $1: output not removed" | tee -a optflags.log
-            }
-          }
-          # One run each way first: a file on which they agree line for line
-          # is the same whatever further runs would show. A package with a
-          # difference runs once more each way, and a line counts only if
-          # both runs of each side bear it out.
-          for p in $PKGS; do run O2 $p; run O3 $p; done
-          # The counts per package come from compare.tsv, each comparison
-          # adding its packages; result.tsv exists only when both passes are done.
-          # R's home and the copy with the -O3 BLAS print as one (compare-runs.R)
-          cmp() { Rscript tests/compare-runs.R --blank --home=C:/R-o3 --home=C:/R "$@"; }
-          W=$OPTFLAGS_WORK
-          echo "== first runs, one each way" | tee -a optflags.log
-          cmp "$W/out-O2/%s" "$W/out-O3/%s" $PKGS 2>&1 | tee -a optflags.log
-          differ=$(tr -d '\r' < compare.tsv | awk -F'\t' 'NR > 1 && $4 > 0 {print $1}')
-          tr -d '\r' < compare.tsv | head -1 > result.part
-          rest=$(comm -23 <(tr ' ' '\n' <<< "$PKGS" | sort) <(tr ' ' '\n' <<< "$differ" | sort))
-          [ -z "$rest" ] || {
-            # their counts; their lines are those of the first runs above
-            cmp "$W/out-O2/%s" "$W/out-O3/%s" $rest > /dev/null 2>&1
-            tr -d '\r' < compare.tsv | tail -n +2 >> result.part
-          }
-          [ -z "$differ" ] || {
-            # O2, O3, O3b, O2b: noise that follows the time of a run (a
-            # web service limiting its calls, say) then differs within a set
-            for p in $differ; do run O3b $p; run O2b $p; done
-            echo "== second runs, two each way" | tee -a optflags.log
-            cmp "$W/out-O2/%s,$W/out-O2b/%s" "$W/out-O3/%s,$W/out-O3b/%s" $differ 2>&1 | tee -a optflags.log
-            tr -d '\r' < compare.tsv | tail -n +2 >> result.part
-          }
-          mv result.part result.tsv
-          # what the normalisation of --blank hides, reported only; elsewhere,
-          # so that compare.tsv stays that of the counted comparison
-          echo "== first runs without normalisation" | tee -a optflags.log
-          (cd "$RUNNER_TEMP" && Rscript "$GITHUB_WORKSPACE/tests/compare-runs.R" --plain --home=C:/R-o3 --home=C:/R "$W/out-O2/%s" "$W/out-O3/%s" $PKGS) 2>&1 | tee -a optflags.log
-          echo "== end without normalisation" | tee -a optflags.log
+          h=$(cygpath -u "$R_HOME_DIR")
+          bash tests/check-runs.sh cran1="$h/bin" cran2="$h/bin" o3=/c/R-o3/bin -- $PKGS 2>&1 | tee check.log
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: log-${{ strategy.job-index }}
           path: |
-            optflags.log
-            r-version.txt
-            result.tsv
-            binary.tsv
-            failed.tsv
-            runs.log
+            check.log
+            install.log
+            chk-*/*.out
+            chk-*/*.Rcheck/00check.log
+            chk-*/*.Rcheck/00install.out
+            chk-*/*.Rcheck/*-Ex.Rout*
+            chk-*/*.Rcheck/tests/*.Rout*
 
   summary:
     needs: packages
-    if: always() && (inputs.summarise != '' || needs.packages.result != 'skipped')
+    if: always() && needs.packages.result != 'skipped'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -211,64 +147,35 @@ jobs:
         with:
           pattern: log-*
           merge-multiple: false
-          run-id: ${{ inputs.summarise || github.run_id }}
-          github-token: ${{ github.token }}
 
       - name: Summarise
         id: summarise
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cat log-*/optflags.log | tr -d '\r' > all.log
-          # the counts from the files the groups wrote; the log is the detail
-          cat log-*/result.tsv 2>/dev/null | tr -d '\r' | awk -F'\t' '$1 != "package"' > result.tsv
-          cat log-*/binary.tsv 2>/dev/null | tr -d '\r' > binary.tsv
-          cat log-*/failed.tsv 2>/dev/null | tr -d '\r' > failed.tsv
-          # the run the logs come from, when summarising an earlier one
-          run=${{ inputs.summarise || github.run_id }}
-          # the status is that of the run's group jobs, which have finished
-          # also when the run summarised is this one
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/jobs?per_page=100" --paginate \
+          cat log-*/check.log 2>/dev/null | tr -d '\r' > all.log
+          # the status is that of the group jobs, which have finished
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" --paginate \
             --jq '.jobs[] | select(.name | startswith("packages")) | .conclusion' > groups.txt
           g=$(grep -c . groups.txt || true); ok=$(grep -cx success groups.txt || true)
           if [ "$g" -gt 0 ] && [ "$ok" -eq "$g" ]; then st=success; else st=failure; fi
           echo "status=$st" >> $GITHUB_OUTPUT
           echo "groups=$ok of $g" >> $GITHUB_OUTPUT
-          echo "verdict=$(tests/optflags-verdict.sh result.tsv)" >> $GITHUB_OUTPUT
           {
-            echo "$(cat log-*/r-version.txt 2>/dev/null | tr -d '\r' | sort -u | head -1)"
             if [ -n "${{ inputs.packages }}" ]; then echo "packages: ${{ inputs.packages }}"
             elif [ "${{ inputs.set }}" = "sample of the others" ]; then echo "a sample of the packages that do not call the BLAS or LAPACK: size and seed ${{ inputs.sample }}"
             else echo "the packages that call the BLAS or LAPACK"; fi
-            echo "$g groups, run $run"
+            echo "$g groups"
           } > ran.txt
-          {
-            echo "logs downloaded: $(ls -d log-*/ 2>/dev/null | wc -l) of $g"
-            echo "groups with results: $(ls log-*/result.tsv 2>/dev/null | wc -l) of $g"
-            echo "packages compared: $(awk -F'\t' '$2 > 0' result.tsv | wc -l)"
-            echo "packages without output in any run:$(awk -F'\t' '$2 == 0 {printf " %s", $1}' result.tsv)"
-            echo "not installed: $(awk -F'\t' '$2 == "not installed"' binary.tsv | wc -l)"
-            echo "test runs that crashed or timed out: $(wc -l < failed.tsv)"
-            # result.tsv: package, files, same, differ, failed, missing, unstable
-            awk -F'\t' '{s += $3; d += $4; f += $5; m += $6; u += $7} END {printf "output files: %d same, %d differ, %d failed in every run, %d missing in some run, %d unstable within a set of runs\n", s, d, f, m, u}' result.tsv
-            echo "packages with output files that differ with the -O3 Rblas.dll:"
-            awk -F'\t' '$4 > 0 {print "  " $1 ": " $4}' result.tsv
-            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/jobs?per_page=100" --paginate \
-              --jq '.jobs[] | select(.conclusion == "failure") | "failed job: " + .name'
+          # the status of every check, and the outputs Rdiff found different:
+          # an index to the job logs and artifacts, which hold everything
+          grep -E '^(cran1|cran2|o3) [^ ]+: ' all.log > status.txt || true
+          awk '/^== / {h = $0; next} h != "" && $0 != "no differences" {print h} {h = ""}' all.log > differ.txt || true
+          { echo "checks: $(wc -l < status.txt), of which not finished: $(grep -c 'check did not finish' status.txt)"
+            echo "outputs Rdiff finds different, cran1 against cran2: $(grep -c ' chk-cran2/' differ.txt)"
+            echo "outputs Rdiff finds different, cran1 against o3: $(grep -c ' chk-o3/' differ.txt)"
           } > summary.txt
           cat summary.txt
-          # the differing lines
-          # the counted comparisons only; those without normalisation are in
-          # the job logs and the log-* artifacts
-          awk '/^== first runs without/ {raw = 1} /^== (end without|first runs, one)/ {raw = 0} !raw && /^(  [^ ]+: |    )/' all.log > detail.txt || true
-          # the stable differences alone, first, since the detail is cut at the comment's size
-          # (from the second runs: a package whose first runs differ runs
-          # again, and only those runs decide; a group ends at the next first runs)
-          awk '/^== second runs/ {sec = 1} /^== first runs/ {sec = 0}
-               sec && / [0-9]+ stable differences( and a failure in one set of runs)?$/ {p = 1; print; next}
-               /^  [^ ]|^== |^total |^    and [0-9]+ (not counted|differences between the failed runs):$/ {p = 0} p' all.log > differ.txt || true
-          # the runs that failed or timed out (124), which run of which package
-          { awk -F'\t' '{print $1 " " $2 ": exit status " $3}' failed.tsv; grep -aE 'output not removed|^Error' all.log; } | sort > failed.txt || true
 
       - uses: ./.github/actions/report
         if: always()
@@ -276,15 +183,13 @@ jobs:
           # named packages and the sample of the others in comments of their own
           key: ${{ github.workflow }}${{ inputs.packages != '' && ' (named packages)' || inputs.set == 'sample of the others' && ' (a sample of the other packages)' || '' }}
           status: ${{ steps.summarise.outcome == 'failure' && 'failure' || steps.summarise.outputs.status || needs.packages.result }}
-          verdict: ${{ steps.summarise.outputs.verdict }}
           ran: ran.txt
           checks: |
-            ${{ steps.summarise.outputs.status }} | every group job succeeded (${{ steps.summarise.outputs.groups }})
+            ${{ steps.summarise.outputs.status }} | every group job succeeded: dependencies installed and every check ran to its end (${{ steps.summarise.outputs.groups }})
           results: summary.txt
           files: |
-            Stable differences: differ.txt
-            Differences: detail.txt
-            Failed or timed out: failed.txt
+            Outputs that differ: differ.txt
+            Status of every check: status.txt
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -292,11 +197,12 @@ jobs:
           name: summary
           path: |
             all.log
-            result.tsv
+            status.txt
+            differ.txt
             summary.txt
 
   base:
-    if: inputs.base && inputs.summarise == ''
+    if: inputs.base
     runs-on: windows-latest
     timeout-minutes: 300
     steps:
@@ -310,52 +216,43 @@ jobs:
       - name: R with Rblas.dll built with -O3
         uses: ./.github/actions/rblas-o3
 
-      - name: The recommended packages
+      - name: R CMD check under each DLL
         id: base
         shell: bash
         run: |
-          Rscript tests/compare-optflags.R base O2 2>&1 | tee -a optflags.log
-          /c/R-o3/bin/Rscript tests/compare-optflags.R base O3 2>&1 | tee -a optflags.log
-          # as for the packages: a second run each way only when they differ;
-          # compare.tsv is that of the last comparison that completed
-          rm -f compare.tsv
-          cmp() { Rscript tests/compare-runs.R --blank --home=C:/R-o3 --home=C:/R "$@" recommended; }
-          W=$OPTFLAGS_WORK
-          cmp "$W/out-O2/%s" "$W/out-O3/%s" 2>&1 | tee -a optflags.log
-          if tr -d '\r' < compare.tsv | awk -F'\t' 'NR > 1 && $4 > 0 {d = 1} END {exit !d}'; then
-            /c/R-o3/bin/Rscript tests/compare-optflags.R base O3b 2>&1 | tee -a optflags.log
-            Rscript tests/compare-optflags.R base O2b 2>&1 | tee -a optflags.log
-            rm -f compare.tsv
-            cmp "$W/out-O2/%s,$W/out-O2b/%s" "$W/out-O3/%s,$W/out-O3b/%s" 2>&1 | tee -a optflags.log
-          fi
-          # what the normalisation of --blank hides, reported only; elsewhere,
-          # so that compare.tsv stays that of the counted comparison
-          echo "== first runs without normalisation" | tee -a optflags.log
-          (cd "$RUNNER_TEMP" && Rscript "$GITHUB_WORKSPACE/tests/compare-runs.R" --plain --home=C:/R-o3 --home=C:/R "$W/out-O2/%s" "$W/out-O3/%s" recommended) 2>&1 | tee -a optflags.log
-          echo "== end without normalisation" | tee -a optflags.log
+          h=$(cygpath -u "$R_HOME_DIR")
+          pkgs=$(Rscript -e 'cat(rownames(installed.packages(priority = "recommended")))')
+          Rscript tests/install-deps.R $pkgs 2>&1 | tee install.log
+          bash tests/check-runs.sh cran1="$h/bin" cran2="$h/bin" o3=/c/R-o3/bin -- $pkgs 2>&1 | tee check.log
 
       - name: Summarise
-        id: summarise
         if: always()
         shell: bash
         run: |
-          set +e
-          # the verdict from the last comparison, which has all the packages
-          echo "verdict=$(tests/optflags-verdict.sh compare.tsv)" >> $GITHUB_OUTPUT
-          grep -aE '^(O[23]b?: |test|== |total |  \S+: |    )' optflags.log > summary.log
-          echo "$(Rscript -e 'cat(R.version.string)' 2>/dev/null), the recommended packages, examples and tests" > ran.txt
-          grep -aE '^(== |total )' optflags.log > results.txt 2>/dev/null
+          echo "$(Rscript -e 'cat(R.version.string)' 2>/dev/null), the recommended packages" > ran.txt
+          grep -E '^(cran1|cran2|o3) [^ ]+: ' check.log > results.txt || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: base
+          path: |
+            check.log
+            install.log
+            chk-*/*.out
+            chk-*/*.Rcheck/00check.log
+            chk-*/*.Rcheck/00install.out
+            chk-*/*.Rcheck/*-Ex.Rout*
+            chk-*/*.Rcheck/tests/*.Rout*
 
       - uses: ./.github/actions/report
         if: always()
         with:
           key: ${{ github.workflow }} (the recommended packages)
           status: ${{ job.status }}
-          verdict: ${{ steps.summarise.outputs.verdict }}
           ran: ran.txt
           checks: |
-            ${{ steps.base.outcome }} | every package has example output, runs and comparisons complete
+            ${{ steps.base.outcome }} | R CMD check ran to the end under each DLL
           results: results.txt
           files: |
-            Differences in detail: summary.log
-            optflags.log
+            Rdiff of every output: check.log

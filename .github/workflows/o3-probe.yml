@@ -1,11 +1,12 @@
 name: Rblas.dll with -O3, one package in detail
 
-# For a package whose outputs differ with the -O3 Rblas.dll (o3-packages.yml):
-# is it -O3, or the rebuild itself? Rblas.dll is built from the installed
-# R's sources with R's flags (-O2) and with -O3, each is swapped into the R
-# installation, and the package's examples and tests run under CRAN's DLL
-# (twice), the -O2 rebuild and the -O3 rebuild. tests/blas-bitwise.sh also
-# compares the rebuilt DLLs with CRAN's, routine by routine.
+# For packages whose outputs differ with the -O3 Rblas.dll: is it -O3, or
+# the rebuild itself? Rblas.dll is built from the installed R's sources with
+# R's flags (-O2) and with -O3 (tests/blas-bitwise.sh compares them with
+# CRAN's, routine by routine), each in a copy of the R installation, and
+# R CMD check of the packages runs under CRAN's DLL (twice), the -O2
+# rebuild and the -O3 rebuild, with tools::Rdiff of every output against
+# the first run printed in full (tests/check-runs.sh).
 on:
   workflow_dispatch:
     inputs:
@@ -17,11 +18,6 @@ on:
         type: choice
         options: [devel, release]
         default: devel
-
-env:
-  OPTFLAGS_WORK: ${{ github.workspace }}\optflags-work
-  # every difference in the log: the point is to find them
-  COMPARE_DETAIL: '100000'
 
 permissions:
   contents: read
@@ -35,7 +31,7 @@ concurrency:
 jobs:
   probe:
     runs-on: windows-latest
-    timeout-minutes: 120
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v7
 
@@ -72,66 +68,32 @@ jobs:
           cd work
           bash ../tests/blas-bitwise.sh ../src "$rhome" 2>&1 | tee ../blas-bitwise.log
 
-      - name: Install the packages
+      - name: The dependencies
         id: install
         shell: bash
-        run: Rscript tests/compare-optflags.R binary ${{ inputs.packages }} 2>&1 | tee -a probe.log
+        run: |
+          Rscript tests/install-deps.R ${{ inputs.packages }} 2>&1 | tee install.log
 
-      # a run that exits non-zero is recorded and counted in the summary; it
-      # is a result (a package may fail under every DLL), not a step failure
-      - name: Run the examples and tests under each DLL
+      - name: R CMD check under each DLL
         id: runs
         shell: bash
         run: |
-          bin=$(cygpath -u "$R_HOME_DIR")/bin/x64
-          cp "$bin/Rblas.dll" work/Rblas-cran.dll
-          run() {   # run dll
-            cp "$2" "$bin/Rblas.dll"
-            Rscript tests/compare-optflags.R test $1 default ${{ inputs.packages }} > /dev/null 2>&1 || echo "$1: exit status $?" | tee -a probe.log
-          }
-          run CRAN work/Rblas-cran.dll
-          run CRANb work/Rblas-cran.dll
-          run R2 work/blas-R.dll
-          run O3 work/blas-O3.dll
-          cp work/Rblas-cran.dll "$bin/Rblas.dll"
-          W=$OPTFLAGS_WORK p="${{ inputs.packages }}"
-          echo "== -O2 rebuild against CRAN's DLL" | tee -a probe.log
-          Rscript tests/compare-runs.R --blank "$W/out-CRAN/%s,$W/out-CRANb/%s" "$W/out-R2/%s" $p 2>&1 | tee -a probe.log
-          cp compare.tsv o2-vs-cran.tsv
-          echo "== -O3 rebuild against CRAN's DLL" | tee -a probe.log
-          Rscript tests/compare-runs.R --blank "$W/out-CRAN/%s,$W/out-CRANb/%s" "$W/out-O3/%s" $p 2>&1 | tee -a probe.log
-          cp compare.tsv o3-vs-cran.tsv
-          echo "== -O3 rebuild against the -O2 rebuild" | tee -a probe.log
-          Rscript tests/compare-runs.R --blank "$W/out-R2/%s" "$W/out-O3/%s" $p 2>&1 | tee -a probe.log
-          cp compare.tsv o3-vs-o2.tsv
-          # what the normalisation of --blank hides, reported only; elsewhere,
-          # so that compare.tsv stays that of the counted comparison
-          raw() { (cd "$RUNNER_TEMP" && Rscript "$GITHUB_WORKSPACE/tests/compare-runs.R" --plain "$@" $p) 2>&1 | tee -a probe.log; }
-          echo "== without normalisation: -O2 rebuild against CRAN's DLL" | tee -a probe.log
-          raw "$W/out-CRAN/%s,$W/out-CRANb/%s" "$W/out-R2/%s"
-          echo "== without normalisation: -O3 rebuild against CRAN's DLL" | tee -a probe.log
-          raw "$W/out-CRAN/%s,$W/out-CRANb/%s" "$W/out-O3/%s"
-          echo "== without normalisation: -O3 rebuild against the -O2 rebuild" | tee -a probe.log
-          raw "$W/out-R2/%s" "$W/out-O3/%s"
+          h=$(cygpath -u "$R_HOME_DIR")
+          for d in R2:work/blas-R.dll O3:work/blas-O3.dll; do
+            cp -r "$h" /c/R-${d%%:*}; cp "${d#*:}" /c/R-${d%%:*}/bin/x64/Rblas.dll
+          done
+          bash tests/check-runs.sh cran1="$h/bin" cran2="$h/bin" r2=/c/R-R2/bin o3=/c/R-O3/bin -- \
+            ${{ inputs.packages }} 2>&1 | tee probe.log
 
       - name: Summarise
         id: summarise
         if: always()
         shell: bash
         run: |
-          set +e
-          # the verdict: what -O3 changes against the -O2 rebuild, one run each
-          echo "verdict=-O3 against the -O2 rebuild, one run each: $(tests/optflags-verdict.sh o3-vs-o2.tsv)" >> $GITHUB_OUTPUT
-          { grep -E '^== |of 76 routines' blas-bitwise.log; echo; cat probe.log; } > summary.log 2>/dev/null
           { echo "$(Rscript -e 'cat(R.version.string)' 2>/dev/null), sources $R_SVN_PATH at r$R_SVN_REV"
             echo "packages: ${{ inputs.packages }}"; } > ran.txt
-          {
-            grep -E '^== |of 76 routines' blas-bitwise.log 2>/dev/null || echo "routines: not found in blas-bitwise.log"
-            echo "-O2 rebuild against CRAN's DLL: $(tests/optflags-verdict.sh o2-vs-cran.tsv)"
-            echo "-O3 rebuild against CRAN's DLL: $(tests/optflags-verdict.sh o3-vs-cran.tsv)"
-            echo "-O3 rebuild against the -O2 rebuild, one run each: $(tests/optflags-verdict.sh o3-vs-o2.tsv)"
-            [ -f probe.log ] && echo "runs that exited non-zero: $(grep -c ': exit status ' probe.log)" || echo "runs that exited non-zero: probe.log not found"
-          } > results.txt
+          { grep -E '^== |of 76 routines' blas-bitwise.log 2>/dev/null || echo "routines: not found in blas-bitwise.log"
+            grep -E '^(cran1|cran2|r2|o3) ' probe.log || echo "no check status in probe.log"; } > results.txt
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -139,20 +101,24 @@ jobs:
           name: probe
           path: |
             probe.log
+            install.log
             blas-bitwise.log
-            *.tsv
+            chk-*/*.out
+            chk-*/*.Rcheck/00check.log
+            chk-*/*.Rcheck/00install.out
+            chk-*/*.Rcheck/*-Ex.Rout*
+            chk-*/*.Rcheck/tests/*.Rout*
 
       - uses: ./.github/actions/report
         if: always()
         with:
           status: ${{ job.status }}
-          verdict: ${{ steps.summarise.outputs.verdict }}
           ran: ran.txt
           checks: |
             ${{ steps.bitwise.outcome }} | Rblas.dll with R's flags is CRAN's, bit for bit
-            ${{ steps.install.outcome }} | packages installed
-            ${{ steps.runs.outcome }} | runs under the four DLLs and comparisons
+            ${{ steps.install.outcome }} | dependencies installed
+            ${{ steps.runs.outcome }} | R CMD check ran to the end under each DLL
           results: results.txt
           files: |
-            Differences in detail: summary.log
+            Rdiff of every output: probe.log
             blas-bitwise.log
