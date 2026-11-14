@@ -423,6 +423,12 @@ jobs:
             done
           } > errors.log
           cat ran.txt results.txt errors.log
+          # and every log in full, for the review, with workflow commands off
+          # so that a line of R output that starts with :: stays text
+          for f in $b/setup.log $b/build.log $b/build/checkdevel.out $b/build/checkall.out \
+                   $(find $b/trunk/tests $b/trunk/src/library $b/patched/tests $b/patched/src/library -name '*.Rout.fail' 2>/dev/null); do
+            [ ! -f "$f" ] || { t=stop$RANDOM$RANDOM; echo "::group::$f"; echo "::stop-commands::$t"; cat "$f"; echo; echo "::$t::"; echo "::endgroup::"; }
+          done
 
       - uses: ./.github/actions/report
         if: always()
