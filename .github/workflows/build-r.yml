@@ -657,9 +657,10 @@ jobs:
       # R CMD check of packages that call the BLAS and LAPACK
       # (Matrix, MASS and four from CRAN with no dependencies beyond R and
       # the recommended packages) and one that does not (lattice), under
-      # both Rs, the reference twice: the built R must add no NOTE,
-      # WARNING or ERROR and no difference in the output of examples and
-      # tests beyond noise and design (tests/check-packages.sh)
+      # both Rs, the reference twice and the built R under NETLIB and
+      # OPENBLAS-OPENMP: the built R must add no NOTE, WARNING or ERROR
+      # under either, and under NETLIB no difference in the output of
+      # examples and tests beyond noise and design (tests/check-packages.sh)
       - name: Package checks against CRAN's R
         id: pkgcheck
         if: always() && steps.install.outcome == 'success'
@@ -710,6 +711,8 @@ jobs:
             cat r-flexiblas.txt 2>/dev/null; } > ran.txt
           {
             echo "identical.log (0 expected): $(line identical.log 'results differ')"
+            omp=$(awk '/OPENBLAS-OPENMP \(reported only\)/ {f = 1} f && /^total / {sub(/\r$/, ""); print; exit}' check-packages.log 2>/dev/null)
+            echo "check-packages.log, OPENBLAS-OPENMP output against CRAN's R: ${omp:-not found in check-packages.log}"
             echo "tests.log, B %*% B at n = 3000 (s):"
             awk '/^== / {b = $2} /B %\*% B.*thread\(s\)/ {found = 1; for (i = 1; i <= NF; i++) if ($(i + 1) == "thread(s):") n = $i; printf "  %-18s %s threads: %s\n", b, n, $NF} END {if (!found) print "  not found in tests.log"}' tests.log 2>/dev/null || echo "  not found in tests.log"
           } > results.txt 2>&1
@@ -734,7 +737,7 @@ jobs:
             ${{ steps.backends.outcome }} | backend selection: default, FLEXIBLAS, user flexiblasrc
             ${{ steps.regblas.outcome }} | R's reg-BLAS.R under each backend
             ${{ steps.xerbla.outcome }} | invalid arguments give R's xerbla error, each backend
-            ${{ steps.pkgcheck.outcome }} | R CMD check of 7 packages: nothing beyond CRAN's R
+            ${{ steps.pkgcheck.outcome }} | R CMD check of 7 packages: nothing beyond CRAN's R (NETLIB), no new item (OPENBLAS-OPENMP)
             ${{ steps.pkgtests.outcome }} | the package's tinytest suite
           results: results.txt
           files: |
