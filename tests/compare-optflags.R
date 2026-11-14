@@ -73,6 +73,19 @@ if (mode == "binary") {
             cat(p, "not installed\n", sep = "\t", file = "binary.tsv", append = TRUE)
             next
         }
+        ## CRAN's binaries can lag its sources: then the source of the
+        ## binary's version, from the CRAN archive
+        binver <- packageDescription(p, fields = "Version")
+        archived <- FALSE
+        if (package_version(sub(sprintf("^%s_(.*)\\.tar\\.gz$", p), "\\1", basename(src[i, 2]))) != package_version(binver)) {
+            cran <- if ("CRAN" %in% names(repos)) repos[["CRAN"]] else repos[[1]]
+            arch <- file.path(work, sprintf("%s_%s.tar.gz", p, binver))
+            ok <- tryCatch(download.file(sprintf("%s/src/contrib/Archive/%s/%s_%s.tar.gz", cran, p, p, binver),
+                                         arch, quiet = TRUE, mode = "wb") == 0, error = function(e) FALSE,
+                           warning = function(w) FALSE)
+            if (ok) src[i, 2] <- arch else unlink(arch)
+            archived <- ok
+        }
         files <- untar(src[i, 2], list = TRUE)
         t <- grep(sprintf("^%s/tests/", p), files, value = TRUE)
         if (length(t)) {
@@ -81,9 +94,10 @@ if (mode == "binary") {
         }
         ## the tests must be those of the version the binary was built from
         srcver <- sub(sprintf("^%s_(.*)\\.tar\\.gz$", p), "\\1", basename(src[i, 2]))
-        cat(sprintf("%-12s binary %s, %d test files%s\n", p, packageVersion(p), length(t),
+        cat(sprintf("%-12s binary %s, %d test files%s%s\n", p, packageVersion(p), length(t),
+                    if (archived) ", source from the CRAN archive" else "",
                     if (packageVersion(p) == srcver) "" else sprintf(", from source %s: VERSION MISMATCH", srcver)))
-        cat(p, if (packageVersion(p) == srcver) "installed\n" else "version mismatch\n",
+        cat(p, if (packageVersion(p) != srcver) "version mismatch\n" else if (archived) "installed, archived source\n" else "installed\n",
             sep = "\t", file = "binary.tsv", append = TRUE)
     }
 }
