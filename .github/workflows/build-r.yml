@@ -425,8 +425,14 @@ jobs:
           cat ran.txt results.txt errors.log
           # and every log in full, for the review, with workflow commands off
           # so that a line of R output that starts with :: stays text
+          # MiKTeX's own logs (user data in %LOCALAPPDATA%\MiKTeX, as setup.ps1
+          # installs it) and the TeX logs of the manuals, Sweave tests and
+          # vignettes say why TeX failed
           for f in $b/setup.log $b/build.log $b/build/checkdevel.out $b/build/checkall.out \
-                   $(find $b/trunk/tests $b/trunk/src/library $b/patched/tests $b/patched/src/library -name '*.Rout.fail' 2>/dev/null); do
+                   $(find $b/trunk/tests $b/trunk/src/library $b/patched/tests $b/patched/src/library -name '*.Rout.fail' 2>/dev/null) \
+                   "$(cygpath -u "$LOCALAPPDATA")"/MiKTeX/miktex/log/*.log \
+                   $b/{trunk,patched}/doc/manual/*.log $b/{trunk,patched}/tests/*.Rcheck/tests/*.log \
+                   $b/{trunk,patched}/src/library/.vignettes/*.log $b/{trunk,patched}/tests/*.Rcheck/vign_test/*/vignettes/*.log; do
             [ ! -f "$f" ] || { t=stop$RANDOM$RANDOM; echo "::group::$f"; echo "::stop-commands::$t"; cat "$f"; echo; echo "::$t::"; echo "::endgroup::"; }
           done
 
