@@ -18,11 +18,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        n: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        n: [1, 2, 3, 4, 5]
+        # MiKTeX as setup.ps1 leaves it (24.1), or updated by MiKTeX itself
+        miktex: [as-setup, updated]
         # one document with many packages, or four documents at once, as
         # the R build runs TeX in parallel (make -j), with the format
         # pdflatex.fmt still to be made or made first
-        mode: [sequential, parallel, parallel-after-format]
+        mode: [parallel, parallel-after-format]
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -39,6 +41,18 @@ jobs:
           Start-Process -Wait -NoNewWindow -FilePath "$bin\mpm.exe" -ArgumentList "--install=inconsolata"
           Start-Process -Wait -NoNewWindow -FilePath "$bin\mpm.exe" -ArgumentList "--install=tabu"
           "$bin" >> $env:GITHUB_PATH
+
+      - name: MiKTeX updated by itself
+        if: matrix.miktex == 'updated'
+        shell: bash
+        run: |
+          set -x +e
+          initexmf --version
+          # twice: the first update may replace the package manager itself
+          miktex packages update; echo "update status $?"
+          miktex packages update; echo "update status $?"
+          initexmf --version
+          miktex packages check-update; true
 
       - name: Which packages and files are there before use
         shell: bash
