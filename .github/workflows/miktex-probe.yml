@@ -20,8 +20,9 @@ jobs:
       matrix:
         n: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
         # one document with many packages, or four documents at once, as
-        # the R build runs TeX in parallel (make -j)
-        mode: [sequential, parallel]
+        # the R build runs TeX in parallel (make -j), with the format
+        # pdflatex.fmt still to be made or made first
+        mode: [sequential, parallel, parallel-after-format]
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -67,22 +68,25 @@ jobs:
           }
           if [ ${{ matrix.mode }} = sequential ]; then
             doc all "${pk[@]}"
-            pdflatex -interaction=nonstopmode all.tex < /dev/null > all.out 2>&1; echo "all: pdflatex status $?"
+            pdflatex -interaction=nonstopmode all.tex < /dev/null > all.stdout 2>&1; echo "all: pdflatex status $?"
           else
+            if [ ${{ matrix.mode }} = parallel-after-format ]; then
+              doc f; pdflatex -interaction=nonstopmode f.tex < /dev/null > f.stdout 2>&1; echo "f: pdflatex status $?"
+            fi
             doc a geometry hyperref natbib fancyvrb upquote inconsolata bm
             doc b geometry amsmath amssymb longtable booktabs xcolor graphicx
             doc c geometry framed listings caption float multirow colortbl
             doc d geometry enumitem titlesec microtype lmodern alltt url
             for d in a b c d; do
-              (pdflatex -interaction=nonstopmode $d.tex < /dev/null > $d.out 2>&1; echo "$d: pdflatex status $?") &
+              (pdflatex -interaction=nonstopmode $d.tex < /dev/null > $d.stdout 2>&1; echo "$d: pdflatex status $?") &
             done
             wait
           fi
-          grep -h -E '^! |not found' *.out
+          grep -h -E '^! |not found|did not succeed' *.stdout
           # what texi2dvi does to check texinfo.tex
           printf '\\input texinfo.tex @bye\n' > txiversion.tex
-          etex txiversion.tex < /dev/null > etex.out 2>&1; echo "etex status $?"
-          grep -h -E '^! |not found' etex.out; true
+          etex txiversion.tex < /dev/null > etex.stdout 2>&1; echo "etex status $?"
+          grep -h -E '^! |not found|did not succeed' etex.stdout; true
 
       - name: texi2dvi, from MSYS2 as in the R build
         if: ${{ !cancelled() }}
@@ -111,5 +115,5 @@ jobs:
           d="$(cygpath -u "$LOCALAPPDATA")/MiKTeX/miktex/log"
           ls -la "$d" || true
           t=stop$RANDOM$RANDOM; echo "::stop-commands::$t"
-          for f in "$d"/*.log t/*.log t/*.out; do [ ! -f "$f" ] || { echo "==== $f"; cat "$f"; echo; }; done
+          for f in "$d"/*.log t/*.log t/*.stdout; do [ ! -f "$f" ] || { echo "==== $f"; cat "$f"; echo; }; done
           echo "::$t::"
