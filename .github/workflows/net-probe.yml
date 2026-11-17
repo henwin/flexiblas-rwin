@@ -1,0 +1,64 @@
+name: Network probe
+
+# Do downloads from GitHub's Windows runners fail, and if so to which hosts
+# and over which IP version? MiKTeX gave up on a 672-byte package from
+# latex.us after 21 s (curl code 28), and miktex.org was unreachable from
+# 2 of 10 jobs. Each job fetches the same small files from MiKTeX's mirrors
+# and miktex.org many times, over IPv4 and IPv6 apart, and prints every
+# attempt: host, IP version, curl exit status, HTTP code, connect and total
+# time, remote address.
+
+on:
+  workflow_dispatch:
+    inputs:
+      attempts:
+        description: Attempts per host and IP version in each job
+        default: '50'
+
+permissions:
+  contents: read
+
+jobs:
+  net:
+    strategy:
+      fail-fast: false
+      matrix:
+        n: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Fetch
+        shell: bash
+        run: |
+          set +e
+          p=systems/win32/miktex/tm/packages/miktex-etex.tar.lzma
+          urls=(
+            https://latex.us/$p
+            https://mirrors.mit.edu/CTAN/$p
+            https://mirror.math.princeton.edu/pub/CTAN/$p
+            https://mirrors.rit.edu/CTAN/$p
+            https://ctan.mirrors.hoobly.com/$p
+            https://tug.ctan.org/$p
+            https://mirror.latigo.net/ctan/$p
+            "https://api2.miktex.org/repositories?&releaseState=Stable&orderBy=ranking&take=1&onlySecure=true"
+            https://miktex.org/download
+          )
+          curl --version | head -1
+          ipconfig | grep -iE 'IPv6 Address|IPv4 Address'
+          printf 'url\tip\texit\thttp\tconnect\ttotal\tremote\n' > net.tsv
+          t=stop$RANDOM$RANDOM; echo "::stop-commands::$t"
+          for i in $(seq ${{ inputs.attempts || 50 }}); do
+            for u in "${urls[@]}"; do
+              for v in 4 6; do
+                # stop in time for the summary; 20 s to connect, about as MiKTeX
+                [ $SECONDS -lt 2700 ] || break 3
+                w=$(curl -$v -s -o /dev/null --connect-timeout 20 --max-time 30 \
+                      -w '%{http_code}\t%{time_connect}\t%{time_total}\t%{remote_ip}' "$u")
+                printf '%s\t%s\t%s\t%s\n' "$u" "$v" "$?" "$w" | tee -a net.tsv
+              done
+            done
+          done
+          echo "::$t::"
+          echo "url ip: attempts, by curl exit status and HTTP code"
+          awk -F'\t' 'NR > 1 {s[$1 " " $2 " exit " $3 " http " $4]++}
+                      END {for (k in s) print k ": " s[k]}' net.tsv | sort
