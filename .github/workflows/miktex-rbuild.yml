@@ -46,7 +46,7 @@ jobs:
         run: |
           # the order of the R build's PATH: MiKTeX before MSYS2
           export PATH="$(cygpath -u "$LOCALAPPDATA")/Programs/MiKTeX/miktex/bin/x64:/usr/local/bin:/usr/bin:$PATH"
-          pacman -Sy --noconfirm --needed texinfo-tex > /dev/null
+          pacman -Sy --noconfirm texinfo texinfo-tex > /dev/null; command -v texindex texi2dvi
           set -x
           Rscript -e 'print(Sys.which(c("texi2dvi", "texify", "pdflatex"))); print(getOption("texi2dvi"))'
           mkdir -p w && cd w
