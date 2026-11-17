@@ -1,0 +1,90 @@
+name: MiKTeX probe
+
+# Why does TeX fail now and then in the R build (geometry.sty not found;
+# texi2dvi: texinfo.tex appears to be broken)? MiKTeX is installed as
+# R-core's setup.ps1 does (basic 24.1, private, AutoInstall on), and the
+# files the build needs are then looked for and used, with every MiKTeX log
+# printed: are they in the basic installation, or downloaded on demand, and
+# from which mirror? Several jobs, since the mirror differs from run to run.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        n: [1, 2, 3, 4, 5]
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: MiKTeX as setup.ps1 installs it
+        shell: pwsh
+        run: |
+          $url = "https://miktex.org/download/ctan/systems/win32/miktex/setup/windows-x64/basic-miktex-24.1-x64.exe"
+          Invoke-WebRequest -Uri "$url" -OutFile basic-miktex.exe -UseBasicParsing
+          Start-Process -Wait -NoNewWindow -FilePath ".\basic-miktex.exe" -ArgumentList "--unattended --private --user-config=`"$env:APPDATA\MiKTeX`" --user-data=`"$env:LOCALAPPDATA\MiKTeX`" --user-install=`"$env:LOCALAPPDATA\Programs\MiKTeX`""
+          $bin = "$env:LOCALAPPDATA\Programs\MiKTeX\miktex\bin\x64"
+          Start-Process -Wait -NoNewWindow -FilePath "$bin\initexmf.exe" -ArgumentList "--enable-installer"
+          Start-Process -Wait -NoNewWindow -FilePath "$bin\initexmf.exe" -ArgumentList "--set-config-value=[MPM]AutoInstall=t"
+          Start-Process -Wait -NoNewWindow -FilePath "$bin\mpm.exe" -ArgumentList "--verbose --update-db"
+          Start-Process -Wait -NoNewWindow -FilePath "$bin\mpm.exe" -ArgumentList "--install=inconsolata"
+          Start-Process -Wait -NoNewWindow -FilePath "$bin\mpm.exe" -ArgumentList "--install=tabu"
+          "$bin" >> $env:GITHUB_PATH
+
+      - name: Which packages and files are there before use
+        shell: bash
+        run: |
+          set -x +e
+          initexmf --report
+          # off while looking, so that looking installs nothing
+          initexmf --set-config-value=[MPM]AutoInstall=f
+          mpm --list 2>&1 | tr -d '\r' > before.txt
+          grep -cE '^i' before.txt
+          grep -E ' (geometry|texinfo|epsf|etex-pkg|latex-tools|inconsolata|tabu)$' before.txt
+          for f in geometry.sty texinfo.tex; do kpsewhich "$f" || echo "$f: not found"; done
+          initexmf --set-config-value=[MPM]AutoInstall=t
+
+      - name: Use them as the R build does
+        shell: bash
+        run: |
+          set -x +e
+          mkdir t && cd t
+          printf '\\documentclass{article}\n\\usepackage[a4paper,margin=1in]{geometry}\n\\begin{document}x\\end{document}\n' > g.tex
+          cat g.tex
+          pdflatex -interaction=nonstopmode g.tex < /dev/null; echo "pdflatex status $?"
+          # what texi2dvi does to check texinfo.tex
+          printf '\\input texinfo.tex @bye\n' > txiversion.tex
+          etex txiversion.tex < /dev/null; echo "etex status $?"
+
+      - name: texi2dvi, from MSYS2 as in the R build
+        shell: C:\msys64\usr\bin\bash.exe --noprofile --norc -o pipefail {0}
+        run: |
+          export PATH=/usr/bin:$PATH
+          pacman -S --noconfirm --needed texinfo-tex > /dev/null
+          command -v texi2dvi etex pdftex
+          cd t
+          printf '\\input texinfo\n@setfilename x\n@settitle x\n@node Top\n@top x\nx\n@bye\n' > x.texi
+          cat x.texi
+          texi2dvi --pdf x.texi < /dev/null; echo "texi2dvi status $?"
+
+      - name: Which packages were installed on demand
+        if: always()
+        shell: bash
+        run: |
+          mpm --list 2>&1 | tr -d '\r' > after.txt
+          diff before.txt after.txt || true
+
+      - name: MiKTeX logs
+        if: always()
+        shell: bash
+        run: |
+          d="$(cygpath -u "$LOCALAPPDATA")/MiKTeX/miktex/log"
+          ls -la "$d" || true
+          t=stop$RANDOM$RANDOM; echo "::stop-commands::$t"
+          for f in "$d"/*.log t/*.log; do [ ! -f "$f" ] || { echo "==== $f"; cat "$f"; echo; }; done
+          echo "::$t::"
