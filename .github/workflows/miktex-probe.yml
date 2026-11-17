@@ -18,7 +18,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        n: [1, 2, 3, 4, 5]
+        n: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        # one document with many packages, or four documents at once, as
+        # the R build runs TeX in parallel (make -j)
+        mode: [sequential, parallel]
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -50,18 +53,40 @@ jobs:
           initexmf --set-config-value=[MPM]AutoInstall=t
 
       - name: Use them as the R build does
+        timeout-minutes: 10
         shell: bash
         run: |
           set -x +e
           mkdir t && cd t
-          printf '\\documentclass{article}\n\\usepackage[a4paper,margin=1in]{geometry}\n\\begin{document}x\\end{document}\n' > g.tex
-          cat g.tex
-          pdflatex -interaction=nonstopmode g.tex < /dev/null; echo "pdflatex status $?"
+          pk=(geometry hyperref natbib fancyvrb upquote inconsolata bm amsmath amssymb longtable booktabs
+              xcolor graphicx framed listings caption float multirow colortbl enumitem titlesec microtype
+              lmodern alltt url textcomp ifthen verbatim)
+          doc() {   # doc NAME PACKAGE...: a document that loads the packages
+            { echo '\documentclass{article}'; for p in "${@:2}"; do echo "\usepackage{$p}"; done
+              echo '\begin{document}x\end{document}'; } > $1.tex
+          }
+          if [ ${{ matrix.mode }} = sequential ]; then
+            doc all "${pk[@]}"
+            pdflatex -interaction=nonstopmode all.tex < /dev/null > all.out 2>&1; echo "all: pdflatex status $?"
+          else
+            doc a geometry hyperref natbib fancyvrb upquote inconsolata bm
+            doc b geometry amsmath amssymb longtable booktabs xcolor graphicx
+            doc c geometry framed listings caption float multirow colortbl
+            doc d geometry enumitem titlesec microtype lmodern alltt url
+            for d in a b c d; do
+              (pdflatex -interaction=nonstopmode $d.tex < /dev/null > $d.out 2>&1; echo "$d: pdflatex status $?") &
+            done
+            wait
+          fi
+          grep -h -E '^! |not found' *.out
           # what texi2dvi does to check texinfo.tex
           printf '\\input texinfo.tex @bye\n' > txiversion.tex
-          etex txiversion.tex < /dev/null; echo "etex status $?"
+          etex txiversion.tex < /dev/null > etex.out 2>&1; echo "etex status $?"
+          grep -h -E '^! |not found' etex.out; true
 
       - name: texi2dvi, from MSYS2 as in the R build
+        if: ${{ !cancelled() }}
+        timeout-minutes: 10
         shell: C:\msys64\usr\bin\bash.exe --noprofile --norc -o pipefail {0}
         run: |
           export PATH=/usr/bin:$PATH
@@ -86,5 +111,5 @@ jobs:
           d="$(cygpath -u "$LOCALAPPDATA")/MiKTeX/miktex/log"
           ls -la "$d" || true
           t=stop$RANDOM$RANDOM; echo "::stop-commands::$t"
-          for f in "$d"/*.log t/*.log; do [ ! -f "$f" ] || { echo "==== $f"; cat "$f"; echo; }; done
+          for f in "$d"/*.log t/*.log t/*.out; do [ ! -f "$f" ] || { echo "==== $f"; cat "$f"; echo; }; done
           echo "::$t::"
