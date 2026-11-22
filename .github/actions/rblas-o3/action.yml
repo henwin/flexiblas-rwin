@@ -30,9 +30,11 @@ runs:
         for f in blas.f blas2.f90 cmplxblas.f cmplxblas2.f90 Rblas.def; do
           curl -sSf -o "$d/$f" "https://svn.r-project.org/R/$R_SVN_PATH/src/extra/blas/$f?p=$R_SVN_REV"
         done
+        set -x
         for f in blas.f blas2.f90 cmplxblas.f cmplxblas2.f90; do
           gfortran -O3 -mfpmath=sse -msse2 -mstackrealign -c "$d/$f" -o "$d/${f%.*}.o" -J "$d"
         done
         gfortran -shared -s -o /c/R-o3/bin/x64/Rblas.dll "$d"/*.o "$d/Rblas.def" -L/c/R-o3/bin/x64 -lR
+        set +x
         ls -la /c/R-o3/bin/x64/Rblas.dll "$(cygpath -u "$R_HOME_DIR")/bin/x64/Rblas.dll"
         /c/R-o3/bin/Rscript -e 'A <- matrix(rnorm(9), 3); stopifnot(all.equal(solve(A) %*% A, diag(3)))'

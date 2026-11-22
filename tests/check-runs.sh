@@ -4,9 +4,16 @@
 # printed in full; the review is separate:
 #   check-runs.sh NAME=RBIN[,VAR=VALUE...] ... -- PACKAGE...
 # RBIN is a directory with R.exe; the VAR=VALUE pairs are set for that run
-# only.  The tarballs are downloaded once.  Exits 1 when a check did not
-# run to its end (no Status line in 00check.log), since then there is
-# nothing to show.
+# only.  The tarballs are downloaded once.  The output of R CMD check and
+# 00install.out of the first run, and the output of R CMD check of any
+# run that did not run to its end, are printed in full too, so that what
+# every run shares, and where a check stopped, can be read.  Each run has
+# its own R_USER_CACHE_DIR, R_USER_DATA_DIR and R_USER_CONFIG_DIR, since
+# the runs are concurrent and packages keep caches there.  Exits 1 when a
+# check did not run to its end (no Status line in 00check.log).  On
+# GitHub, workflow commands are off while it prints, so that no line of
+# the output is taken for one.
+[ -z "$GITHUB_ACTIONS" ] || { tok=stop$RANDOM$RANDOM; echo "::stop-commands::$tok"; trap "echo; echo '::$tok::'" EXIT; }
 runs=()
 while [ $# -gt 0 ] && [ "$1" != -- ]; do runs+=("$1"); shift; done
 shift
@@ -33,18 +40,28 @@ for r in "${runs[@]}"; do
     name=${r%%=*} spec=${r#*=}
     bin=${spec%%,*} vars=(); [ "$spec" = "$bin" ] || IFS=, read -ra vars <<< "${spec#*,}"
     names+=("$name")
+    u=$PWD/chk-$name/user; mkdir -p "$u"/cache "$u"/data "$u"/config
+    ! command -v cygpath > /dev/null || u=$(cygpath -m "$u")
+    vars=("R_USER_CACHE_DIR=$u/cache" "R_USER_DATA_DIR=$u/data" "R_USER_CONFIG_DIR=$u/config" "${vars[@]}")
     echo "$name: $("$bin/Rscript" -e 'cat(R.version.string)') ${vars[*]}"
     env "${vars[@]}" bash -c "$(declare -f check); check $name '$bin'" &
 done
 wait
-status=0
+status=0 stopped=()
 for p in "$@"; do
     for n in "${names[@]}"; do
         log=chk-$n/$p.Rcheck/00check.log
-        st=$(tr -d '\r' < $log 2>/dev/null | grep '^Status:')
+        st=$(tr -d '\r' 2>/dev/null < "$log" | grep '^Status:')
         echo "$n $p: ${st:-check did not finish}"
-        [ -n "$st" ] || status=1
+        [ -n "$st" ] || { status=1; stopped+=("chk-$n/$p.out"); }
     done
+done
+show() { [ ! -f "$1" ] || { echo "== $2: $1"; tr -d '\r' < "$1"; [ -z "$(tail -c1 "$1")" ] || echo; }; }
+for p in "$@"; do
+    show "chk-${names[0]}/$p.out" $p; show "chk-${names[0]}/$p.Rcheck/00install.out" $p
+done
+for f in "${stopped[@]}"; do
+    [ "${f%%/*}" = "chk-${names[0]}" ] || { p=${f##*/}; show "$f" ${p%.out}; }
 done
 "$first/Rscript" "$(dirname "$0")/rdiff-runs.R" "${names[@]/#/chk-}" -- "$@"
 exit $status
