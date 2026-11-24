@@ -21,8 +21,13 @@ first=${runs[0]#*=}; first=${first%%,*}
 # without --as-cran, so the examples run without timings, as for the
 # .Rout.save that tools::Rdiff expects to compare with; R CMD check stops
 # each step after _R_CHECK_ELAPSED_TIMEOUT_, here 30 minutes unless set
-# (R's default is no limit), so that a package that hangs ends as an ERROR
-export LC_ALL=C MAKEFLAGS=-j2 _R_CHECK_FORCE_SUGGESTS_=false _R_CHECK_ELAPSED_TIMEOUT_=${_R_CHECK_ELAPSED_TIMEOUT_:-30m}
+# (R's default is no limit), so that a package that hangs ends as an ERROR.
+# LC_ALL stays unset, so that R runs in the runner's locale with UTF-8, its
+# native encoding on Windows since 4.2: in the C locale R CMD check stops
+# at "checking examples" with "embedded nul in string" whenever PKG-Ex.R
+# has a non-ASCII byte, comments included, since tools:::showNonASCII
+# converts through code page 20127, which drops the high bit
+export MAKEFLAGS=-j2 _R_CHECK_FORCE_SUGGESTS_=false _R_CHECK_ELAPSED_TIMEOUT_=${_R_CHECK_ELAPSED_TIMEOUT_:-30m}
 mkdir -p src
 "$first/Rscript" -e 'download.packages(commandArgs(TRUE), "src", repos = "https://cloud.r-project.org", type = "source")' "$@" > /dev/null || exit 1
 for p in "$@"; do
